@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -116,8 +117,12 @@ def _num(text: str | None):
 
 
 def _git(*argumente: str) -> str:
-    ergebnis = subprocess.run(["git", "-c", f"safe.directory={repo()}", *argumente], cwd=repo(),
-                              capture_output=True, text=True, timeout=20)
+    """Lesender Git-Aufruf; ohne Git oder ohne Repository leer statt Fehler."""
+    try:
+        ergebnis = subprocess.run(["git", "-c", f"safe.directory={repo()}", *argumente], cwd=repo(),
+                                  capture_output=True, text=True, timeout=20)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
     return ergebnis.stdout if ergebnis.returncode == 0 else ""
 
 
@@ -402,6 +407,7 @@ def _marktwerte_offen() -> dict[tuple[str, str], float]:
             markt, _ = _markt_aus_speicher(daten)
             bewertung = werkzeuge()["limits"].portfolio_bewerten(daten, markt)
         except Exception:  # fehlende Kurse: kein unrealisiertes Ergebnis
+            logging.getLogger("stockmaster").warning("Bewertung offener Positionen von %s nicht möglich", profil)
             continue
         for position in bewertung["positionen"]:
             werte[(profil, position["id"])] = float(position["wert_eur"])

@@ -15,6 +15,8 @@ export default defineConfig({
   },
   build: {
     sourcemap: false,
+    // Keine data:-URIs, damit die strikte CSP (font-src/img-src self) greift.
+    assetsInlineLimit: 0,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {

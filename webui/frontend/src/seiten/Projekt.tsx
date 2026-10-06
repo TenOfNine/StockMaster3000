@@ -374,7 +374,9 @@ export function Pruefung() {
       </Karte>
       <Karte>
         <KarteKopf titel="Git-Historie" icon={<GitCommitHorizontal className="size-4" />} untertitel="Jede Session, Buchung und Regeländerung ist ein Commit" />
-        {log.data ? (
+        {log.data && log.data.length === 0 ? (
+          <Leer titel="Keine Git-Historie verfügbar" text="Das Repository hat keine Commits oder Git ist im Container nicht installiert." />
+        ) : log.data ? (
           <ol className="relative mx-5 mb-5 border-l border-rand">
             {log.data.map((c) => (
               <li key={c.hash} className="relative">
