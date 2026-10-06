@@ -145,7 +145,8 @@ nur im Heimnetz erreichbar (HTTPS mit lokaler Zertifizierungsstelle).
 
 Die Web-UI rechnet und bucht nicht selbst; Kennzahlen, Bewertungen und
 Prüfungen kommen aus `tools/`. Start, Root-Zertifikat, Sicherung und
-Entwicklung: [webui/BETRIEB.md](webui/BETRIEB.md). Ausbaustufe 2
+Entwicklung: [webui/BETRIEB.md](webui/BETRIEB.md); Betrieb mit Portainer:
+[webui/PORTAINER.md](webui/PORTAINER.md). Ausbaustufe 2
 (Arbeitsbereiche, Claude-Läufe mit eigenem Pro-Abo, Schwerpunkt,
 Profilauswahl): [AUFTRAG_WEBUI.md](AUFTRAG_WEBUI.md).
 

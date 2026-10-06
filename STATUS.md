@@ -57,6 +57,11 @@ Technische Festlegungen Stufe 1:
   hell #2A78D6 / #1BAF7A / #EB6834. App-Icon entsprechend angepasst.
 - Gewinne und Verluste immer mit Vorzeichen und Pfeil, nie nur über Farbe;
   jedes Diagramm hat eine Tabellenansicht bzw. Beschriftung.
+- Portainer (2026-10-06): Stack `webui/deploy/portainer/stack.yml` ohne lokale Dateien; Images
+  (api, proxy, db) baut `.github/workflows/images.yml` nach ghcr.io; Geheimnisse als
+  Stack-Umgebungsvariablen statt Docker Secrets (Portainer Standalone kennt keine Secrets-Dateien);
+  Anwendungspasswort nur Buchstaben und Ziffern (steht in der Datenbank-URL). Anleitung:
+  webui/PORTAINER.md. Das Root-Zertifikat ist unter /stockmaster-root.crt abrufbar (nur Heimnetz).
 - Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
   und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
   Netzwerk ersetzt); das Repository ist nur lesend eingebunden.
