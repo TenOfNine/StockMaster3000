@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -58,17 +59,24 @@ def repo() -> Path:
     return einstellungen().repo_pfad.resolve()
 
 
+_ladesperre = threading.Lock()
+
+
 def werkzeuge() -> dict[str, ModuleType]:
-    """Importiert die Werkzeuge des Spiel-Repositorys (einmal je Prozess)."""
-    if not _module:
-        sys.dont_write_bytecode = True  # das Spiel-Repository bleibt unverändert
-        pfad = str(repo() / "tools")
-        os.environ["BOERSE_ROOT"] = str(repo())
-        if pfad not in sys.path:
-            sys.path.insert(0, pfad)
-        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine"):
-            _module[name] = importlib.import_module(name)
-        _module["kurse"].QUELLE = _NurSpeicher()
+    """Importiert die Werkzeuge des Spiel-Repositorys (einmal je Prozess, threadsicher)."""
+    if _module:
+        return _module
+    with _ladesperre:
+        if not _module:
+            sys.dont_write_bytecode = True  # das Spiel-Repository bleibt unverändert
+            pfad = str(repo() / "tools")
+            os.environ["BOERSE_ROOT"] = str(repo())
+            if pfad not in sys.path:
+                sys.path.insert(0, pfad)
+            geladen = {name: importlib.import_module(name)
+                       for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine")}
+            geladen["kurse"].QUELLE = _NurSpeicher()
+            _module.update(geladen)
     return _module
 
 
@@ -347,6 +355,7 @@ def journal() -> list[dict]:
         if zeile["journal_id"]:
             je_journal.setdefault(zeile["journal_id"], []).append(zeile)
     offen = {(p, pos["id"]) for p in profile() for pos in w["gemeinsam"].portfolio_laden(p)["positionen"]}
+    marktwerte = _marktwerte_offen()
     orders = {(p, o["journal_id"]) for p in profile() for o in w["gemeinsam"].portfolio_laden(p)["offene_orders"]}
     ergebnis = []
     for block in bloecke:
@@ -356,7 +365,7 @@ def journal() -> list[dict]:
             eigene = je_journal.get(block["id"], [])
             eintrag["trades"] = [z["trade_id"] for z in eigene]
             eintrag["status"] = _status(block, eigene, offen, orders)
-            eintrag["ergebnis_eur"] = _ergebnis(eigene, zeilen)
+            eintrag["ergebnis_eur"], eintrag["ergebnis_art"] = _ergebnis(eigene, zeilen, marktwerte)
         ergebnis.append(eintrag)
     return ergebnis
 
@@ -382,13 +391,34 @@ def _status(block: dict, eigene: list[dict], offen: set, orders: set) -> str:
     return "ohne ausführung"
 
 
-def _ergebnis(eigene: list[dict], alle: list[dict]) -> float | None:
+def _marktwerte_offen() -> dict[tuple[str, str], float]:
+    """Marktwerte offener Positionen (Bewertung durch tools/limits.py zum letzten Schlusskurs)."""
+    werte = {}
+    for profil in profile():
+        daten = werkzeuge()["gemeinsam"].portfolio_laden(profil)
+        if not daten["positionen"]:
+            continue
+        try:
+            markt, _ = _markt_aus_speicher(daten)
+            bewertung = werkzeuge()["limits"].portfolio_bewerten(daten, markt)
+        except Exception:  # fehlende Kurse: kein unrealisiertes Ergebnis
+            continue
+        for position in bewertung["positionen"]:
+            werte[(profil, position["id"])] = float(position["wert_eur"])
+    return werte
+
+
+def _ergebnis(eigene: list[dict], alle: list[dict], marktwerte: dict) -> tuple[float | None, str | None]:
+    """Realisiert (Summe der Zahlungen) bzw. unrealisiert (zuzüglich Marktwert offener Positionen)."""
     positionen = {(z["profil"], z["position_id"]) for z in eigene if z["aktion"] == "kauf"}
     if not positionen:
-        return None
+        return None, None
     summe = sum(z["betrag_eur"] or 0 for z in alle if (z["profil"], z["position_id"]) in positionen
                 and z["aktion"] in ("kauf", "verkauf", "dividende", "knockout"))
-    return round(summe, 2)
+    offen = [marktwerte[p] for p in positionen if p in marktwerte]
+    if offen:
+        return round(summe + sum(offen), 2), "unrealisiert"
+    return round(summe, 2), "realisiert"
 
 
 def journal_eintrag(eintrag_id: str) -> dict:
@@ -405,8 +435,15 @@ def journal_eintrag(eintrag_id: str) -> dict:
              or z["journal_id"] == eintrag_id]
     folge.sort(key=lambda z: z["zeit"])
     protokoll = limit_protokoll()
-    schnappschuesse = [{"trade_id": z["trade_id"], "profil": z["profil"], **zahl(protokoll[f"{z['profil']}:{z['trade_id']}"])}
-                       for z in eigene if f"{z['profil']}:{z['trade_id']}" in protokoll]
+    def zahlen(werte: dict) -> dict:
+        return {k: (v if isinstance(v, bool) else _num(v) if isinstance(v, str) else v) for k, v in werte.items()}
+
+    schnappschuesse = []
+    for z in eigene:
+        pruef = protokoll.get(f"{z['profil']}:{z['trade_id']}")
+        if pruef:
+            schnappschuesse.append({"trade_id": z["trade_id"], "profil": z["profil"], "zeit": pruef["zeit"],
+                                    "kennzahlen": zahlen(pruef["kennzahlen"]), "grenzen": zahlen(pruef["grenzen"])})
     erwaehnt_in = [{"id": e["id"], "art": e["art"], "datei": e["datei"], "zeit": e["zeit"]}
                    for e in alle if eintrag_id in e.get("verweise", [])]
     reviews_mit = [r for r in reviews() if eintrag_id in (repo() / r["pfad"]).read_text(encoding="utf-8")]

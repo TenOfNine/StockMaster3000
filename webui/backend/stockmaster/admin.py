@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -38,8 +38,12 @@ class BenutzerZeile(BaseModel):
     erstellt: str
 
 
+# Bewusst einfache Prüfung: im Heimnetz sind auch Adressen wie name@heimnetz.local üblich.
+EMAIL_MUSTER = r"^[^@\s]{1,64}@[^@\s]{1,189}$"
+
+
 class NeuerBenutzer(Streng):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=254, pattern=EMAIL_MUSTER)
     anzeigename: str = Field(min_length=1, max_length=80)
     passwort: str = Field(min_length=1, max_length=200, description="Passwort des Admins zur Bestätigung")
 

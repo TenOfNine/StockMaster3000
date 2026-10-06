@@ -52,6 +52,9 @@ def test_journal_und_akte(nutzer):
     assert akte["felder"]["these"]
     assert akte["folge"][0]["aktion"] in ("kauf", "vormerkung")
     assert akte["limit_schnappschuesse"]
+    schnappschuss = akte["limit_schnappschuesse"][0]
+    assert isinstance(schnappschuss["kennzahlen"]["exposure"], float)
+    assert isinstance(schnappschuss["grenzen"]["max_exposure"], float)
     assert akte["kerzen"]
     assert any(e["art"] == "S" for e in akte["erwaehnt_in"])
     assert nutzer.get("/api/spiel/journal/J-19990101-01").status_code == 404

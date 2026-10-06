@@ -43,6 +43,15 @@ def test_benutzer_anlegen_und_erste_anmeldung(admin, app):
     assert doppelt.status_code == 409
 
 
+def test_heimnetz_adressen_und_ungueltige_adressen(admin):
+    antwort = admin.post("/api/admin/benutzer", json={"email": "kim@heimnetz.local", "anzeigename": "Kim",
+                                                       "passwort": ADMIN_PW})
+    assert antwort.status_code == 201
+    for falsch in ("ohne-at", "a@b@c", "leer @x.de"):
+        antwort = admin.post("/api/admin/benutzer", json={"email": falsch, "anzeigename": "X", "passwort": ADMIN_PW})
+        assert antwort.status_code == 422, falsch
+
+
 def test_kritische_aktionen_brauchen_passwort(admin):
     antwort = admin.post("/api/admin/benutzer", json={"email": "z@example.org", "anzeigename": "Z",
                                                        "passwort": "falsch"})
