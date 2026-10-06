@@ -1,6 +1,6 @@
 # Entwicklungsauftrag Web-UI (Phase 2)
 
-Stand: v0.4 vom 2026-10-06. Entscheidungen vom 2026-10-06 sind
+Stand: v0.5 vom 2026-10-06 (Stufe 1 umgesetzt, siehe STATUS.md). Entscheidungen vom 2026-10-06 sind
 eingearbeitet (STATUS.md, Entscheidungen 1 bis 14). Offen ist nur die
 Regelgrundlage für die Profilauswahl (Abschnitt 15). Noch kein
 Code.
@@ -572,9 +572,13 @@ W10 kann nach W3 parallel zu W5 bis W9 beginnen.
 ## 12. Gestaltung
 
 - Ruhiges, dunkles Standard-Theme mit hellem Alternativ-Theme; eine
-  Akzentfarbe je Risikoprofil (Blau `#38BDF8` defensiv, Grün `#22C55E`
-  ausgewogen, Orange `#F59E0B` aggressiv) durchgängig in Karten,
-  Diagrammen, Badges und der Profilauswahl.
+  Akzentfarbe je Risikoprofil (Blau defensiv, Grün ausgewogen, Orange
+  aggressiv) durchgängig in Karten, Diagrammen, Badges und der
+  Profilauswahl. Umgesetzt mit den im Palette-Validator auf
+  Farbsehschwäche und Kontrast geprüften Stufen: dunkel `#3987E5` /
+  `#199E70` / `#D95926`, hell `#2A78D6` / `#1BAF7A` / `#EB6834`
+  (die ursprünglichen Töne `#38BDF8` / `#22C55E` / `#F59E0B` fielen durch;
+  STATUS.md, Web-UI Stufe 1).
 - Gewinne und Verluste nicht nur über Farbe, sondern zusätzlich über
   Vorzeichen und Symbol (Barrierefreiheit).
 - Trade-Akten als gut lesbare Dokumentseiten mit Seitenleiste

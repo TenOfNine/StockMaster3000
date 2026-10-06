@@ -17,7 +17,7 @@ nachrechenbar, jede Änderung in Git nachvollziehbar.
 | Phase | Inhalt | Stand |
 | --- | --- | --- |
 | 1 Aufbau | Werkzeuge, Tests, GitHub Action, Initialisierung (AP1–AP11) | abgeschlossen (2026-10-06) |
-| 2 Startbetrieb | Testsession, Anlagerichtlinien, Freigabe, Spielstart (AP12); Web-UI (W0–W17) | in Vorbereitung |
+| 2 Startbetrieb | Testsession, Anlagerichtlinien, Freigabe, Spielstart (AP12); Web-UI Stufe 1 (lesend) umgesetzt, Stufe 2 offen | in Vorbereitung |
 | 3 Bewertung | Profile gegen Benchmarks nach etwa drei Monaten | offen |
 | 4 Langzeitbetrieb | Quartals-Meta-Reviews | offen |
 
@@ -116,24 +116,38 @@ führt bei jedem Push die Tests und `pruefe.py --historie` aus.
     portfolios/ trades/ data/   Spielstand, nur über tools/ geschrieben
     journal/ reviews/ strategie/  Begründungen, Reviews, Anlagerichtlinien
     assets/icons/               App-Icon (drei Profile)
+    webui/                      Web-UI: backend/ (FastAPI), frontend/ (React),
+                                deploy/ (Docker, Caddy), demo/ (Demo-Daten)
+    docker-compose.yml          Betrieb der Web-UI (webui/BETRIEB.md)
 
-## Web-UI (geplant)
+## Web-UI
 
-Eine Docker-basierte Weboberfläche ist geplant, standardmäßig nur im
-Heimnetz erreichbar:
+Stufe 1 der Weboberfläche ist umgesetzt: **lesend**, per Docker, standardmäßig
+nur im Heimnetz erreichbar (HTTPS mit lokaler Zertifizierungsstelle).
 
-- Ein Administrator legt Benutzer an; jeder Benutzer verbindet sein
-  eigenes Claude-Pro-Abo.
-- Eigene Arbeitsbereiche mit Schwerpunkt-Mehrfachauswahl (z. B.
-  Technologie, Gesundheit, nur USA, nur Deutschland) und an- und
-  abschaltbaren Risikoprofilen, teilbar mit den Stufen Lesen und
-  Vollzugriff.
-- Trade-Akten mit These, Szenarien, Risikorechnung und Quellen;
-  Zeitachse der Abwägungen; Live-Ansicht der Claude-Sessions.
+![Cockpit](webui/docs/cockpit.png)
 
-Die Web-UI rechnet und bucht nicht selbst, sie nutzt dieselben
-Werkzeuge. Details, Sicherheitskonzept und Arbeitspakete:
-[AUFTRAG_WEBUI.md](AUFTRAG_WEBUI.md).
+- **Cockpit:** Portfolios mit Rendite gegen Benchmark, Wertentwicklung,
+  fällige Reviews, letzte Sessions und Entscheidungen.
+- **Portfolios:** Positionen, Orders, Trades, Limit-Auslastung,
+  Drawdown gegen die Bremsschwellen, Anlagerichtlinie.
+- **Entscheidungen:** Zeitachse und Trade-Akten mit These, Szenarien,
+  Kursdiagramm (Einstieg, Stop, Ziel, Ausführungen), Limitprüfung zur
+  Ausführung und Quellen; Session-Einträge mit verworfenen Alternativen.
+- **Analyse, Regelwerk, Einrichtung, Prüfung:** Ranking, Reviews und
+  Lessons, Kurse, Zertifikatsrechner, Regeln und Limits, Status und
+  Auslegungsfragen, `pruefe.py` per Knopfdruck, Git-Historie.
+- **Sicherheit:** Anmeldung mit Argon2id, Zwei-Faktor (Pflicht für
+  Admins), CSRF-Schutz, Sitzungs-Timeouts, Rate-Limits, Audit-Log,
+  strikte Content-Security-Policy, Heimnetz-Schranke in Proxy und API.
+
+![Trade-Akte](webui/docs/trade-akte.png)
+
+Die Web-UI rechnet und bucht nicht selbst; Kennzahlen, Bewertungen und
+Prüfungen kommen aus `tools/`. Start, Root-Zertifikat, Sicherung und
+Entwicklung: [webui/BETRIEB.md](webui/BETRIEB.md). Ausbaustufe 2
+(Arbeitsbereiche, Claude-Läufe mit eigenem Pro-Abo, Schwerpunkt,
+Profilauswahl): [AUFTRAG_WEBUI.md](AUFTRAG_WEBUI.md).
 
 ## Datenschutz
 

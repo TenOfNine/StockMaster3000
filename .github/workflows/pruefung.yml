@@ -31,3 +31,64 @@ jobs:
 
       - name: Prüfskript über die gesamte Historie
         run: python tools/pruefe.py --historie
+
+  webui-backend:
+    name: Web-UI Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+      - name: Abhängigkeiten (gesperrt)
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check stockmaster tests alembic
+      - name: Tests (Demo-Repository, ohne Netzwerk)
+        run: uv run pytest -q
+
+  webui-frontend:
+    name: Web-UI Frontend und E2E
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: webui/frontend/pnpm-lock.yaml
+      - name: Abhängigkeiten (gesperrt)
+        run: pnpm install --frozen-lockfile
+      - name: Typprüfung
+        run: pnpm lint
+      - name: Komponententests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Backend-Abhängigkeiten für E2E
+        working-directory: webui/backend
+        run: uv sync --frozen
+      - name: Playwright-Browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: E2E-Tests
+        run: pnpm e2e
+
+  webui-docker:
+    name: Web-UI Docker-Rauchtest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stack bauen, starten und prüfen
+        run: bash webui/deploy/rauchtest.sh
