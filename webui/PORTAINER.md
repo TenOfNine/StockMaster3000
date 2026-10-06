@@ -56,8 +56,8 @@ Reference `refs/heads/main`, Compose path `webui/deploy/portainer/stack.yml`
 | --- | --- |
 | `SM_HOSTNAME` | Name im Heimnetz, z. B. `stockmaster.local` |
 | `SPIEL_REPO` | absoluter Pfad aus Schritt 2 |
-| `POSTGRES_ADMIN_PASSWORD` | `openssl rand -hex 24` |
-| `POSTGRES_APP_PASSWORD` | `openssl rand -hex 24` (anderer Wert; nur Buchstaben und Ziffern) |
+| `POSTGRES_ADMIN_PASSWORD` | beliebiges langes Passwort, z. B. `openssl rand -base64 24` |
+| `POSTGRES_APP_PASSWORD` | beliebiges langes Passwort (anderer Wert als der Admin-Wert); Sonderzeichen sind erlaubt |
 | `SM_SCHLUESSEL` | `openssl rand -base64 32` |
 | `SM_IMAGE_PREFIX` | nur bei abweichendem Registry-Pfad, Standard `ghcr.io/tenofnine/stockmaster3000` |
 
@@ -130,8 +130,8 @@ lautet `StockMaster API, Version <Commit>`. Fehlt sie, läuft noch ein altes Ima
 | --- | --- |
 | `required variable … is missing` | Pflicht-Variable fehlt in den Stack-Umgebungsvariablen. |
 | `pull access denied` / `unauthorized` / `manifest unknown` | Registry-Zugang in Portainer fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
-| API startet ständig neu (`restarting`) | Log des Containers ansehen (Portainer → Containers → `stockmaster-api-1` → Logs). Die API wartet bis zu 2 Minuten auf die Datenbank und nennt dort den Grund. Bei „Anmeldung an der Datenbank abgelehnt“: Container `db` neu starten (er gleicht die Passwörter bei jedem Start ab, Log-Zeile `db-abgleich`) und prüfen, dass `POSTGRES_APP_PASSWORD` nur Buchstaben und Ziffern enthält. |
-| `db`-Log: „darf nur Buchstaben und Ziffern enthalten“ | `POSTGRES_APP_PASSWORD` mit `openssl rand -hex 24` neu erzeugen und den Stack erneut deployen. |
+| API startet ständig neu (`restarting`) | Log des Containers ansehen (Portainer → Containers → `stockmaster-api-1` → Logs). Die API wartet bis zu 2 Minuten auf die Datenbank und nennt dort den Grund. Bei „Anmeldung an der Datenbank abgelehnt“: Container `db` neu starten (er gleicht die Passwörter bei jedem Start ab, Log-Zeile `db-abgleich: Passwörter und Anwendungsrolle abgeglichen`). Fehlt diese Zeile oder steht dort `FEHLER`, das `db`-Log schicken. |
+| `db`-Log: `role "stockmaster" does not exist` | Die Anwendungsrolle fehlt (z. B. nach einem abgebrochenen ersten Start). Das `db`-Image legt sie beim nächsten Start selbst an; den Stack neu deployen. Das Volume muss nicht gelöscht werden. |
 | API-Log: `Permission denied: /repo/...` | Dateien im Spiel-Repository sind für andere Benutzer nicht lesbar: `chmod -R a+rX /srv/stockmaster/spiel-repo`. |
 | Seite zeigt „Zugriff nur aus dem Heimnetz“ | Anfrage kommt nicht aus einem privaten Adressbereich (z. B. VPN): Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |
 | Leere Ansicht „kein Commit“ / Git-Historie fehlt | Der Ordner `SPIEL_REPO` ist kein Git-Repository oder `.git` ist nicht lesbar. |
