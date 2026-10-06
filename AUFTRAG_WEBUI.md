@@ -1,8 +1,9 @@
 # Entwicklungsauftrag Web-UI (Phase 2)
 
-Stand: v0.3 vom 2026-10-06. Entscheidungen vom 2026-10-06 sind
-eingearbeitet (STATUS.md, Entscheidungen 1 bis 12). Alle Punkte aus
-Abschnitt 14 sind geklärt. Noch kein Code.
+Stand: v0.4 vom 2026-10-06. Entscheidungen vom 2026-10-06 sind
+eingearbeitet (STATUS.md, Entscheidungen 1 bis 14). Offen ist nur die
+Regelgrundlage für die Profilauswahl (Abschnitt 15). Noch kein
+Code.
 
 ## 1. Ziel
 
@@ -16,7 +17,9 @@ betrieben und standardmäßig nur aus dem Heimnetz erreichbar:
   den Stufen **Lesen** und **Vollzugriff**.
 - Jeder Arbeitsbereich ist über Mehrfachauswahlen nach Schwerpunkt und
   Anlagestrategie konfigurierbar, z. B. Technologie, Gesundheit, nur
-  USA, nur Deutschland.
+  USA, nur Deutschland. Die Risikoprofile defensiv, ausgewogen und
+  aggressiv sind je Arbeitsbereich per Mehrfachauswahl an- und
+  abschaltbar.
 - Jeder Benutzer verbindet sein privates Claude-Pro-Abo und kann es
   testen. Claude führt die Sessions aus; die UI zeigt sie live.
 - Alles aus dem Repository ist einsehbar, die Punkte aus
@@ -72,7 +75,7 @@ betrieben und standardmäßig nur aus dem Heimnetz erreichbar:
 
 | Dienst | Aufgabe | Netz | Besonderheiten |
 | --- | --- | --- | --- |
-| `proxy` | Caddy, liefert die SPA aus, leitet `/api` weiter | `edge`, `app` | einziger veröffentlichter Port; lässt standardmäßig nur private Adressbereiche zu (Abschnitt 4.6) |
+| `proxy` | Caddy, liefert die SPA aus, leitet `/api` weiter | `edge`, `app` | einziger veröffentlichter Port; lässt standardmäßig nur private Adressbereiche zu (Abschnitt 4.7) |
 | `api` | FastAPI | `app`, `data` | nicht-root, read-only Root-FS, kein Docker-Socket |
 | `worker` | führt `tools/` und Claude-Läufe aus | `data`, `egress` | Python, git, Node + Claude Code CLI; ausgehend nur Internet (Anthropic, Yahoo, Web-Suche) |
 | `db` | PostgreSQL | `data` (internal) | kein veröffentlichter Port |
@@ -88,8 +91,8 @@ Digest gepinnt.
 
 - Ein Arbeitsbereich ist eine eigenständige Spielinstanz: eigenes
   Git-Repository unter `/data/workspaces/<uuid>/repo`, eigene Portfolios
-  (immer defensiv, ausgewogen und aggressiv mit je 1.000 EUR;
-  Entscheidung 8), eigene Benchmark, eigenes Journal.
+  (Auswahl aus defensiv, ausgewogen und aggressiv mit je 1.000 EUR,
+  siehe 4.4; Entscheidung 13), eigene Benchmark, eigenes Journal.
 - Erzeugt wird er aus einer **Vorlage** (Spielteil dieses Repositorys:
   CLAUDE.md, regeln.md, config/, tools/, tests/, Vorlagen in strategie/)
   als frischer erster Commit ohne Historie, damit keine Altdaten
@@ -143,7 +146,32 @@ Einschränkung über regeln.md hinaus.
 - Regelgrundlage: regeln.md v1.2, Abschnitt 3 "Schwerpunkt je
   Arbeitsbereich" (Entscheidung 10).
 
-### 4.4 Datenhaltung
+### 4.4 Profilauswahl (Mehrfachauswahl)
+
+Je Arbeitsbereich in `config/projekt.json` als Liste `profile_aktiv`, in
+der UI als Mehrfachauswahl (Chips in den Profilfarben). Grundlage:
+Entscheidung 13; die Regelgrundlage fehlt noch (Abschnitt 15).
+
+- Auswahl aus defensiv, ausgewogen und aggressiv; mindestens ein Profil;
+  Standard beim Anlegen: alle drei.
+- Limits und Benchmark je Profil bleiben wie in regeln.md Abschnitt 7;
+  die Auswahl bestimmt nur, welche Portfolios es gibt.
+- **Vor dem Startdatum** frei änderbar.
+- **Nach dem Startdatum** nur per Änderungsantrag mit Freigabe durch den
+  Ersteller, mit Datum und ohne Rückwirkung (Vorschlag, konservativ):
+  - Aktivieren: neues Portfolio mit 1.000 EUR und eigenem Startdatum
+    (frühestens der nächste Handelstag nach der Freigabe); die Benchmark
+    dieses Profils startet am selben Tag.
+  - Deaktivieren: nur ohne offene Positionen und ohne offene Orders.
+    Status "deaktiviert", Bewertung und Verzinsung enden, Historie und
+    Kennzahlen bleiben sichtbar.
+  - Ein deaktiviertes Profil kann wieder aktiviert werden und setzt dann
+    mit seinem Endstand fort; die Lücke wird in Kennzahlen und Ranking
+    ausgewiesen.
+- Ranking und Profilvergleich zeigen nur aktive bzw. je Zeitraum aktive
+  Profile; "zu wenig Daten" gilt je Profil.
+
+### 4.5 Datenhaltung
 
 - **Quelle der Wahrheit für Spieldaten ist das Git-Repository** des
   Arbeitsbereichs. Die API liest Dateien über einen Lesedienst (Parser für
@@ -175,7 +203,7 @@ Einschränkung über regeln.md hinaus.
 - `kennung` ist eine zufällige, neutrale Kennung (z. B. `a-7k2m`), die in
   Repositories anstelle von Namen verwendet wird.
 
-### 4.5 Claude-Anbindung
+### 4.6 Claude-Anbindung
 
 **Zugang** (Konto → Claude-Verbindung), Entscheidung 2:
 
@@ -250,7 +278,7 @@ Arbeitsbereich nicht änderbar):
   aus der Benutzertabelle in allen Schreibvorgängen (Leitplanke 7).
 - Web-Suche erlaubt; Quellenpflicht bleibt.
 
-### 4.6 Erreichbarkeit (Entscheidung 6)
+### 4.7 Erreichbarkeit (Entscheidung 6)
 
 - **Standard: nur Heimnetz.** Caddy lauscht auf dem Host, lässt aber nur
   private Adressbereiche zu (`10.0.0.0/8`, `172.16.0.0/12`,
@@ -281,7 +309,8 @@ Konto-Menü.
    - Portfolio-Karten: Wert, Rendite gegen Benchmark, Drawdown-Stufe,
      Cashquote; NAV-Verlauf gegen Benchmark; Warnungen aus `pruefe.py`;
      offene Orders; fällige Reviews und Termine; letzter Lauf.
-2. **Portfolios** → je Portfolio des Arbeitsbereichs mit Reitern:
+2. **Portfolios** → je aktivem Portfolio des Arbeitsbereichs (deaktivierte
+   ausgegraut, nur lesen) mit Reitern:
    - Überblick (Kennzahlen aus ranking.md, NAV, Drawdown)
    - Positionen (Einstand, Wert, Hebel, Stop/Ziel, Abstand zum Stop,
      Region und Sektor)
@@ -318,14 +347,15 @@ Konto-Menü.
    - Zertifikatsrechner (`produkte.py`, nur Anzeige)
 6. **Regelwerk**
    - Spielregeln (regeln.md, nur lesen, mit Verlauf)
-   - Schwerpunkt und Anlagestrategie (Mehrfachauswahlen aus 4.3,
-     Durchsetzung verbindlich/Leitlinie)
+   - Profilauswahl (Mehrfachauswahl aus 4.4) sowie Schwerpunkt und
+     Anlagestrategie (Mehrfachauswahlen aus 4.3, Durchsetzung
+     verbindlich/Leitlinie)
    - Profile und Limits, Kosten, Universum (Börsen, Feiertage,
      Basiswerte), Projekt: jeweils Formular mit Validierung
    - Änderungsanträge (Diff-Vorschau, Freigabe, Status)
 7. **Einrichtung und Aufbau**
-   - Einrichtung des Arbeitsbereichs (entspricht AP12): Schwerpunkt,
-     Anlagerichtlinien, Testsession, Freigabe, Startdatum
+   - Einrichtung des Arbeitsbereichs (entspricht AP12): Profilauswahl,
+     Schwerpunkt, Anlagerichtlinien, Testsession, Freigabe, Startdatum
    - Aufbau Phase 1 (nur lesen): Arbeitspakete AP1–AP11 mit
      Abnahmekriterien, verknüpften Commits und Testergebnissen
    - Auslegungsfragen 1–17 (und folgende): bestätigen oder Änderung
@@ -338,7 +368,7 @@ Konto-Menü.
 10. **Konto**: Profil, Passwort, Zwei-Faktor, Claude-Verbindung, aktive
     Anmeldungen
 11. **Administration** (nur Admins): Benutzer, Arbeitsbereiche (nur
-    Metadaten), Systemstatus, Erreichbarkeit (4.6), globale Limits,
+    Metadaten), Systemstatus, Erreichbarkeit (4.7), globale Limits,
     Audit-Log
 
 ## 6. Rechtemodell
@@ -422,7 +452,7 @@ Abnahme: `docker compose up` startet alle Dienste gesund; nur der
 Proxy-Port ist erreichbar; Anfragen von öffentlichen Adressen erhalten
 403; das bestehende `pytest` läuft unverändert.
 
-**W2 Datenbank und RLS.** Schema aus 4.4, Rollen, Policies, Migrationen.
+**W2 Datenbank und RLS.** Schema aus 4.5, Rollen, Policies, Migrationen.
 Abnahme: RLS-Tests (ohne Kontext, fremder Kontext, Schreibversuch) grün.
 
 **W3 Authentifizierung.** Admin-Erstanlage per CLI (nur einmal), Login,
@@ -441,14 +471,24 @@ Abnahme: `session.py start/ende` und `pruefe.py --historie` laufen in
 einem neuen Arbeitsbereich; Isolationstests für Freigaben; das neue
 Repository enthält keine Namen.
 
-**W6 Schwerpunkt.** Mehrfachauswahlen aus 4.3, `config/schwerpunkt.json`,
+**W6 Schwerpunkt und Profilauswahl.** Mehrfachauswahlen aus 4.3,
+`config/schwerpunkt.json`,
 Erweiterung von `kurse.py` um protokollierte Stammdaten (Region, Sektor),
 neues Limit "Schwerpunkt" in `limits.py` mit Tests (Grundlage:
 regeln.md v1.2, Abschnitt 3). Eine Datei `config/schwerpunkt.json` wird
-erst zusammen mit der Prüfung eingeführt.
-Abnahme: je Dimension ein Test für Annahme und Ablehnung; unbekannte
-Stammdaten führen bei "verbindlich" zur Ablehnung mit Regel, Grenzwert
-und Istwert.
+erst zusammen mit der Prüfung eingeführt. Profilauswahl nach 4.4:
+`profile_aktiv` in `config/projekt.json`; `tools/` (gemeinsam, init,
+limits, buchen, bewertung, pruefe) arbeiten mit den aktiven Profilen
+statt fest mit dreien; Aktivieren und Deaktivieren nach dem Start. Der
+Teil Profilauswahl beginnt erst, wenn die Regelgrundlage vorliegt
+(Abschnitt 15); dann wird auch CLAUDE.md ("drei Portfolios")
+angepasst.
+Abnahme: je Schwerpunkt-Dimension ein Test für Annahme und Ablehnung;
+unbekannte Stammdaten führen bei "verbindlich" zur Ablehnung mit Regel,
+Grenzwert und Istwert; Szenario-Tests mit einem, zwei und drei aktiven
+Profilen; Deaktivieren mit offener Position wird abgelehnt; `pruefe.py`
+erkennt ein Portfolio, das nicht in `profile_aktiv` steht; ohne
+`profile_aktiv` verhalten sich alle Werkzeuge wie bisher (alle drei).
 
 **W7 Lesedienst.** Parser für portfolios, trades, nav, limits, journal
 (J- und S-Einträge), reviews, strategie, lessons, ranking, STATUS.md
@@ -472,7 +512,8 @@ gesetzte `ANTHROPIC_API_KEY` erreicht den Lauf nicht.
 
 **W10 Frontend-Grundgerüst und Designsystem.** Layout, Navigation aus
 Abschnitt 5, Theme, Anmeldung, Fehler- und Ladezustände, deutsche
-Zahlen- und Datumsformate, App-Icon.
+Zahlen- und Datumsformate, App-Icon und Favicon aus
+`assets/icons/drei-profile.svg` (Entscheidung 14).
 Abnahme: Lighthouse-Barrierefreiheit ≥ 90; nutzbar auf Tablet und
 Smartphone im Heimnetz.
 
@@ -506,7 +547,7 @@ Backup/Restore, Schlüsselrotation, Pro-Token erneuern).
 Abnahme: Neuinstallation nach Anleitung auf einem frischen Rechner.
 
 **W17 Zugriff von unterwegs (optional).** Compose-Profil `extern` mit
-Variante A (VPN) und Variante B (Domain, Let's Encrypt) nach 4.6.
+Variante A (VPN) und Variante B (Domain, Let's Encrypt) nach 4.7.
 Abnahme: ohne `ZUGRIFF_EXTERN=ein` und Admin-Bestätigung startet das
 Profil nicht; Variante B startet nur mit erzwungener Zwei-Faktor-
 Anmeldung für alle Benutzer.
@@ -531,14 +572,17 @@ W10 kann nach W3 parallel zu W5 bis W9 beginnen.
 ## 12. Gestaltung
 
 - Ruhiges, dunkles Standard-Theme mit hellem Alternativ-Theme; eine
-  Akzentfarbe je Risikoprofil (z. B. Blau defensiv, Grün ausgewogen,
-  Orange aggressiv) durchgängig in Karten, Diagrammen und Badges.
+  Akzentfarbe je Risikoprofil (Blau `#38BDF8` defensiv, Grün `#22C55E`
+  ausgewogen, Orange `#F59E0B` aggressiv) durchgängig in Karten,
+  Diagrammen, Badges und der Profilauswahl.
 - Gewinne und Verluste nicht nur über Farbe, sondern zusätzlich über
   Vorzeichen und Symbol (Barrierefreiheit).
 - Trade-Akten als gut lesbare Dokumentseiten mit Seitenleiste
   (Kennzahlen, Status, Verknüpfungen) statt reiner Tabellen.
-- App-Icon und Favicon aus den Icon-Vorschlägen (Auswahl durch die
-  Auftraggeber).
+- App-Icon und Favicon: `assets/icons/drei-profile.svg` (drei Balken in
+  den Profilfarben Blau, Grün, Orange mit steigender Linie;
+  Entscheidung 14). Die Profilfarben im Icon und in der UI sind
+  identisch.
 
 ## 13. Nicht Teil dieses Auftrags
 
@@ -549,7 +593,9 @@ Benchmarks (spätere Regeländerung).
 
 ## 14. Geklärte Punkte
 
-1. Portfolios je Arbeitsbereich: immer die drei Profile (Entscheidung 8).
+1. Portfolios je Arbeitsbereich: zunächst immer die drei Profile
+   (Entscheidung 8), geändert durch Entscheidung 13: per Mehrfachauswahl
+   an- und abschaltbar.
 2. Läufe durch Mitglieder mit Vollzugriff: erlaubt mit eigenem Pro-Abo;
    Sperre und Journal tragen die Kennung des Auftraggebers
    (Entscheidung 9).
@@ -559,3 +605,15 @@ Benchmarks (spätere Regeländerung).
 4. Namen im Repository: entfernt bis auf die Git-Historie
    (Entscheidung 12).
 5. Startdatum: erst nach Freigabe von AP12 (Entscheidung 11).
+
+## 15. Offene Punkte
+
+1. **Regelgrundlage für die Profilauswahl** (betrifft W6, Teil
+   Profilauswahl): regeln.md legt an drei Stellen fest drei Portfolios fest
+   (Abschnitt 2: "Startkapital: 1.000 EUR je Portfolio (defensiv,
+   ausgewogen, aggressiv)" und "eigenen drei Portfolios"; Abschnitt 11:
+   "Monatsvergleich der drei Profile"). Die einmalige Änderungsfreigabe
+   für regeln.md ist verbraucht (Entscheidung 10); Claude ändert die
+   Datei nicht erneut. Die Auftraggeber ändern regeln.md selbst oder
+   erteilen dafür ausdrücklich eine neue Freigabe. Ein Formulierungsvorschlag
+   steht in STATUS.md, offene Auslegungsfrage 20.

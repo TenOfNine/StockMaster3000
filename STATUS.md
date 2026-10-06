@@ -57,7 +57,8 @@ mit Claude Code (ohne Namen gemäß Entscheidung 4):
    Sicherheitsfunktionen sind mit pandas, yfinance und pytest nicht
    umsetzbar). Für tools/ gilt weiterhin "nur pandas, yfinance, pytest".
 8. Je Arbeitsbereich gibt es immer die drei Profile defensiv, ausgewogen
-   und aggressiv (AUFTRAG_WEBUI.md, Frage 14.1).
+   und aggressiv (AUFTRAG_WEBUI.md, Frage 14.1). Ersetzt durch
+   Entscheidung 13.
 9. Mitglieder mit Vollzugriff dürfen Sessions mit ihrem eigenen Pro-Abo
    starten; Sperre und Journal tragen die Kennung des Auftraggebers
    (AUFTRAG_WEBUI.md, Frage 14.2).
@@ -74,6 +75,12 @@ mit Claude Code (ohne Namen gemäß Entscheidung 4):
     `auftraggeber-a`, `auftraggeber-b`. Die Zuordnung zu Personen liegt
     außerhalb des Repositorys. Die Git-Historie bleibt unverändert,
     damit Prüfspur und Nur-Anhängen-Prüfung intakt bleiben.
+13. Die Profile defensiv, ausgewogen und aggressiv sind je Arbeitsbereich
+    per Mehrfachauswahl an- und abschaltbar (ersetzt Entscheidung 8;
+    Umsetzung AUFTRAG_WEBUI.md 4.4 und W6). Voraussetzung ist eine
+    Regelgrundlage in regeln.md (offene Auslegungsfrage 20).
+14. App-Icon und Favicon: Vorschlag "Drei Profile",
+    abgelegt als assets/icons/drei-profile.svg.
 
 ## Offene Auslegungsfragen (Phase 1, konservativ umgesetzt, Freigabe erbeten)
 
@@ -170,3 +177,28 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
   Live-Daten noch ungeprüft, weil Yahoo aus der Cloud-Umgebung von
   Claude Code (Netzwerkrichtlinie) nicht erreichbar war; Prüfung in der
   Testsession (AP12) auf einem Rechner mit Internetzugang.
+
+## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
+
+20. Profilauswahl (Entscheidung 13) und regeln.md v1.2 widersprechen
+    sich: Abschnitt 2 nennt "1.000 EUR je Portfolio (defensiv,
+    ausgewogen, aggressiv)" und "eigenen drei Portfolios", Abschnitt 11
+    den "Monatsvergleich der drei Profile". Die einmalige Freigabe zur
+    Änderung von regeln.md ist verbraucht (Entscheidung 10); Claude
+    ändert die Datei nicht erneut. Bis zur Klärung bleiben in diesem
+    Repository und in den Werkzeugen alle drei Profile aktiv.
+    Formulierungsvorschlag für die Auftraggeber:
+    - Abschnitt 2: "Startkapital: 1.000 EUR je aktivem Portfolio. Je
+      Arbeitsbereich sind die Profile defensiv, ausgewogen und aggressiv
+      einzeln aktivierbar (mindestens eines; config/projekt.json,
+      `profile_aktiv`; ohne Angabe alle drei)."
+    - Abschnitt 2: "eigenen drei Portfolios" ersetzen durch "eigenen
+      Portfolios".
+    - Abschnitt 2, neu: "Nach dem Startdatum ändern nur die
+      Auftraggeber die Auswahl, mit Datum und ohne Rückwirkung.
+      Aktivieren: neues Portfolio mit 1.000 EUR ab dem nächsten
+      Handelstag nach der Freigabe, Benchmark ab demselben Tag.
+      Deaktivieren: nur ohne offene Positionen und Orders; Bewertung und
+      Verzinsung enden, die Historie bleibt."
+    - Abschnitt 11: "Monatsvergleich der drei Profile" ersetzen durch
+      "Monatsvergleich der aktiven Profile".

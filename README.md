@@ -1,3 +1,5 @@
+<img src="assets/icons/drei-profile.svg" alt="StockMaster 3000 Icon" width="96" height="96">
+
 # StockMaster 3000 – Claude-Börsenexperiment
 
 [![Prüfung](https://github.com/TenOfNine/StockMaster3000/actions/workflows/pruefung.yml/badge.svg)](https://github.com/TenOfNine/StockMaster3000/actions/workflows/pruefung.yml)
@@ -112,6 +114,7 @@ führt bei jedem Push die Tests und `pruefe.py --historie` aus.
     tests/                      Tests ohne Netzwerk, inkl. Szenario-Tests
     portfolios/ trades/ data/   Spielstand, nur über tools/ geschrieben
     journal/ reviews/ strategie/  Begründungen, Reviews, Anlagerichtlinien
+    assets/icons/               App-Icon (drei Profile)
 
 ## Web-UI (geplant)
 
@@ -121,8 +124,9 @@ Heimnetz erreichbar:
 - Ein Administrator legt Benutzer an; jeder Benutzer verbindet sein
   eigenes Claude-Pro-Abo.
 - Eigene Arbeitsbereiche mit Schwerpunkt-Mehrfachauswahl (z. B.
-  Technologie, Gesundheit, nur USA, nur Deutschland), teilbar mit den
-  Stufen Lesen und Vollzugriff.
+  Technologie, Gesundheit, nur USA, nur Deutschland) und an- und
+  abschaltbaren Risikoprofilen, teilbar mit den Stufen Lesen und
+  Vollzugriff.
 - Trade-Akten mit These, Szenarien, Risikorechnung und Quellen;
   Zeitachse der Abwägungen; Live-Ansicht der Claude-Sessions.
 
