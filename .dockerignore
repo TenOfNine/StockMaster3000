@@ -1,0 +1,15 @@
+# Nur das Nötige in den Build-Kontext; nie Geheimnisse.
+secrets/
+.env
+.git/
+**/node_modules/
+**/.venv/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+**/test-results/
+**/*.db
+data/
+portfolios/
+trades/
+journal/

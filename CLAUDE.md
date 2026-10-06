@@ -57,6 +57,10 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
    Review und die Journal-Einträge der letzten Sessions.
 5. Ist ein Review fällig (erste Session einer neuen Kalenderwoche,
    Monats- oder Quartalswechsel, Drawdown-Stufe 2), erstelle es zuerst.
+   Welche fällig sind, nennt `python tools/termine.py` (auch
+   `session.py start/status`). Dateinamen: `reviews/JJJJ-KWnn_woche.md`,
+   `reviews/JJJJ-MM_monat.md`, `reviews/JJJJ-Qn_quartal.md`,
+   `reviews/JJJJ-MM-TT_stufe2_<profil>.md`.
 6. Marktüberblick: Kurse über `tools/kurse.py`, News, Makrodaten und
    Termine über die Web-Suche (immer mit URL und Datum).
 7. Entscheide je Portfolio im Rahmen seiner Anlagerichtlinie.

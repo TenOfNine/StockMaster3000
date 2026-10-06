@@ -170,7 +170,10 @@ def oeffnung(ticker: str, datum: date) -> datetime:
 
 
 def schluss(ticker: str, datum: date) -> datetime:
-    return _boersenzeit(boerse_von(ticker)[1], datum, boerse_von(ticker)[1]["schluss"])
+    """Handelsschluss; an Tagen mit verkürztem Handel (fruehschluss) früher."""
+    _, boerse = boerse_von(ticker)
+    uhr = boerse.get("fruehschluss", {}).get(datum.isoformat(), boerse["schluss"])
+    return _boersenzeit(boerse, datum, uhr)
 
 
 def kerzen_beginn(ticker: str, datum: date) -> datetime:

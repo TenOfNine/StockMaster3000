@@ -23,7 +23,48 @@
 
 - [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md)
 - [x] W0 Klärung der offenen Punkte zur Web-UI (Entscheidungen 1 bis 12)
-- [ ] W1 bis W17 Web-UI (AUFTRAG_WEBUI.md; Fortschritt wird je Paket hier ergänzt)
+- [ ] W1 bis W17 Web-UI (AUFTRAG_WEBUI.md); Stufe 1 (lesend) umgesetzt, Stand je Paket unten
+- [x] Werkzeug-Ergänzungen vor dem Spielstart: Fälligkeiten (tools/termine.py),
+  Session-Einträge und Journal-Vorlage in pruefe.py, Kalender bis 2028 mit
+  NYSE-Frühschlüssen, Dateirechte atomar geschriebener Dateien (2026-10-06)
+
+## Web-UI Stufe 1 (lesend), Stand 2026-10-06
+
+Vorschlag aus der Planung: Die Web-UI in zwei Stufen bauen; Stufe 1 zeigt
+das laufende Spiel, Stufe 2 bringt Arbeitsbereiche und Claude-Läufe.
+Betrieb und Tests: webui/BETRIEB.md.
+
+| Paket | Stand | Offen für Stufe 2 bzw. Abnahme |
+| --- | --- | --- |
+| W1 Grundgerüst und Docker | Compose mit proxy, api, db; interne Netze, Secrets, Healthchecks, Härtung; Caddy mit lokaler CA und Heimnetz-Schranke; Rauchtest (webui/deploy/rauchtest.sh) | Dienste worker und redis kommen mit W8/W9 |
+| W2 Datenbank und RLS | Schema und Alembic-Migration (Benutzer, Sitzungen, Audit-Log), PostgreSQL mit Anwendungsrolle ohne Superuser- und BYPASSRLS-Recht | RLS-Policies folgen mit den mandantenbezogenen Tabellen (Arbeitsbereiche, W5); in Stufe 1 gibt es nur eigene Sitzungen |
+| W3 Authentifizierung | erfüllt: Admin-Erstanlage per CLI (nur einmal), Login, serverseitige Sitzungen, CSRF und Origin-Prüfung, TOTP, Sperre bei Fehlversuchen, Passwortwechsel | Rate-Limits im Prozess statt Redis (ein API-Prozess) |
+| W4 Benutzerverwaltung | erfüllt: Admin-Router (anlegen, sperren, Passwort und Zwei-Faktor zurücksetzen, Admin-Rolle), Kennung je Benutzer, Matrixtest | – |
+| W7 Lesedienst | erfüllt für ein Spiel-Repository: Portfolios, Trades, NAV, Limits, Journal (J und S), Reviews, Strategie, Lessons, Ranking, STATUS.md, config, Git-Log | je Arbeitsbereich mit W5 |
+| W8 Werkzeug-Ausführung | nur lesend: tools/pruefe.py in eigenem Prozess mit Zeitlimit, Zertifikatsrechner über tools/produkte.py | Positivliste im Worker mit W8 |
+| W10 Frontend-Grundgerüst | Layout, Navigation, Befehlspalette, dunkles und helles Theme, deutsche Formate, mobile Navigation, App-Icon | Lighthouse-Messung steht aus |
+| W11 Cockpit und Portfolios | erfüllt; Test: Werte stimmen mit ranking.md und data/nav überein | – |
+| W12 Entscheidungen | Zeitachse, Trade-Akten, Session-Einträge (Abwägungen, Nichtstun) | Ideen und Verknüpfung zu Läufen mit W9 |
+| W13 Regelwerk, Einrichtung | Anzeige von Regeln, Limits, Kosten, Universum, Arbeitspaketen, Entscheidungen, Auslegungsfragen | Formulare und Änderungsanträge |
+| W15 CI | GitHub Action um Backend-, Frontend-, E2E- und Docker-Jobs erweitert; bestehender Job unverändert | Audits, Image-Scan, SBOM |
+| W16 Dokumentation | webui/BETRIEB.md, README | Neuinstallation auf frischem Rechner |
+
+Technische Festlegungen Stufe 1:
+- Profilfarben: Die geplanten Töne (#38BDF8, #22C55E, #F59E0B) fielen im
+  Palette-Validator bei Farbsehschwäche durch (Grün und Orange für
+  Protanopie kaum unterscheidbar, ΔE 5,7). Verwendet werden geprüfte
+  Stufen derselben Farbfamilien: dunkel #3987E5 / #199E70 / #D95926,
+  hell #2A78D6 / #1BAF7A / #EB6834. App-Icon entsprechend angepasst.
+- Gewinne und Verluste immer mit Vorzeichen und Pfeil, nie nur über Farbe;
+  jedes Diagramm hat eine Tabellenansicht bzw. Beschriftung.
+- Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
+  und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
+  Netzwerk ersetzt); das Repository ist nur lesend eingebunden.
+- E-Mail-Adressen werden bewusst einfach geprüft, damit Heimnetz-Adressen
+  wie name@heimnetz.local möglich sind.
+- In der Cloud-Umgebung von Claude Code sind Yahoo Finance und die
+  Debian-Paketquellen gesperrt. Der Docker-Rauchtest lief dort mit einem
+  Test-Image ohne git; der vollständige Build läuft in der GitHub Action.
 
 ## Entscheidungen
 
