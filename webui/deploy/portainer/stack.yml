@@ -48,7 +48,8 @@ services:
     # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
     pull_policy: always
     environment:
-      SM_DATENBANK_URL: "postgresql+psycopg://stockmaster:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD fehlt}@db:5432/stockmaster"
+      SM_DATENBANK_HOST: db
+      SM_DATENBANK_PASSWORT: "${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD fehlt}"
       SM_SCHLUESSEL: "${SM_SCHLUESSEL:?SM_SCHLUESSEL fehlt (openssl rand -base64 32)}"
       SM_REPO_PFAD: /repo
       SM_COOKIE_SICHER: "true"

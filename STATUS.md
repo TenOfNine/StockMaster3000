@@ -60,7 +60,8 @@ Technische Festlegungen Stufe 1:
 - Portainer (2026-10-06): Stack `webui/deploy/portainer/stack.yml` ohne lokale Dateien; Images
   (api, proxy, db) baut `.github/workflows/images.yml` nach ghcr.io; Geheimnisse als
   Stack-Umgebungsvariablen statt Docker Secrets (Portainer Standalone kennt keine Secrets-Dateien);
-  Anwendungspasswort nur Buchstaben und Ziffern (steht in der Datenbank-URL). Anleitung:
+  Passwörter dürfen beliebige Zeichen enthalten (die API baut die DB-URL aus Einzelteilen und maskiert das
+  Passwort; Init- und Abgleichskript quotieren per psql-Variable). Anleitung:
   webui/PORTAINER.md. Das Root-Zertifikat ist unter /stockmaster-root.crt abrufbar (nur Heimnetz).
 - Startreihenfolge (2026-10-06, Fund bei der Einrichtung in Portainer): Der PostgreSQL-Healthcheck über
   den Unix-Socket meldete „bereit“, solange noch der temporäre Init-Server lief; die API startete zu früh
@@ -72,6 +73,10 @@ Technische Festlegungen Stufe 1:
   schreibt ihre Version (Commit) als erste Logzeile, der DB-Healthcheck prüft die Anmeldung der
   Anwendungsrolle (API startet erst nach dem Passwortabgleich), und abgelehnte Anmeldungen werden
   mehrfach wiederholt, bevor die API aufgibt.
+- Sonderzeichen in Passwörtern (2026-10-06, dritter Fund in Portainer): Die frühere Regel „nur Buchstaben
+  und Ziffern“ ließ das Init-Skript beim ersten Start abbrechen; die halb initialisierte Datenbank hatte
+  keine Anwendungsrolle (`role "stockmaster" does not exist`). Regel entfernt, Passwort getrennt von der
+  URL, Abgleich legt fehlende Rolle und Datenbank an.
 - Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
   und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
   Netzwerk ersetzt); das Repository ist nur lesend eingebunden.

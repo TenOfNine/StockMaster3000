@@ -18,6 +18,13 @@ class Einstellungen(BaseSettings):
 
     datenbank_url: str = "sqlite:///./stockmaster.db"
     datenbank_url_datei: Path | None = None
+    # Alternative zur URL: einzelne Teile, das Passwort darf beliebige Zeichen enthalten
+    # (wird beim Bauen der URL korrekt maskiert).
+    datenbank_host: str | None = None
+    datenbank_port: int = 5432
+    datenbank_benutzer: str = "stockmaster"
+    datenbank_name: str = "stockmaster"
+    datenbank_passwort: str | None = None
     repo_pfad: Path = Path("/repo")
     schluessel: str | None = None
     schluessel_datei: Path | None = None
@@ -35,6 +42,13 @@ class Einstellungen(BaseSettings):
         return "__Host-sid" if self.cookie_sicher else "sm_sid"
 
     def db_url(self) -> str:
+        if self.datenbank_host:
+            from sqlalchemy.engine import URL
+
+            return URL.create("postgresql+psycopg", username=self.datenbank_benutzer,
+                              password=self.datenbank_passwort, host=self.datenbank_host,
+                              port=self.datenbank_port, database=self.datenbank_name
+                              ).render_as_string(hide_password=False)
         if self.datenbank_url_datei and self.datenbank_url_datei.exists():
             return self.datenbank_url_datei.read_text(encoding="utf-8").strip()
         return self.datenbank_url

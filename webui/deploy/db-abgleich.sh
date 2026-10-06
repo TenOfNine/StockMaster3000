@@ -14,7 +14,6 @@ abgleichen() {
   done
   APP="${POSTGRES_APP_PASSWORD:-}"
   [ -n "$APP" ] || { echo "db-abgleich: POSTGRES_APP_PASSWORD nicht gesetzt, Abgleich übersprungen" >&2; return 0; }
-  case "$APP" in *[!A-Za-z0-9]*) echo "db-abgleich: POSTGRES_APP_PASSWORD darf nur Buchstaben und Ziffern enthalten" >&2; return 0 ;; esac
   # Lokale Socket-Verbindung im Container (vertrauenswürdig); Passwörter über psql-Variablen quotiert.
   PGPASSWORD="" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -v app="$APP" -v admin="${POSTGRES_PASSWORD:-}" <<'SQL' \
     && echo "db-abgleich: Passwörter und Anwendungsrolle abgeglichen" \
@@ -25,6 +24,7 @@ SELECT format('ALTER ROLE stockmaster PASSWORD %L', :'app') \gexec
 SELECT CASE WHEN :'admin' <> '' THEN format('ALTER ROLE postgres PASSWORD %L', :'admin') END \gexec
 SELECT 'CREATE DATABASE stockmaster OWNER stockmaster'
   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'stockmaster') \gexec
+SELECT 'REVOKE ALL ON DATABASE stockmaster FROM PUBLIC' \gexec
 SQL
 }
 
