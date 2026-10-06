@@ -7,7 +7,7 @@
 ## Arbeitspakete Phase 1
 
 - [x] AP1 Grundgerüst und Konfiguration
-- [ ] AP2 Kursdaten (tools/kurse.py)
+- [x] AP2 Kursdaten (tools/kurse.py)
 - [ ] AP3 Synthetische Zertifikate (tools/produkte.py)
 - [ ] AP4 Limitprüfung (tools/limits.py)
 - [ ] AP5 Orders und Buchung (tools/buchen.py)
