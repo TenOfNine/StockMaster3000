@@ -1,7 +1,7 @@
 # Projektstatus
 
 - Phase: 2 (Startbetrieb-Vorbereitung). Phase 1 (Aufbau, AP1 bis AP11) abgeschlossen am 2026-10-06; AP12 nach Phase 2 verschoben (Entscheidung 5)
-- Startdatum des Spiels: noch nicht gesetzt (wird mit tools/init.py nach der Freigabe in AP12 festgelegt, nie rückwirkend)
+- Startdatum des Spiels: erst nach Freigabe von AP12 (wird dann mit tools/init.py gesetzt, nie rückwirkend; Entscheidung 11)
 - Letzte Session: keine
 
 ## Arbeitspakete Phase 1
@@ -22,7 +22,8 @@
 ## Arbeitspakete Phase 2
 
 - [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md)
-- [ ] W0 bis W17 Web-UI (AUFTRAG_WEBUI.md; Fortschritt wird dort je Paket hier ergänzt)
+- [x] W0 Klärung der offenen Punkte zur Web-UI (Entscheidungen 1 bis 12)
+- [ ] W1 bis W17 Web-UI (AUFTRAG_WEBUI.md; Fortschritt wird je Paket hier ergänzt)
 
 ## Entscheidungen
 
@@ -55,6 +56,24 @@ mit Claude Code (ohne Namen gemäß Entscheidung 4):
    mit Lockfiles (Begründung: Weboberfläche, Datenbank und
    Sicherheitsfunktionen sind mit pandas, yfinance und pytest nicht
    umsetzbar). Für tools/ gilt weiterhin "nur pandas, yfinance, pytest".
+8. Je Arbeitsbereich gibt es immer die drei Profile defensiv, ausgewogen
+   und aggressiv (AUFTRAG_WEBUI.md, Frage 14.1).
+9. Mitglieder mit Vollzugriff dürfen Sessions mit ihrem eigenen Pro-Abo
+   starten; Sperre und Journal tragen die Kennung des Auftraggebers
+   (AUFTRAG_WEBUI.md, Frage 14.2).
+10. Claude darf regeln.md einmalig anpassen. Umgesetzt am 2026-10-06 als
+    v1.2: Auftraggeber als neutrale Kennungen, Startdatum nach Freigabe
+    von AP12, Arbeitsbereiche und Schwerpunkt je Arbeitsbereich,
+    Session-Start durch Mitglieder mit Vollzugriff, Session-Eintrag und
+    Datenschutz in Abschnitt 10, Änderungshistorie in Abschnitt 14. Die
+    Limit-Tabelle in Abschnitt 7 blieb unverändert. Danach ändert Claude
+    regeln.md nie wieder unaufgefordert (CLAUDE.md, Grundsatz 1).
+11. Startdatum: erst nach Freigabe von AP12 (beantwortet Frage 18).
+12. Namen werden überall außer in der Git-Historie entfernt (beantwortet
+    Frage 19). Neutrale Kennungen in config/projekt.json:
+    `auftraggeber-a`, `auftraggeber-b`. Die Zuordnung zu Personen liegt
+    außerhalb des Repositorys. Die Git-Historie bleibt unverändert,
+    damit Prüfspur und Nur-Anhängen-Prüfung intakt bleiben.
 
 ## Offene Auslegungsfragen (Phase 1, konservativ umgesetzt, Freigabe erbeten)
 
@@ -106,13 +125,14 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
 17. Kauf-Limit auf den Basiswert: Long bei Kurs <= Limit, Short bei
     Kurs >= Limit.
 
-## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
+## Auslegungsfragen Phase 2 (beide entschieden, siehe Entscheidungen 11 und 12)
 
 18. regeln.md Abschnitt 2 nennt als Startdatum den "ersten Handelstag
     nach Abschluss von Phase 1". Phase 1 ist seit 2026-10-06
     abgeschlossen, AP12 (Freigabe) aber noch offen. Konservative
     Auslegung: Das Startdatum wird erst nach der Freigabe in AP12
     festgelegt; "nach Abschluss von Phase 1" gilt als frühester Zeitpunkt.
+    Entschieden: siehe Entscheidung 11; regeln.md Abschnitt 2 angepasst.
 19. Grundsatz "keine Namen im Repository" (Entscheidung 4): Die
     Dokumente CLAUDE.md, README.md, KONZEPT.md, AUFTRAG_PHASE1.md und
     AUFTRAG_WEBUI.md sind bereinigt. Namen stehen noch in regeln.md
@@ -124,6 +144,7 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
     die Kennungen fest und ändern regeln.md selbst), danach Code und
     Tests anpassen. Die Git-Historie bleibt unverändert, weil ein
     Umschreiben die Nur-Anhängen-Prüfung und die Prüfspur bricht.
+    Entschieden: siehe Entscheidung 12; umgesetzt bis auf die Historie.
 
 ## Technische Festlegungen Phase 1
 

@@ -1,9 +1,8 @@
 # Entwicklungsauftrag Web-UI (Phase 2)
 
-Stand: v0.2 vom 2026-10-06. Entscheidungen der Auftraggeber vom
-2026-10-06 sind eingearbeitet (STATUS.md, Entscheidungen 1 bis 7).
-Noch offene Punkte stehen in Abschnitt 14; betroffene Arbeitspakete
-beginnen erst nach deren Klärung. Noch kein Code.
+Stand: v0.3 vom 2026-10-06. Entscheidungen vom 2026-10-06 sind
+eingearbeitet (STATUS.md, Entscheidungen 1 bis 12). Alle Punkte aus
+Abschnitt 14 sind geklärt. Noch kein Code.
 
 ## 1. Ziel
 
@@ -89,8 +88,8 @@ Digest gepinnt.
 
 - Ein Arbeitsbereich ist eine eigenständige Spielinstanz: eigenes
   Git-Repository unter `/data/workspaces/<uuid>/repo`, eigene Portfolios
-  (Standard: defensiv, ausgewogen, aggressiv mit je 1.000 EUR; siehe
-  Abschnitt 14, Frage 1), eigene Benchmark, eigenes Journal.
+  (immer defensiv, ausgewogen und aggressiv mit je 1.000 EUR;
+  Entscheidung 8), eigene Benchmark, eigenes Journal.
 - Erzeugt wird er aus einer **Vorlage** (Spielteil dieses Repositorys:
   CLAUDE.md, regeln.md, config/, tools/, tests/, Vorlagen in strategie/)
   als frischer erster Commit ohne Historie, damit keine Altdaten
@@ -141,9 +140,8 @@ Einschränkung über regeln.md hinaus.
 - Die Benchmark bleibt laut regeln.md Abschnitt 9 der MSCI-World-ETF.
   Eine schwerpunktgerechte Benchmark wäre eine Regeländerung und ist als
   späteres Arbeitspaket vorgemerkt.
-- Voraussetzung: Die Auftraggeber ergänzen regeln.md um den Abschnitt
-  "Schwerpunkt je Arbeitsbereich". Claude formuliert dafür einen
-  Vorschlag, ändert regeln.md aber nicht selbst (Abschnitt 14, Frage 3).
+- Regelgrundlage: regeln.md v1.2, Abschnitt 3 "Schwerpunkt je
+  Arbeitsbereich" (Entscheidung 10).
 
 ### 4.4 Datenhaltung
 
@@ -217,7 +215,7 @@ Einschränkung über regeln.md hinaus.
 mit dem **eigenen** Claude-Abo. In der Sperre und im Journal erscheint die
 Kennung des Erstellers als Auftraggeber (`config/projekt.json`); wer den
 Lauf tatsächlich gestartet hat, steht nur in der Datenbank (`runs`,
-`audit_log`). Siehe Abschnitt 14, Frage 2.
+`audit_log`). Grundlage: Entscheidung 9, regeln.md Abschnitt 12.
 
 **Ablauf eines Laufs:**
 
@@ -414,7 +412,7 @@ dann in STATUS.md abhaken. Sicherheitsanforderungen werden in jedem
 Paket mit umgesetzt; W14 prüft sie gesammelt.
 
 **W0 Klärung.** Offene Punkte aus Abschnitt 14 klären und in STATUS.md
-vermerken.
+vermerken. Erledigt am 2026-10-06 (Entscheidungen 1 bis 12).
 Abnahme: Entscheidungen mit Datum vermerkt.
 
 **W1 Grundgerüst und Docker.** Struktur aus Abschnitt 8, Compose mit
@@ -445,8 +443,9 @@ Repository enthält keine Namen.
 
 **W6 Schwerpunkt.** Mehrfachauswahlen aus 4.3, `config/schwerpunkt.json`,
 Erweiterung von `kurse.py` um protokollierte Stammdaten (Region, Sektor),
-neues Limit "Schwerpunkt" in `limits.py` mit Tests. Beginnt erst, wenn
-der regeln.md-Abschnitt durch die Auftraggeber freigegeben ist.
+neues Limit "Schwerpunkt" in `limits.py` mit Tests (Grundlage:
+regeln.md v1.2, Abschnitt 3). Eine Datei `config/schwerpunkt.json` wird
+erst zusammen mit der Prüfung eingeführt.
 Abnahme: je Dimension ein Test für Annahme und Ablehnung; unbekannte
 Stammdaten führen bei "verbindlich" zur Ablehnung mit Regel, Grenzwert
 und Istwert.
@@ -516,7 +515,7 @@ Anmeldung für alle Benutzer.
 
 W0 → W1 → W2 → W3 → W4 → W5 → W7/W8 (parallel möglich) → W9 → W10 →
 W11/W12/W13 (parallel möglich) → W14 → W15 → W16 → W17 (optional).
-W6 läuft, sobald regeln.md ergänzt ist, frühestens nach W5.
+W6 frühestens nach W5.
 W10 kann nach W3 parallel zu W5 bis W9 beginnen.
 
 ## 11. Teststrategie
@@ -548,22 +547,15 @@ Manuelle Orders, echte Broker, nutzungsabhängig abgerechnete API-Keys,
 Session-Start (bleibt offener Punkt aus KONZEPT.md), schwerpunktgerechte
 Benchmarks (spätere Regeländerung).
 
-## 14. Offene Punkte (vor den betroffenen Arbeitspaketen zu klären)
+## 14. Geklärte Punkte
 
-1. **Portfolios je Arbeitsbereich** (betrifft W5, W6, W11): Bisher hat
-   jede Spielinstanz immer drei Portfolios (defensiv, ausgewogen,
-   aggressiv); `tools/` setzt das fest voraus. Vorschlag: so lassen und
-   den Schwerpunkt für den ganzen Arbeitsbereich festlegen. Alternative:
-   beim Anlegen per Mehrfachauswahl wählen, welche der drei Profile es
-   gibt (erfordert Änderungen an `tools/`).
-2. **Läufe durch Mitglieder mit Vollzugriff** (betrifft W9): Vorschlag:
-   Sie dürfen Sessions mit dem eigenen Pro-Abo starten; im Repository
-   erscheint die Kennung des Erstellers als Auftraggeber; Freigaben von
-   Regel-, Schwerpunkt- und Startdatums-Änderungen bleiben beim Ersteller.
-3. **regeln.md** (betrifft W5, W6): regeln.md enthält Namen und gilt für
-   genau zwei Auftraggeber. Für die Vorlage neuer Arbeitsbereiche braucht
-   es eine neutrale Fassung ("die Auftraggeber des Arbeitsbereichs") und
-   einen Abschnitt "Schwerpunkt je Arbeitsbereich". Claude formuliert
-   einen Vorschlag; ändern und committen müssen die Auftraggeber selbst.
-4. **Bestehende Namen im Repository** (betrifft W0): siehe STATUS.md,
-   offene Auslegungsfrage 19.
+1. Portfolios je Arbeitsbereich: immer die drei Profile (Entscheidung 8).
+2. Läufe durch Mitglieder mit Vollzugriff: erlaubt mit eigenem Pro-Abo;
+   Sperre und Journal tragen die Kennung des Auftraggebers
+   (Entscheidung 9).
+3. regeln.md: einmalig auf v1.2 angepasst, neutral formuliert und um den
+   Schwerpunkt ergänzt; dient so auch als Vorlage für neue
+   Arbeitsbereiche (Entscheidung 10).
+4. Namen im Repository: entfernt bis auf die Git-Historie
+   (Entscheidung 12).
+5. Startdatum: erst nach Freigabe von AP12 (Entscheidung 11).

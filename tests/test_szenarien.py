@@ -20,7 +20,7 @@ def spiel(projekt, quelle, uhr):
     return projekt
 
 
-def session(projekt, uhr, zeit, person="patrick"):
+def session(projekt, uhr, zeit, person="auftraggeber-a"):
     uhr.stellen(zeit)
     sperre(projekt, person=person, start=g.iso(uhr()))
 

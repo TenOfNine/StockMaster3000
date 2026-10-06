@@ -133,8 +133,9 @@ Werkzeuge. Details, Sicherheitskonzept und Arbeitspakete:
 ## Datenschutz
 
 Im Repository stehen keine Namen oder personenbezogenen Daten. Personen
-erscheinen nur als neutrale Kennung. Bestehende Altstellen und ihre
-Bereinigung: [STATUS.md](STATUS.md), offene Auslegungsfrage 19.
+erscheinen nur als neutrale Kennung (`config/projekt.json`). Ältere
+Commits der Git-Historie bleiben bewusst unverändert, damit die Prüfspur
+intakt bleibt ([STATUS.md](STATUS.md), Entscheidung 12).
 
 ## Haftungsausschluss
 
