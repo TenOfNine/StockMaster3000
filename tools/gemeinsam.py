@@ -290,6 +290,8 @@ class Buchungslauf:
     def __init__(self, portfolio: dict):
         self.portfolio = portfolio
         self.zeilen: list[dict] = []
+        self.limit_eintraege: list[dict] = []
+        self.meldungen: list[str] = []
 
     def trade(self, **felder) -> dict:
         zeile = {k: "" for k in TRADE_FELDER}
@@ -306,11 +308,36 @@ class Buchungslauf:
         self.zeilen.append(zeile)
         return zeile
 
+    def limits(self, trade_id: str, zeitpunkt: datetime, kennzahlen: dict, grenzen: dict) -> None:
+        """Merkt die bei einer Ausführung geprüften Kennzahlen für data/limits/ vor."""
+        self.limit_eintraege.append({"trade_id": trade_id, "zeit": iso(zeitpunkt),
+                                     "kennzahlen": kennzahlen, "grenzen": grenzen})
+
     def speichern(self) -> None:
+        profil = self.portfolio["profil"]
         if self.zeilen:
-            csv_anhaengen(trades_pfad(self.portfolio["profil"]), TRADE_FELDER, self.zeilen)
+            csv_anhaengen(trades_pfad(profil), TRADE_FELDER, self.zeilen)
+        if self.limit_eintraege:
+            datei = pfad("data", "limits", f"{profil}.jsonl")
+            bisher = datei.read_text(encoding="utf-8") if datei.exists() else ""
+            neu = "".join(json.dumps(e, default=_json_default, ensure_ascii=False) + "\n"
+                          for e in self.limit_eintraege)
+            atomar_schreiben(datei, bisher + neu)
         portfolio_speichern(self.portfolio)
         self.zeilen = []
+        self.limit_eintraege = []
+
+
+def limit_protokoll(profil: str) -> dict[str, dict]:
+    datei = pfad("data", "limits", f"{profil}.jsonl")
+    if not datei.exists():
+        return {}
+    eintraege = {}
+    for zeile in datei.read_text(encoding="utf-8").splitlines():
+        if zeile.strip():
+            eintrag = json.loads(zeile)
+            eintraege[eintrag["trade_id"]] = eintrag
+    return eintraege
 
 
 def cash(portfolio: dict) -> Decimal:

@@ -10,7 +10,7 @@
 - [x] AP2 Kursdaten (tools/kurse.py)
 - [x] AP3 Synthetische Zertifikate (tools/produkte.py)
 - [x] AP4 Limitprüfung (tools/limits.py)
-- [ ] AP5 Orders und Buchung (tools/buchen.py)
+- [x] AP5 Orders und Buchung (tools/buchen.py)
 - [ ] AP6 Nachbuchung und Bewertung (tools/bewertung.py)
 - [ ] AP7 Prüfskript (tools/pruefe.py)
 - [ ] AP8 Session-Sperre (tools/session.py)

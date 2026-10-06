@@ -10,7 +10,6 @@ Ablehnung nennt Regel, Grenzwert und Istwert.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass, field
 from datetime import date
@@ -296,15 +295,6 @@ def _r6(wert) -> Decimal:
 
 def grenzen(profil: str) -> dict:
     return {k: g.text(v) for k, v in g.limits_fuer(profil).items()}
-
-
-def protokollieren(profil: str, trade_id: str, zeit, kennzahlen: dict) -> None:
-    """Schreibt die bei Ausführung geprüften Kennzahlen nach data/limits/<profil>.jsonl."""
-    datei = g.pfad("data", "limits", f"{profil}.jsonl")
-    zeile = json.dumps({"trade_id": trade_id, "zeit": g.iso(zeit), "kennzahlen": kennzahlen,
-                        "grenzen": grenzen(profil)}, default=g._json_default, ensure_ascii=False)
-    bisher = datei.read_text(encoding="utf-8") if datei.exists() else ""
-    g.atomar_schreiben(datei, bisher + zeile + "\n")
 
 
 def kennzahlen_einhalten(kennzahlen: dict, grenzwerte: dict) -> list[str]:
