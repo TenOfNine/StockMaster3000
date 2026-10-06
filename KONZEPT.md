@@ -21,7 +21,7 @@ Nicht-Ziele: echte Geldanlage, Anlageberatung, Hochfrequenzhandel.
 | Rolle | Aufgabe | Grenzen |
 | --- | --- | --- |
 | Claude (über Claude Code) | Recherche, Entscheidung, Journal, Reviews, Weiterentwicklung der Werkzeuge in Phase 1 | handelt autonom innerhalb regeln.md; ändert Regeln nie; umgeht keine Prüfung |
-| Patrick, Philip | Regeln, Ideen, Session-Start, Aufsicht, Freigaben | Regeländerungen nur gemeinsam per Commit |
+| Auftraggeber | Regeln, Ideen, Session-Start, Aufsicht, Freigaben | Regeländerungen nur gemeinsam per Commit |
 | Opus | unabhängige Reviews von Konzept und Verlauf | beratend |
 
 ## 3. Leitprinzip
@@ -38,7 +38,7 @@ eigenen Trades verwaltet.
   synthetische Zertifikate, Limitprüfung, Buchung, Nachbuchung und
   Bewertung, Prüfskript, Session-Sperre, Initialisierung.
 - GitHub Action führt bei jedem Push Tests und Prüfskript aus.
-- Sessions werden von Patrick oder Philip in Claude Code gestartet;
+- Sessions werden von einem Auftraggeber in Claude Code gestartet;
   Versäumtes seit der letzten Session wird nach festen Regeln
   nachgebucht.
 

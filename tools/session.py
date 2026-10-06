@@ -33,7 +33,7 @@ def person_pruefen(name: str) -> str:
     person = name.strip().lower()
     erlaubt = g.projekt()["auftraggeber"]
     if person not in erlaubt:
-        raise Fehler(f"'{name}' ist kein Auftraggeber ({', '.join(p.capitalize() for p in erlaubt)}).")
+        raise Fehler(f"'{name}' ist kein Auftraggeber ({', '.join(erlaubt)}).")
     return person
 
 
@@ -44,15 +44,15 @@ def starten(name: str, git: bool = True) -> list[str]:
     if sperre is not None:
         verwaist = g.sperre_verwaist(sperre)
         if sperre["person"] == person and not verwaist:
-            return [f"Eigene Sperre von {person.capitalize()} besteht seit {sperre['start']}; Session läuft weiter."]
+            return [f"Eigene Sperre von {person} besteht seit {sperre['start']}; Session läuft weiter."]
         if sperre["person"] != person and not verwaist:
-            raise Fehler(f"Session von {sperre['person'].capitalize()} läuft seit {sperre['start']} "
-                         f"(Sperre noch nicht verwaist). Abbruch: bitte mit {sperre['person'].capitalize()} klären.")
-        meldungen.append(f"WARNUNG: verwaiste Sperre von {sperre['person'].capitalize()} seit {sperre['start']} "
+            raise Fehler(f"Session von {sperre['person']} läuft seit {sperre['start']} "
+                         f"(Sperre noch nicht verwaist). Abbruch: bitte mit {sperre['person']} klären.")
+        meldungen.append(f"WARNUNG: verwaiste Sperre von {sperre['person']} seit {sperre['start']} "
                          "wird übernommen.")
     g.json_schreiben(g.sperre_pfad(), {"person": person, "start": g.iso(g.jetzt())})
     if git:
-        nachricht = f"session: Start {person.capitalize()}"
+        nachricht = f"session: Start {person}"
         try:
             _git_pflicht("add", SPERRDATEI)
             _git_pflicht("commit", "-q", "-m", nachricht, "--", SPERRDATEI)
@@ -68,7 +68,7 @@ def starten(name: str, git: bool = True) -> list[str]:
             raise Fehler("Push der Sperre fehlgeschlagen (vermutlich hat jemand anderes gepusht). "
                          f"Erst 'git pull', dann erneut starten.\n{push.stderr.strip()}")
         meldungen.append("Sperre committet und gepusht.")
-    meldungen.insert(0, f"Session von {person.capitalize()} gestartet ({g.iso(g.jetzt())}).")
+    meldungen.insert(0, f"Session von {person} gestartet ({g.iso(g.jetzt())}).")
     return meldungen
 
 
@@ -78,10 +78,10 @@ def beenden(git: bool = True) -> list[str]:
         return ["Keine Sperre vorhanden."]
     if git and _git("ls-files", "--error-unmatch", SPERRDATEI).returncode == 0:
         _git_pflicht("rm", "-q", SPERRDATEI)
-        _git_pflicht("commit", "-q", "-m", f"session: Ende {sperre['person'].capitalize()}", "--", SPERRDATEI)
-        return [f"Sperre von {sperre['person'].capitalize()} entfernt und committet. Jetzt 'git push'."]
+        _git_pflicht("commit", "-q", "-m", f"session: Ende {sperre['person']}", "--", SPERRDATEI)
+        return [f"Sperre von {sperre['person']} entfernt und committet. Jetzt 'git push'."]
     g.sperre_pfad().unlink()
-    return [f"Sperre von {sperre['person'].capitalize()} entfernt."]
+    return [f"Sperre von {sperre['person']} entfernt."]
 
 
 def status() -> list[str]:
@@ -89,14 +89,14 @@ def status() -> list[str]:
     if sperre is None:
         return ["Keine Session aktiv."]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""
-    return [f"Session von {sperre['person'].capitalize()} seit {sperre['start']}{zusatz}."]
+    return [f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."]
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Session-Sperre setzen, prüfen und entfernen.")
     unter = parser.add_subparsers(dest="befehl", required=True)
     p = unter.add_parser("start", help="Session starten (Sperre anlegen, committen, pushen)")
-    p.add_argument("--person", required=True, help="Patrick oder Philip")
+    p.add_argument("--person", required=True, help="Kennung des Auftraggebers aus config/projekt.json")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei anlegen (für Tests)")
     p = unter.add_parser("ende", help="Session beenden (Sperre entfernen und committen)")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei entfernen (für Tests)")

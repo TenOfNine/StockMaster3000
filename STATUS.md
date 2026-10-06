@@ -1,7 +1,7 @@
 # Projektstatus
 
-- Phase: 1 (Aufbau), AP1 bis AP11 erledigt; AP12 (Testsession, Anlagerichtlinien, Freigabe) offen
-- Startdatum des Spiels: noch nicht gesetzt (wird in AP11 festgelegt, nie rückwirkend)
+- Phase: 2 (Startbetrieb-Vorbereitung). Phase 1 (Aufbau, AP1 bis AP11) abgeschlossen am 2026-10-06; AP12 nach Phase 2 verschoben (Entscheidung 5)
+- Startdatum des Spiels: erst nach Freigabe von AP12 (wird dann mit tools/init.py gesetzt, nie rückwirkend; Entscheidung 11)
 - Letzte Session: keine
 
 ## Arbeitspakete Phase 1
@@ -17,14 +17,70 @@
 - [x] AP9 Szenario-Tests
 - [x] AP10 GitHub Action (grüner Lauf: https://github.com/TenOfNine/StockMaster3000/actions/runs/37445431578)
 - [x] AP11 Initialisierung (tools/init.py)
-- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Übergang zu Phase 2
+- AP12 nach Phase 2 verschoben (siehe unten)
+
+## Arbeitspakete Phase 2
+
+- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md)
+- [x] W0 Klärung der offenen Punkte zur Web-UI (Entscheidungen 1 bis 12)
+- [ ] W1 bis W17 Web-UI (AUFTRAG_WEBUI.md; Fortschritt wird je Paket hier ergänzt)
 
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
 (Datum, Frage, Entscheidung, wer hat entschieden).
 
-- (noch keine Entscheidungen der Auftraggeber)
+Entscheidungen vom 2026-10-06, mitgeteilt von einem Auftraggeber im Chat
+mit Claude Code (ohne Namen gemäß Entscheidung 4):
+
+1. Web-UI, Benutzer und Arbeitsbereiche: Es gibt initial genau einen
+   Administrator, der Benutzer anlegt. Jeder Benutzer legt eigene
+   Arbeitsbereiche an und teilt sie bei Bedarf mit den Stufen Lesen und
+   Vollzugriff. Jeder Arbeitsbereich ist nach Schwerpunkt und
+   Anlagestrategie per Mehrfachauswahl konfigurierbar (z. B. Technologie,
+   Gesundheit, nur USA, nur Deutschland).
+2. Claude-Anbindung: ausschließlich private Claude-Pro-Abos, keine
+   nutzungsabhängig abgerechneten API-Keys. Der Hinweis von Anthropic zu
+   claude.ai-Logins in Drittanbieter-Produkten
+   (https://code.claude.com/docs/en/agent-sdk/overview, abgerufen
+   2026-10-06) wurde vorgelegt; entschieden wurde für eigene Pro-Abos in
+   der privat betriebenen Installation.
+3. Auftraggeber eines Arbeitsbereichs ist dessen Ersteller.
+4. CLAUDE.md wird um den Session-Eintrag (S-JJJJMMTT-NN) für Abwägungen
+   und Nichtstun ergänzt sowie um den Grundsatz, dass keine Namen oder
+   personenbezogenen Daten im Repository auftauchen dürfen.
+5. AP12 wird in Phase 2 übernommen; Phase 1 gilt als abgeschlossen.
+6. Die Web-UI ist standardmäßig nur aus dem Heimnetz erreichbar. Zugriff
+   aus dem Internet ist optional und nie Standard.
+7. Technische Festlegung Web-UI: eigene Abhängigkeiten nur unter webui/
+   mit Lockfiles (Begründung: Weboberfläche, Datenbank und
+   Sicherheitsfunktionen sind mit pandas, yfinance und pytest nicht
+   umsetzbar). Für tools/ gilt weiterhin "nur pandas, yfinance, pytest".
+8. Je Arbeitsbereich gibt es immer die drei Profile defensiv, ausgewogen
+   und aggressiv (AUFTRAG_WEBUI.md, Frage 14.1). Ersetzt durch
+   Entscheidung 13.
+9. Mitglieder mit Vollzugriff dürfen Sessions mit ihrem eigenen Pro-Abo
+   starten; Sperre und Journal tragen die Kennung des Auftraggebers
+   (AUFTRAG_WEBUI.md, Frage 14.2).
+10. Claude darf regeln.md einmalig anpassen. Umgesetzt am 2026-10-06 als
+    v1.2: Auftraggeber als neutrale Kennungen, Startdatum nach Freigabe
+    von AP12, Arbeitsbereiche und Schwerpunkt je Arbeitsbereich,
+    Session-Start durch Mitglieder mit Vollzugriff, Session-Eintrag und
+    Datenschutz in Abschnitt 10, Änderungshistorie in Abschnitt 14. Die
+    Limit-Tabelle in Abschnitt 7 blieb unverändert. Danach ändert Claude
+    regeln.md nie wieder unaufgefordert (CLAUDE.md, Grundsatz 1).
+11. Startdatum: erst nach Freigabe von AP12 (beantwortet Frage 18).
+12. Namen werden überall außer in der Git-Historie entfernt (beantwortet
+    Frage 19). Neutrale Kennungen in config/projekt.json:
+    `auftraggeber-a`, `auftraggeber-b`. Die Zuordnung zu Personen liegt
+    außerhalb des Repositorys. Die Git-Historie bleibt unverändert,
+    damit Prüfspur und Nur-Anhängen-Prüfung intakt bleiben.
+13. Die Profile defensiv, ausgewogen und aggressiv sind je Arbeitsbereich
+    per Mehrfachauswahl an- und abschaltbar (ersetzt Entscheidung 8;
+    Umsetzung AUFTRAG_WEBUI.md 4.4 und W6). Voraussetzung ist eine
+    Regelgrundlage in regeln.md (offene Auslegungsfrage 20).
+14. App-Icon und Favicon: Vorschlag "Drei Profile",
+    abgelegt als assets/icons/drei-profile.svg.
 
 ## Offene Auslegungsfragen (Phase 1, konservativ umgesetzt, Freigabe erbeten)
 
@@ -76,6 +132,27 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
 17. Kauf-Limit auf den Basiswert: Long bei Kurs <= Limit, Short bei
     Kurs >= Limit.
 
+## Auslegungsfragen Phase 2 (beide entschieden, siehe Entscheidungen 11 und 12)
+
+18. regeln.md Abschnitt 2 nennt als Startdatum den "ersten Handelstag
+    nach Abschluss von Phase 1". Phase 1 ist seit 2026-10-06
+    abgeschlossen, AP12 (Freigabe) aber noch offen. Konservative
+    Auslegung: Das Startdatum wird erst nach der Freigabe in AP12
+    festgelegt; "nach Abschluss von Phase 1" gilt als frühester Zeitpunkt.
+    Entschieden: siehe Entscheidung 11; regeln.md Abschnitt 2 angepasst.
+19. Grundsatz "keine Namen im Repository" (Entscheidung 4): Die
+    Dokumente CLAUDE.md, README.md, KONZEPT.md, AUFTRAG_PHASE1.md und
+    AUFTRAG_WEBUI.md sind bereinigt. Namen stehen noch in regeln.md
+    (darf nur von den Auftraggebern geändert werden), in
+    config/projekt.json (Auftraggeber-Liste, steuert die Session-Sperre),
+    in der Hilfe von tools/session.py, in Tests und in früheren Commits
+    der Git-Historie. Vorschlag: Auftraggeber in config/projekt.json und
+    regeln.md auf neutrale Kennungen umstellen (die Auftraggeber legen
+    die Kennungen fest und ändern regeln.md selbst), danach Code und
+    Tests anpassen. Die Git-Historie bleibt unverändert, weil ein
+    Umschreiben die Nur-Anhängen-Prüfung und die Prüfspur bricht.
+    Entschieden: siehe Entscheidung 12; umgesetzt bis auf die Historie.
+
 ## Technische Festlegungen Phase 1
 
 - Keine weiteren Abhängigkeiten außer pandas, yfinance, pytest.
@@ -100,3 +177,28 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
   Live-Daten noch ungeprüft, weil Yahoo aus der Cloud-Umgebung von
   Claude Code (Netzwerkrichtlinie) nicht erreichbar war; Prüfung in der
   Testsession (AP12) auf einem Rechner mit Internetzugang.
+
+## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
+
+20. Profilauswahl (Entscheidung 13) und regeln.md v1.2 widersprechen
+    sich: Abschnitt 2 nennt "1.000 EUR je Portfolio (defensiv,
+    ausgewogen, aggressiv)" und "eigenen drei Portfolios", Abschnitt 11
+    den "Monatsvergleich der drei Profile". Die einmalige Freigabe zur
+    Änderung von regeln.md ist verbraucht (Entscheidung 10); Claude
+    ändert die Datei nicht erneut. Bis zur Klärung bleiben in diesem
+    Repository und in den Werkzeugen alle drei Profile aktiv.
+    Formulierungsvorschlag für die Auftraggeber:
+    - Abschnitt 2: "Startkapital: 1.000 EUR je aktivem Portfolio. Je
+      Arbeitsbereich sind die Profile defensiv, ausgewogen und aggressiv
+      einzeln aktivierbar (mindestens eines; config/projekt.json,
+      `profile_aktiv`; ohne Angabe alle drei)."
+    - Abschnitt 2: "eigenen drei Portfolios" ersetzen durch "eigenen
+      Portfolios".
+    - Abschnitt 2, neu: "Nach dem Startdatum ändern nur die
+      Auftraggeber die Auswahl, mit Datum und ohne Rückwirkung.
+      Aktivieren: neues Portfolio mit 1.000 EUR ab dem nächsten
+      Handelstag nach der Freigabe, Benchmark ab demselben Tag.
+      Deaktivieren: nur ohne offene Positionen und Orders; Bewertung und
+      Verzinsung enden, die Historie bleibt."
+    - Abschnitt 11: "Monatsvergleich der drei Profile" ersetzen durch
+      "Monatsvergleich der aktiven Profile".

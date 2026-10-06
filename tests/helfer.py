@@ -26,7 +26,7 @@ def aktie(id_, ticker, stueck, einstand="100", stop=None, kursziel=None, eroeffn
             "stop_historie": [{"ab": eroeffnet, "stop": stop, "kursziel": kursziel}]}
 
 
-def journal(projekt, person="patrick", datum="2026-10-12", eintraege=(("01", "10:00", "ausgewogen", "SAP.DE"),)):
+def journal(projekt, person="auftraggeber-a", datum="2026-10-12", eintraege=(("01", "10:00", "ausgewogen", "SAP.DE"),)):
     zeilen = [f"# Journal {datum} ({person})", ""]
     for nummer, zeit, profil, instrument in eintraege:
         zeilen += [f"### J-{datum.replace('-', '')}-{nummer} | {profil} | {instrument}",
@@ -36,7 +36,7 @@ def journal(projekt, person="patrick", datum="2026-10-12", eintraege=(("01", "10
     return datei
 
 
-def sperre(projekt, person="patrick", start="2026-10-12T09:30:00+02:00"):
+def sperre(projekt, person="auftraggeber-a", start="2026-10-12T09:30:00+02:00"):
     (projekt / "session.lock").write_text(json.dumps({"person": person, "start": start}), encoding="utf-8")
 
 

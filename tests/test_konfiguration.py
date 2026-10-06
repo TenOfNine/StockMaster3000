@@ -61,7 +61,7 @@ def test_projekt_gleich_regeln():
     assert projekt["sperre_stunden"] == 6
     assert projekt["benchmark_ticker"] == "EUNL.DE"
     assert projekt["devisen_ticker"] == "EURUSD=X"
-    assert set(projekt["auftraggeber"]) == {"patrick", "philip"}
+    assert set(projekt["auftraggeber"]) == {"auftraggeber-a", "auftraggeber-b"}
     assert projekt["sharpe_min_handelstage"] == 60
 
 

@@ -80,7 +80,7 @@ def test_ablehnung_journal_in_der_zukunft(bereit, uhr):
 
 
 def test_ablehnung_fremde_sperre(bereit, projekt):
-    sperre(projekt, person="philip")
+    sperre(projekt, person="auftraggeber-b")
     assert kaufen() == 2
 
 

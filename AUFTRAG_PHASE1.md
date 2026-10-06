@@ -182,12 +182,15 @@ Anlagerichtlinien-Vorlagen in strategie/.
 Abnahme: Test für Ablehnung eines Datums in der Vergangenheit.
 
 ### AP12 Testsession und Übergang
+Hinweis (2026-10-06): AP12 wurde nach Phase 2 verschoben; Phase 1 gilt
+mit AP1 bis AP11 als abgeschlossen (STATUS.md, Entscheidung 5).
+
 1. Trading-Session nach CLAUDE.md vollständig durchspielen, aber ohne
    Order (Nachbuchen, Prüfen, Marktüberblick, Bericht).
 2. Anlagerichtlinien in strategie/<profil>.md ausformulieren: Ziel,
    Risikobudget, Horizont, Instrumente, Benchmark, Ausgangsstrategie mit
    Begründung und aktueller Marktsicht (mit Quellen).
-3. Patrick und Philip um Freigabe bitten. Nach Freigabe: `init.py` mit
+3. Die Auftraggeber um Freigabe bitten. Nach Freigabe: `init.py` mit
    dem Startdatum, STATUS.md auf Phase 2 setzen.
 Abnahme: Freigabe der Auftraggeber in STATUS.md vermerkt.
 

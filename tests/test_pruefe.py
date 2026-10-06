@@ -76,7 +76,7 @@ def test_nachrechnung_erkennt_falschen_betrag(spielstand):
 
 def test_journal_fehlt_oder_zu_spaet(spielstand):
     assert befunde(pruefe.pruefe_journal, "ausgewogen") == []
-    datei = spielstand / "journal" / "2026-10-12_patrick.md"
+    datei = spielstand / "journal" / "2026-10-12_auftraggeber-a.md"
     datei.write_text(datei.read_text().replace("2026-10-12 22:50", "2026-10-12 23:30"))
     assert any("nach der Order" in b for b in befunde(pruefe.pruefe_journal, "ausgewogen"))
     datei.write_text(datei.read_text().replace("J-20261012-01", "J-20261012-09"))
@@ -127,14 +127,14 @@ def test_regeln_geaendert_wird_erkannt(projekt):
 def test_nur_anhaengen_gegenueber_letztem_commit(spielstand):
     git_init(spielstand)
     assert befunde(pruefe.pruefe_anhaengen) == []
-    datei = spielstand / "journal" / "2026-10-12_patrick.md"
+    datei = spielstand / "journal" / "2026-10-12_auftraggeber-a.md"
     datei.write_text(datei.read_text().replace("These: Test", "These: geändert", 1))
-    assert any("journal/2026-10-12_patrick.md" in b for b in befunde(pruefe.pruefe_anhaengen))
+    assert any("journal/2026-10-12_auftraggeber-a.md" in b for b in befunde(pruefe.pruefe_anhaengen))
 
 
 def test_anhaengen_ist_erlaubt(spielstand):
     git_init(spielstand)
-    datei = spielstand / "journal" / "2026-10-12_patrick.md"
+    datei = spielstand / "journal" / "2026-10-12_auftraggeber-a.md"
     datei.write_text(datei.read_text() + "\n### Nachtrag\n- Korrektur zu J-20261012-01\n")
     assert befunde(pruefe.pruefe_anhaengen) == []
 
