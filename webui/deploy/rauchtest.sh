@@ -27,6 +27,7 @@ pruefe "Ohne Anmeldung gesperrt" "$(curl -o /dev/null -w '%{http_code}' https://
 KOPF="$(curl -I https://localhost:18443/)"
 grep -qi "content-security-policy: default-src 'self'" <<<"$KOPF" && echo "ok   CSP" || { echo "FEHL CSP"; exit 1; }
 grep -qi "strict-transport-security" <<<"$KOPF" && echo "ok   HSTS" || { echo "FEHL HSTS"; exit 1; }
+pruefe "Root-Zertifikat zum Download" "$(curl https://localhost:18443/stockmaster-root.crt | head -1)" "-----BEGIN CERTIFICATE-----"
 docker compose exec -T api python -m stockmaster admin-anlegen --email admin@rauchtest.local >/dev/null && echo "ok   Admin-Erstanlage"
 if docker compose exec -T api python -m stockmaster admin-anlegen --email zweiter@rauchtest.local >/dev/null 2>&1; then
   echo "FEHL zweite Admin-Erstanlage wurde nicht abgelehnt"; exit 1

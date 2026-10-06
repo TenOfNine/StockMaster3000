@@ -6,6 +6,8 @@ Regeln, Status, Git-Historie) und führt nur lesende Werkzeuge aus
 (`tools/pruefe.py`, Zertifikatsrechner). Orders und Claude-Läufe gibt es in
 Stufe 1 nicht; Sessions laufen weiter über Claude Code.
 
+> **Portainer:** Betrieb ohne Kommandozeile und ohne lokale Dateien: siehe [PORTAINER.md](PORTAINER.md).
+
 ## Aufbau
 
 | Dienst | Aufgabe | Netz |
@@ -47,6 +49,9 @@ muss im Heimnetz auflösbar sein (Router-DNS oder `/etc/hosts`, z. B.
 Caddy erzeugt eine eigene Zertifizierungsstelle. Damit Browser der
 Verbindung vertrauen, das Root-Zertifikat einmal auf jedem Gerät
 installieren:
+
+Im Heimnetz direkt im Browser: `https://<SM_HOSTNAME>/stockmaster-root.crt` (Browserwarnung beim
+ersten Aufruf einmalig bestätigen). Alternativ per Kommandozeile:
 
 ```bash
 docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./stockmaster-root.crt

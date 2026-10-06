@@ -1,0 +1,92 @@
+name: Images
+
+# Baut die Images für den Portainer-Stack und veröffentlicht sie in der GitHub Container Registry
+# (ghcr.io/<besitzer>/stockmaster3000-{api,proxy,db}). Läuft bei Änderungen auf main und per Hand.
+# Bei Pull Requests wird nur gebaut, nicht veröffentlicht.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "webui/**"
+      - "docker-compose.yml"
+      - ".github/workflows/images.yml"
+  pull_request:
+    paths:
+      - "webui/deploy/**"
+      - "webui/backend/**"
+      - "webui/frontend/**"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    name: Portainer-Stack prüfen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stack-Datei mit Beispielwerten auflösen
+        env:
+          SM_HOSTNAME: stockmaster.local
+          SPIEL_REPO: /srv/stockmaster/spiel-repo
+          POSTGRES_ADMIN_PASSWORD: aaaa
+          POSTGRES_APP_PASSWORD: bbbb
+          SM_SCHLUESSEL: ${{ 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=' }}
+        run: docker compose -f webui/deploy/portainer/stack.yml config --quiet
+      - name: Fehlende Pflicht-Variable wird abgelehnt
+        run: |
+          if docker compose -f webui/deploy/portainer/stack.yml config --quiet 2>/dev/null; then
+            echo "Stack ohne Pflicht-Variablen wurde nicht abgelehnt"; exit 1
+          fi
+
+  images:
+    name: Image ${{ matrix.dienst }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        dienst: [api, proxy, db]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Registry-Name in Kleinbuchstaben
+        id: name
+        run: echo "bild=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/stockmaster3000-${{ matrix.dienst }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Anmelden bei ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.bild }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Bauen${{ github.event_name != 'pull_request' && ' und veröffentlichen' || '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: webui/deploy/${{ matrix.dienst }}.Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.dienst }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.dienst }}
