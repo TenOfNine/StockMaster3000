@@ -1,7 +1,7 @@
 # Projektstatus
 
-- Phase: 1 (Aufbau), AP1 bis AP11 erledigt; AP12 (Testsession, Anlagerichtlinien, Freigabe) offen
-- Startdatum des Spiels: noch nicht gesetzt (wird in AP11 festgelegt, nie rückwirkend)
+- Phase: 2 (Startbetrieb-Vorbereitung). Phase 1 (Aufbau, AP1 bis AP11) abgeschlossen am 2026-10-06; AP12 nach Phase 2 verschoben (Entscheidung 5)
+- Startdatum des Spiels: noch nicht gesetzt (wird mit tools/init.py nach der Freigabe in AP12 festgelegt, nie rückwirkend)
 - Letzte Session: keine
 
 ## Arbeitspakete Phase 1
@@ -17,14 +17,44 @@
 - [x] AP9 Szenario-Tests
 - [x] AP10 GitHub Action (grüner Lauf: https://github.com/TenOfNine/StockMaster3000/actions/runs/37445431578)
 - [x] AP11 Initialisierung (tools/init.py)
-- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Übergang zu Phase 2
+- AP12 nach Phase 2 verschoben (siehe unten)
+
+## Arbeitspakete Phase 2
+
+- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md)
+- [ ] W0 bis W17 Web-UI (AUFTRAG_WEBUI.md; Fortschritt wird dort je Paket hier ergänzt)
 
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
 (Datum, Frage, Entscheidung, wer hat entschieden).
 
-- (noch keine Entscheidungen der Auftraggeber)
+Entscheidungen vom 2026-10-06, mitgeteilt von einem Auftraggeber im Chat
+mit Claude Code (ohne Namen gemäß Entscheidung 4):
+
+1. Web-UI, Benutzer und Arbeitsbereiche: Es gibt initial genau einen
+   Administrator, der Benutzer anlegt. Jeder Benutzer legt eigene
+   Arbeitsbereiche an und teilt sie bei Bedarf mit den Stufen Lesen und
+   Vollzugriff. Jeder Arbeitsbereich ist nach Schwerpunkt und
+   Anlagestrategie per Mehrfachauswahl konfigurierbar (z. B. Technologie,
+   Gesundheit, nur USA, nur Deutschland).
+2. Claude-Anbindung: ausschließlich private Claude-Pro-Abos, keine
+   nutzungsabhängig abgerechneten API-Keys. Der Hinweis von Anthropic zu
+   claude.ai-Logins in Drittanbieter-Produkten
+   (https://code.claude.com/docs/en/agent-sdk/overview, abgerufen
+   2026-10-06) wurde vorgelegt; entschieden wurde für eigene Pro-Abos in
+   der privat betriebenen Installation.
+3. Auftraggeber eines Arbeitsbereichs ist dessen Ersteller.
+4. CLAUDE.md wird um den Session-Eintrag (S-JJJJMMTT-NN) für Abwägungen
+   und Nichtstun ergänzt sowie um den Grundsatz, dass keine Namen oder
+   personenbezogenen Daten im Repository auftauchen dürfen.
+5. AP12 wird in Phase 2 übernommen; Phase 1 gilt als abgeschlossen.
+6. Die Web-UI ist standardmäßig nur aus dem Heimnetz erreichbar. Zugriff
+   aus dem Internet ist optional und nie Standard.
+7. Technische Festlegung Web-UI: eigene Abhängigkeiten nur unter webui/
+   mit Lockfiles (Begründung: Weboberfläche, Datenbank und
+   Sicherheitsfunktionen sind mit pandas, yfinance und pytest nicht
+   umsetzbar). Für tools/ gilt weiterhin "nur pandas, yfinance, pytest".
 
 ## Offene Auslegungsfragen (Phase 1, konservativ umgesetzt, Freigabe erbeten)
 
@@ -75,6 +105,25 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
     (`keiner` ausdrücklich möglich).
 17. Kauf-Limit auf den Basiswert: Long bei Kurs <= Limit, Short bei
     Kurs >= Limit.
+
+## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
+
+18. regeln.md Abschnitt 2 nennt als Startdatum den "ersten Handelstag
+    nach Abschluss von Phase 1". Phase 1 ist seit 2026-10-06
+    abgeschlossen, AP12 (Freigabe) aber noch offen. Konservative
+    Auslegung: Das Startdatum wird erst nach der Freigabe in AP12
+    festgelegt; "nach Abschluss von Phase 1" gilt als frühester Zeitpunkt.
+19. Grundsatz "keine Namen im Repository" (Entscheidung 4): Die
+    Dokumente CLAUDE.md, README.md, KONZEPT.md, AUFTRAG_PHASE1.md und
+    AUFTRAG_WEBUI.md sind bereinigt. Namen stehen noch in regeln.md
+    (darf nur von den Auftraggebern geändert werden), in
+    config/projekt.json (Auftraggeber-Liste, steuert die Session-Sperre),
+    in der Hilfe von tools/session.py, in Tests und in früheren Commits
+    der Git-Historie. Vorschlag: Auftraggeber in config/projekt.json und
+    regeln.md auf neutrale Kennungen umstellen (die Auftraggeber legen
+    die Kennungen fest und ändern regeln.md selbst), danach Code und
+    Tests anpassen. Die Git-Historie bleibt unverändert, weil ein
+    Umschreiben die Nur-Anhängen-Prüfung und die Prüfspur bricht.
 
 ## Technische Festlegungen Phase 1
 
