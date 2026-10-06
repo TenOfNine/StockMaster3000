@@ -77,6 +77,26 @@ Technische Festlegungen Stufe 1:
   und Ziffern“ ließ das Init-Skript beim ersten Start abbrechen; die halb initialisierte Datenbank hatte
   keine Anwendungsrolle (`role "stockmaster" does not exist`). Regel entfernt, Passwort getrennt von der
   URL, Abgleich legt fehlende Rolle und Datenbank an.
+- Ungültiger Schlüssel (2026-10-06, vierter Fund in Portainer): Beim Einfügen ging das `=` am Ende von
+  `SM_SCHLUESSEL` verloren (Fehler „Incorrect padding“). Die API startete trotzdem, meldete sich gesund und
+  scheiterte erst bei der ersten Anmeldung mit Fehler 500, weil jede Anmeldung die IP mit dem Schlüssel
+  hasht. Behoben: Der Schlüssel wird beim Start geprüft (`migrieren`, `admin-anlegen` und beim Start der
+  Anwendung); ein ungültiger Wert verhindert den Start mit klarer Meldung (ohne den Wert zu nennen).
+  Formfehler beim Kopieren (fehlendes `=`, Anführungszeichen, Leerraum, URL-sichere Schreibweise) werden
+  korrigiert und im Log gemeldet; bisher gültige Schlüssel liefern unverändert dieselben Bytes, damit
+  gespeicherte Zwei-Faktor-Geheimnisse gültig bleiben. `/api/health` prüft jetzt Schlüssel und Datenbank
+  (503 ohne Details), und der Rauchtest meldet sich mit dem Einmalpasswort an. Eine automatische
+  Schlüsselerzeugung gibt es bewusst nicht (Schlüssel und Sicherung bleiben ausdrücklich).
+- Zugriff per IP-Adresse (2026-10-06, fünfter Fund in Portainer): `https://<IP>` scheiterte mit
+  `ERR_SSL_PROTOCOL_ERROR`. Ein Browser sendet bei einer IP keinen Servernamen (SNI), und hinter Docker sieht
+  Caddy als lokale Adresse die des Containers, nicht die getippte; es fand kein Zertifikat. Behoben mit der
+  optionalen Variable `SM_ZUSAETZLICHE_HOSTS` (weitere Namen oder IPs): `default_sni` liefert Clients ohne
+  Servernamen das Zertifikat der ersten IP, ein Fangblock erklärt unbekannte IP-Adressen (HTTP 421) statt
+  einer leeren Seite. `webui/deploy/proxy-start.sh` prüft alle Namen streng, bevor sie in die Caddyfile
+  gelangen (keine Platzhalter, Ports, Klammern, Zeilenumbrüche), und startet Caddy. Die Heimnetz-Schranke
+  gilt unverändert für alle Namen. Mit echtem Caddy nachgestellt und getestet, auch unter BusyBox-ash.
+- Anmeldeseite (2026-10-06): Der Text der Markenfläche stand unten über den Kurven und war schlecht lesbar;
+  er steht jetzt oben, die Kurven bleiben unten.
 - Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
   und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
   Netzwerk ersetzt); das Repository ist nur lesend eingebunden.

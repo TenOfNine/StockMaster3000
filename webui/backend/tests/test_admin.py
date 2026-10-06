@@ -1,7 +1,7 @@
 """Administration und Isolationsmatrix."""
 
 import pytest
-from conftest import ADMIN_PW, anmelden
+from conftest import ADMIN_PW, SCHLUESSEL, anmelden
 
 ADMIN_ROUTEN = [("GET", "/api/admin/benutzer"), ("POST", "/api/admin/benutzer"), ("GET", "/api/admin/audit"),
                 ("GET", "/api/admin/system"), ("POST", "/api/admin/benutzer/x/passwort-zuruecksetzen"),
@@ -101,6 +101,7 @@ def test_migration_erzeugt_schema(tmp_path, monkeypatch):
     from stockmaster.__main__ import migrieren
 
     monkeypatch.setenv("SM_DATENBANK_URL", f"sqlite:///{tmp_path / 'm.db'}")
+    monkeypatch.setenv("SM_SCHLUESSEL", SCHLUESSEL)  # migrieren prüft die Konfiguration, wie im Container
     config.einstellungen.cache_clear()
     db.zuruecksetzen()
     migrieren()

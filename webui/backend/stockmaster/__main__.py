@@ -18,6 +18,16 @@ from .db import neue_sitzung
 from .modelle import AuditEintrag, Benutzer
 
 
+def konfiguration_pruefen() -> None:
+    """Bricht mit klarer Meldung ab, wenn die Konfiguration unbrauchbar ist (statt erst bei der Anmeldung)."""
+    from .config import SchluesselFehler, einstellungen
+
+    try:
+        einstellungen().schluessel_bytes()
+    except SchluesselFehler as fehler:
+        raise SystemExit(f"Konfigurationsfehler: {fehler}") from None
+
+
 def auf_datenbank_warten(versuche: int = 40, pause: float = 3.0) -> None:
     """Wartet, bis die Datenbank Verbindungen annimmt (Start im Verbund mit der DB, Erstinitialisierung)."""
     import time
@@ -58,11 +68,13 @@ def migrieren() -> None:
     konfig = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
     konfig.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
     print(f"StockMaster API, Version {os.environ.get('SM_VERSION', 'unbekannt')}", flush=True)
+    konfiguration_pruefen()
     auf_datenbank_warten()
     command.upgrade(konfig, "head")
 
 
 def admin_anlegen(email: str, anzeigename: str) -> int:
+    konfiguration_pruefen()
     with neue_sitzung() as db:
         if db.scalar(select(Benutzer).where(Benutzer.ist_admin)):
             print("Abgelehnt: Es gibt bereits einen Administrator. Weitere Benutzer legt ein Admin in der UI an.",

@@ -6,13 +6,18 @@
 	https_port 8443
 	local_certs
 	skip_install_trust
+	# Zertifikat für Clients ohne Servernamen (SNI), z. B. Browser bei einer IP-Adresse in der URL. Hinter
+	# Docker ist die lokale Adresse die des Containers; ohne diese Vorgabe scheitert der TLS-Handshake.
+	# proxy-start.sh setzt die Werte aus SM_HOSTNAME und SM_ZUSAETZLICHE_HOSTS.
+	default_sni {$SM_SNI_STANDARD:stockmaster.local}
 	servers {
 		# Die echte Client-Adresse wird nicht aus Headern übernommen.
 		trusted_proxies static 127.0.0.1/32
 	}
 }
 
-{$SM_HOSTNAME:stockmaster.local}, localhost {
+# Hauptname, localhost (Healthcheck) und optional weitere Namen oder IP-Adressen (SM_ZUSAETZLICHE_HOSTS).
+{$SM_HOSTNAME:stockmaster.local} localhost {$SM_HOSTS_ZUSATZ:} {
 	tls internal
 
 	request_body {
@@ -58,4 +63,22 @@
 			file_server
 		}
 	}
+}
+
+# Alles andere (unbekannte IP-Adresse in der URL): ein Hinweis statt einer leeren Seite. Für einen unbekannten
+# Namen gibt es kein Zertifikat; dort scheitert schon der TLS-Handshake.
+:8443 {
+	tls internal
+
+	# Wie oben: nur aus dem Heimnetz.
+	@extern not remote_ip private_ranges {$SM_ZUSAETZLICHE_NETZE:127.0.0.1/32}
+	respond @extern "Zugriff nur aus dem Heimnetz." 403
+
+	header {
+		Content-Type "text/plain; charset=utf-8"
+		X-Content-Type-Options "nosniff"
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		-Server
+	}
+	respond "Unbekannter Name oder unbekannte Adresse in der URL. Die Web-UI antwortet nur unter den konfigurierten Namen (SM_HOSTNAME, SM_ZUSAETZLICHE_HOSTS)." 421
 }

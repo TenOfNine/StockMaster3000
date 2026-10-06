@@ -72,6 +72,15 @@ nicht-privaten Adressbereichen mit 403, die API prüft dasselbe noch einmal
 `SM_ZUSAETZLICHE_NETZE` ergänzen. Zugriff aus dem Internet ist nicht Teil
 von Stufe 1 (W17).
 
+Der Proxy antwortet nur auf `SM_HOSTNAME`, `localhost` und die Einträge in `SM_ZUSAETZLICHE_HOSTS`
+(weitere Namen oder IP-Adressen, durch Leerzeichen oder Komma getrennt, ohne Port). Ein Aufruf per
+nicht eingetragener IP-Adresse zeigt nach der Zertifikatswarnung den Hinweis „Unbekannter Name oder unbekannte
+Adresse in der URL“ (HTTP 421), ein nicht eingetragener Name scheitert mit `ERR_SSL_PROTOCOL_ERROR`. Abhilfe:
+den Hostnamen verwenden (Hosts-Datei oder Router-DNS) oder die IP des Servers in `.env` unter
+`SM_ZUSAETZLICHE_HOSTS` eintragen. Die Angaben werden
+beim Start geprüft; ungültige verhindern den Start des Proxys. Die Heimnetz-Schranke gilt für alle Namen
+gleich. Bei mehreren IP-Adressen enthält das Zertifikat für Aufrufe ohne Namen nur die erste.
+
 Hinweis: Docker Desktop (macOS/Windows) übersetzt Quelladressen teilweise in
 die interne Gateway-Adresse; dort ist die Heimnetz-Schranke von Caddy nicht
 verlässlich. Für den Betrieb einen Linux-Rechner (z. B. Mini-PC, NAS) nutzen.
@@ -109,6 +118,9 @@ docker compose exec -T db pg_restore -U postgres -d stockmaster --clean < stockm
 
 ## Schlüssel und Passwörter
 
+- `secrets/sm_schluessel` bzw. `SM_SCHLUESSEL` wird beim Start geprüft (Base64, genau 32 Byte). Ist er
+  ungültig, startet die API nicht und das Log nennt den Grund (`Konfigurationsfehler: SM_SCHLUESSEL …`).
+  Neu erzeugen: `openssl rand -base64 32`.
 - `secrets/sm_schluessel` verschlüsselt die TOTP-Geheimnisse (AES-256-GCM).
   Geht er verloren, müssen alle Benutzer Zwei-Faktor neu einrichten
   (Administration → Zwei-Faktor zurücksetzen). Eine automatische Rotation

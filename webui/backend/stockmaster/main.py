@@ -5,14 +5,17 @@ from __future__ import annotations
 import ipaddress
 import logging
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import admin, auth
-from .config import einstellungen
+from .config import SchluesselFehler, einstellungen
+from .db import engine
 from .spiel import router as spiel
 
 log = logging.getLogger("stockmaster")
@@ -28,10 +31,21 @@ SICHERHEITS_HEADER = {
 OEFFENTLICH = {"/api/auth/login", "/api/health"}
 
 
+@asynccontextmanager
+async def lebensdauer(_app: FastAPI):
+    # Eine unbrauchbare Konfiguration verhindert den Start, statt erst bei der Anmeldung als 500 aufzufallen.
+    try:
+        einstellungen().schluessel_bytes()
+    except SchluesselFehler as fehler:
+        log.error("Konfigurationsfehler: %s", fehler)
+        raise
+    yield
+
+
 def app_erstellen() -> FastAPI:
     e = einstellungen()
     app = FastAPI(title="StockMaster 3000", version="0.1.0", docs_url="/api/docs" if e.api_doku else None,
-                  redoc_url=None, openapi_url="/api/openapi.json" if e.api_doku else None)
+                  redoc_url=None, openapi_url="/api/openapi.json" if e.api_doku else None, lifespan=lebensdauer)
     netze = [ipaddress.ip_network(n) for n in e.erlaubte_netze]
 
     @app.middleware("http")
@@ -66,8 +80,16 @@ def app_erstellen() -> FastAPI:
         log.exception("Unerwarteter Fehler %s", korrelation)
         return JSONResponse({"detail": f"Interner Fehler (Referenz {korrelation})."}, status_code=500)
 
-    @app.get("/api/health")
-    def health() -> dict:
+    @app.get("/api/health", response_model=None)
+    def health() -> dict | JSONResponse:
+        # Gesund heißt: Schlüssel gültig und Datenbank erreichbar. Einzelheiten nur im Log, nie in der Antwort.
+        try:
+            einstellungen().schluessel_bytes()
+            with engine().connect() as verbindung:
+                verbindung.execute(text("select 1"))
+        except Exception as fehler:  # noqa: BLE001 - jede Störung bedeutet "nicht gesund"
+            log.warning("Health-Check fehlgeschlagen: %s: %s", type(fehler).__name__, fehler)
+            return JSONResponse({"ok": False}, status_code=503)
         return {"ok": True}
 
     app.include_router(auth.router)

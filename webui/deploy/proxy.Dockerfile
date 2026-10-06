@@ -15,6 +15,10 @@ RUN setcap -r /usr/bin/caddy \
  && addgroup -S -g 10002 caddy && adduser -S -u 10002 -G caddy caddy \
  && mkdir -p /data /config && chown -R caddy:caddy /data /config
 COPY webui/deploy/Caddyfile /etc/caddy/Caddyfile
+COPY webui/deploy/proxy-start.sh /usr/local/bin/proxy-start.sh
+RUN chmod 755 /usr/local/bin/proxy-start.sh
 COPY --from=bau /bau/dist /srv
 USER caddy
 EXPOSE 8080 8443
+# Das Startskript prüft die Namen aus der Umgebung und startet Caddy.
+CMD ["/usr/local/bin/proxy-start.sh"]

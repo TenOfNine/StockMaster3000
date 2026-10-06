@@ -36,10 +36,10 @@ export function Anmeldung() {
 
 function Markenflaeche() {
   return (
-    <aside className="relative hidden overflow-hidden border-r border-rand bg-flaeche lg:flex lg:flex-col lg:justify-between lg:p-12">
+    <aside className="relative hidden overflow-hidden border-r border-rand bg-flaeche lg:flex lg:flex-col lg:gap-14 lg:p-12">
       <div className="hintergrund-raster absolute inset-0 opacity-70" aria-hidden />
       <div className="glanz absolute inset-0" aria-hidden />
-      <svg className="absolute right-0 bottom-0 left-0 h-[55%] w-full opacity-90" viewBox="0 0 600 300" preserveAspectRatio="none" aria-hidden>
+      <svg className="absolute right-0 bottom-0 left-0 h-[45%] w-full opacity-90" viewBox="0 0 600 300" preserveAspectRatio="none" aria-hidden>
         <defs>
           {PROFILE.map((p) => (
             <linearGradient key={p} id={`verlauf-${p}`} x1="0" y1="0" x2="0" y2="1">
