@@ -62,6 +62,11 @@ Technische Festlegungen Stufe 1:
   Stack-Umgebungsvariablen statt Docker Secrets (Portainer Standalone kennt keine Secrets-Dateien);
   Anwendungspasswort nur Buchstaben und Ziffern (steht in der Datenbank-URL). Anleitung:
   webui/PORTAINER.md. Das Root-Zertifikat ist unter /stockmaster-root.crt abrufbar (nur Heimnetz).
+- Startreihenfolge (2026-10-06, Fund bei der Einrichtung in Portainer): Der PostgreSQL-Healthcheck über
+  den Unix-Socket meldete „bereit“, solange noch der temporäre Init-Server lief; die API startete zu früh
+  und stürzte ab. Behoben durch Healthcheck über TCP, Wartelogik der API (bis zu 2 Minuten, mit klarer
+  Meldung) und einen Passwortabgleich des DB-Images bei jedem Start (geänderte Passwörter bei vorhandenem
+  Volume). Der Proxy hängt nicht mehr am API-Healthcheck.
 - Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
   und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
   Netzwerk ersetzt); das Repository ist nur lesend eingebunden.

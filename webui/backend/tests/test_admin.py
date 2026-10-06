@@ -106,3 +106,51 @@ def test_migration_erzeugt_schema(tmp_path, monkeypatch):
     migrieren()
     tabellen = set(inspect(create_engine(f"sqlite:///{tmp_path / 'm.db'}")).get_table_names())
     assert {"users", "auth_sessions", "audit_log", "alembic_version"} <= tabellen
+
+
+def test_warten_auf_datenbank_wiederholt_und_meldet_falsches_passwort(monkeypatch):
+    import pytest
+    from sqlalchemy.exc import OperationalError
+
+    from stockmaster import __main__ as cli
+
+    class Fehler(Exception):
+        pass
+
+    aufrufe = {"n": 0}
+
+    class Verbindung:
+        def __enter__(self):
+            aufrufe["n"] += 1
+            if aufrufe["n"] < 3:
+                raise OperationalError("select 1", {}, Fehler("connection refused"))
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, *a):
+            return None
+
+    class Maschine:
+        def connect(self):
+            return Verbindung()
+
+    import stockmaster.db as db
+    monkeypatch.setattr(db, "engine", lambda: Maschine())
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    cli.auf_datenbank_warten(versuche=5)
+    assert aufrufe["n"] == 3
+
+    class Falsch:
+        def connect(self):
+            raise OperationalError("select 1", {}, Fehler("password authentication failed for user x"))
+
+    monkeypatch.setattr(db, "engine", lambda: Falsch())
+    with pytest.raises(SystemExit, match="Passwort passt nicht zur Datenbank"):
+        cli.auf_datenbank_warten(versuche=5)
+
+    monkeypatch.setattr(db, "engine", lambda: Maschine())
+    aufrufe["n"] = -100
+    with pytest.raises(SystemExit, match="nicht erreichbar"):
+        cli.auf_datenbank_warten(versuche=2)

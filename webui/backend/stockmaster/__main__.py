@@ -17,6 +17,34 @@ from .db import neue_sitzung
 from .modelle import AuditEintrag, Benutzer
 
 
+def auf_datenbank_warten(versuche: int = 40, pause: float = 3.0) -> None:
+    """Wartet, bis die Datenbank Verbindungen annimmt (Start im Verbund mit der DB, Erstinitialisierung)."""
+    import time
+
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    from .db import engine
+
+    for versuch in range(1, versuche + 1):
+        try:
+            with engine().connect() as verbindung:
+                verbindung.execute(text("select 1"))
+            return
+        except OperationalError as fehler:
+            ursache = str(fehler.orig).strip().splitlines()[0] if fehler.orig else str(fehler)
+            print(f"Datenbank noch nicht erreichbar (Versuch {versuch}/{versuche}): {ursache}", file=sys.stderr, flush=True)
+            if "password authentication failed" in ursache:
+                raise SystemExit(
+                    "Anmeldung an der Datenbank abgelehnt: Das Passwort passt nicht zur Datenbank. "
+                    "Der Datenbank-Container gleicht die Passwörter bei jedem Start ab: Container 'db' neu "
+                    "starten und dort im Log nach 'db-abgleich' suchen. Prüfen, dass POSTGRES_APP_PASSWORD "
+                    "in beiden Diensten gleich ist und nur Buchstaben und Ziffern enthält."
+                ) from fehler
+            time.sleep(pause)
+    raise SystemExit("Die Datenbank ist nach dem Warten nicht erreichbar. Logs des Containers 'db' prüfen.")
+
+
 def migrieren() -> None:
     from alembic.config import Config
 
@@ -24,6 +52,7 @@ def migrieren() -> None:
 
     konfig = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
     konfig.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
+    auf_datenbank_warten()
     command.upgrade(konfig, "head")
 
 
