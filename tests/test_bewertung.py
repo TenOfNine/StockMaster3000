@@ -42,11 +42,12 @@ def test_zweimal_ausfuehren_ist_idempotent(lauf, quelle):
     p = laden()
     p["offene_orders"].append({"id": "O-0001", "art": "market", "aktion": "kauf", "typ": "aktie",
                                "richtung": "long", "ticker": "SAP.DE", "basiswert": "SAP.DE", "einsatz": "200",
-                               "stop": "180", "kursziel": "250", "erfasst": "2026-10-08T20:00:00+02:00",
+                               "stop": "190", "kursziel": "250", "erfasst": "2026-10-08T20:00:00+02:00",
                                "journal_id": "J-20261008-01"})
     g.portfolio_speichern(p)
     quelle.konstant("SAP.DE", "2026-10-01", "2026-10-31", "200")
     assert bewertung.main(["nachbuchen"]) == 0
+    assert len(laden()["positionen"]) == 1
     vorher = dateien(lauf)
     assert bewertung.main(["nachbuchen"]) == 0
     assert dateien(lauf) == vorher

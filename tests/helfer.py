@@ -46,3 +46,17 @@ def laden(profil="ausgewogen"):
 
 def D(x):
     return Decimal(str(x))
+
+
+def git_init(projekt):
+    import subprocess
+    for befehl in (["git", "init", "-q", "-b", "main"], ["git", "config", "user.email", "test@example.org"],
+                   ["git", "config", "user.name", "Test"], ["git", "config", "commit.gpgsign", "false"]):
+        subprocess.run(befehl, cwd=projekt, check=True)
+    git_commit(projekt, "start")
+
+
+def git_commit(projekt, nachricht):
+    import subprocess
+    subprocess.run(["git", "add", "-A"], cwd=projekt, check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", nachricht], cwd=projekt, check=True)

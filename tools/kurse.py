@@ -315,7 +315,8 @@ def historie(ticker: str, von: date, bis: date) -> list[Kerze]:
             raise
         except Exception as exc:
             raise KursFehler(f"Historische Kurse für {ticker} nicht abrufbar: {exc}") from exc
-        neu = [k for k in neu if k.datum < heute]
+        neu = [Kerze(k.datum, _runden(k.open), _runden(k.high), _runden(k.low), _runden(k.close),
+                     _runden(k.dividende), _runden(k.split)) for k in neu if k.datum < heute]
         hinzu = {k.datum: k for k in neu if k.datum not in gespeichert}
         if hinzu:
             gespeichert.update(hinzu)

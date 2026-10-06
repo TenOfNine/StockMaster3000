@@ -12,7 +12,7 @@
 - [x] AP4 Limitprüfung (tools/limits.py)
 - [x] AP5 Orders und Buchung (tools/buchen.py)
 - [ ] AP6 Nachbuchung und Bewertung (tools/bewertung.py)
-- [ ] AP7 Prüfskript (tools/pruefe.py)
+- [x] AP7 Prüfskript (tools/pruefe.py)
 - [ ] AP8 Session-Sperre (tools/session.py)
 - [ ] AP9 Szenario-Tests
 - [ ] AP10 GitHub Action

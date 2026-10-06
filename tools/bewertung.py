@@ -60,6 +60,10 @@ class Tagesdaten:
             return gespeichert[max(kandidaten_alt)].close if kandidaten_alt else None
         return self.kerzen(ticker)[max(kandidaten)].close
 
+    def letzte_kerze(self, ticker: str, tag: date) -> kurse.Kerze | None:
+        kandidaten = [d for d in self.kerzen(ticker) if d <= tag]
+        return self.kerzen(ticker)[max(kandidaten)] if kandidaten else None
+
     def fx(self, tag: date, eroeffnung: bool) -> Decimal:
         ticker = g.projekt()["devisen_ticker"]
         kerze = self.kerze(ticker, tag)
@@ -333,10 +337,12 @@ def portfolio_stoppen(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten) -> Non
     portfolio = lauf.portfolio
     for position in list(portfolio["positionen"]):
         ticker = position["basiswert"]
-        kurs = daten.kerze(ticker, tag).close if daten.kerze(ticker, tag) else daten.letzter_schluss(ticker, tag)
-        fx = daten.fx(tag, False) if braucht_fx(ticker) else None
-        buchen.verkauf_ausfuehren(lauf, position, EINS, kurs, fx, tagesende(tag), tag, "historie:close",
-                                  tag.isoformat(), "portfoliostopp")
+        kerze = daten.letzte_kerze(ticker, tag)
+        if kerze is None:
+            raise g.KursFehler(f"Kein Schlusskurs für {ticker} bis {tag}; Portfolio-Stopp nicht buchbar.")
+        fx = daten.fx(kerze.datum, False) if braucht_fx(ticker) else None
+        buchen.verkauf_ausfuehren(lauf, position, EINS, kerze.close, fx, tagesende(tag), tag, "historie:close",
+                                  kerze.datum.isoformat(), "portfoliostopp")
     for order in list(portfolio["offene_orders"]):
         order_verfallen(lauf, order, tagesende(tag), "Portfolio-Stopp")
     portfolio["status"] = "geschlossen"
