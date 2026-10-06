@@ -31,7 +31,7 @@ services:
     tmpfs: [/tmp]
     networks: [edge, app]
     depends_on:
-      api: { condition: service_healthy }
+      - api   # startet mit; bis die API bereit ist, antwortet Caddy mit 502 statt den Stack abzubrechen
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://localhost:8443/"]
       interval: 30s
@@ -72,10 +72,13 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks: [data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d stockmaster"]
-      interval: 10s
+      # Über TCP prüfen: Während der Erstinitialisierung läuft ein temporärer Server nur über den
+      # Unix-Socket und würde sonst schon als "bereit" gelten, obwohl die API ihn nicht erreicht.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d stockmaster"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 10s
     deploy:
       resources: { limits: { cpus: "1.0", memory: 512M } }
 

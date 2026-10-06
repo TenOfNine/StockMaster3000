@@ -92,9 +92,15 @@ https://<SM_HOSTNAME>/stockmaster-root.crt
 beschrieben installieren). Es ist das öffentliche Zertifikat; der private Schlüssel verlässt den
 Container nie. Der Download ist wie alles andere nur aus privaten Adressbereichen erreichbar.
 
+## Passwörter ändern
+
+`POSTGRES_ADMIN_PASSWORD` und `POSTGRES_APP_PASSWORD` können in den Stack-Variablen geändert werden;
+beim Neustart des Containers `db` werden sie in der Datenbank übernommen, das Volume muss nicht
+gelöscht werden. Den Stack danach mit *Update the stack* erneut deployen.
+
 ## Aktualisieren
 
-- **Repository-Methode:** Stacks → `stockmaster` → *Pull and redeploy* (aktiviert „Re-pull image“).
+- **Repository-Methode:** Stacks → `stockmaster` → *Pull and redeploy* (aktiviert „Re-pull image“). Wichtig: Nach einem Update der Images (Action „Images“ muss durchgelaufen sein) immer mit „Re-pull image“ deployen, sonst bleibt das alte `latest` im Cache.
 - **Web editor:** Stack neu deployen mit aktiviertem *Re-pull image*.
 - Datenbank-Migrationen laufen beim Start der API automatisch.
 
@@ -116,7 +122,8 @@ Container nie. Der Download ist wie alles andere nur aus privaten Adressbereiche
 | --- | --- |
 | `required variable … is missing` | Pflicht-Variable fehlt in den Stack-Umgebungsvariablen. |
 | `pull access denied` / `unauthorized` | Registry-Zugang in Portainer fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
-| `db` startet nicht, Log: „darf nur Buchstaben und Ziffern enthalten“ | `POSTGRES_APP_PASSWORD` mit `openssl rand -hex 24` neu erzeugen. Bei geändertem Passwort nach dem ersten Start: Volume `pgdata` löschen (Daten gehen verloren) oder in der DB `ALTER ROLE stockmaster PASSWORD '…'` ausführen. |
+| API startet ständig neu (`restarting`) | Log des Containers ansehen (Portainer → Containers → `stockmaster-api-1` → Logs). Die API wartet bis zu 2 Minuten auf die Datenbank und nennt dort den Grund. Bei „Anmeldung an der Datenbank abgelehnt“: Container `db` neu starten (er gleicht die Passwörter bei jedem Start ab, Log-Zeile `db-abgleich`) und prüfen, dass `POSTGRES_APP_PASSWORD` nur Buchstaben und Ziffern enthält. |
+| `db`-Log: „darf nur Buchstaben und Ziffern enthalten“ | `POSTGRES_APP_PASSWORD` mit `openssl rand -hex 24` neu erzeugen und den Stack erneut deployen. |
 | API-Log: `Permission denied: /repo/...` | Dateien im Spiel-Repository sind für andere Benutzer nicht lesbar: `chmod -R a+rX /srv/stockmaster/spiel-repo`. |
 | Seite zeigt „Zugriff nur aus dem Heimnetz“ | Anfrage kommt nicht aus einem privaten Adressbereich (z. B. VPN): Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |
 | Leere Ansicht „kein Commit“ / Git-Historie fehlt | Der Ordner `SPIEL_REPO` ist kein Git-Repository oder `.git` ist nicht lesbar. |
