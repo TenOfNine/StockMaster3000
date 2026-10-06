@@ -13,7 +13,7 @@
 - [x] AP5 Orders und Buchung (tools/buchen.py)
 - [x] AP6 Nachbuchung und Bewertung (tools/bewertung.py)
 - [x] AP7 Prüfskript (tools/pruefe.py)
-- [ ] AP8 Session-Sperre (tools/session.py)
+- [x] AP8 Session-Sperre (tools/session.py)
 - [x] AP9 Szenario-Tests
 - [ ] AP10 GitHub Action
 - [ ] AP11 Initialisierung (tools/init.py)
