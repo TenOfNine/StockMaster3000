@@ -26,6 +26,7 @@ services:
     environment:
       SM_HOSTNAME: "${SM_HOSTNAME:?SM_HOSTNAME fehlt (z. B. stockmaster.local)}"
       SM_ZUSAETZLICHE_NETZE: "${SM_ZUSAETZLICHE_NETZE:-127.0.0.1/32}"
+      SM_ZUSAETZLICHE_HOSTS: "${SM_ZUSAETZLICHE_HOSTS:-}"
     volumes:
       - caddy_data:/data
       - caddy_config:/config
