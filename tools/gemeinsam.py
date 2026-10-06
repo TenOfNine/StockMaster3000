@@ -352,37 +352,83 @@ def cash_buchen(portfolio: dict, betrag) -> None:
 # Journal und Session-Sperre
 
 JOURNAL_KOPF = re.compile(r"^###\s+(J-\d{8}-\d{2})\s*\|\s*([^|]+?)\s*\|\s*(.+?)\s*$")
+SESSION_KOPF = re.compile(r"^###\s+(S-\d{8}-\d{2})\s*\|\s*Session\s*\|\s*(.+?)\s*$", re.I)
 JOURNAL_ZEIT = re.compile(r"^-\s*Zeit:\s*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})")
+JOURNAL_FELD = re.compile(r"^-\s*([^:]{1,60}):\s*(.*)$")
 JOURNAL_DATEI = re.compile(r"^(\d{4}-\d{2}-\d{2})_([a-z0-9äöüß-]+)\.md$")
 
 
-def journal_eintraege() -> dict[str, dict]:
-    """Liest alle Journal-Einträge: ID -> {datei, person, zeit, portfolio}."""
-    eintraege: dict[str, dict] = {}
+def _feldname(text: str) -> str:
+    return text.strip().lower()
+
+
+def journal_bloecke() -> list[dict]:
+    """Alle Journal- (J-) und Session-Einträge (S-) in Dateireihenfolge.
+
+    Je Eintrag: id, art (J/S), datei, datum, person, portfolio, instrument,
+    zeit, felder (Name -> Text, Folgezeilen angehängt), text (Rohtext).
+    """
+    bloecke: list[dict] = []
     ordner = pfad("journal")
     if not ordner.exists():
-        return eintraege
+        return bloecke
     for datei in sorted(ordner.glob("*.md")):
         treffer = JOURNAL_DATEI.match(datei.name)
         person = treffer.group(2) if treffer else None
+        datum = treffer.group(1) if treffer else None
         aktuell = None
+        feld = None
         for zeile in datei.read_text(encoding="utf-8").splitlines():
-            kopf = JOURNAL_KOPF.match(zeile.strip())
-            if kopf:
-                aktuell = {"id": kopf.group(1), "datei": datei.name, "person": person,
-                           "portfolio": kopf.group(2).strip().lower(),
-                           "instrument": kopf.group(3), "zeit": None,
-                           "doppelt": kopf.group(1) in eintraege}
-                eintraege.setdefault(kopf.group(1), aktuell)
-                if aktuell["doppelt"]:
-                    eintraege[kopf.group(1)]["doppelt"] = True
+            bereinigt = zeile.strip()
+            kopf_j = JOURNAL_KOPF.match(bereinigt)
+            kopf_s = None if kopf_j else SESSION_KOPF.match(bereinigt)
+            if kopf_j or kopf_s:
+                aktuell = {"id": (kopf_j or kopf_s).group(1), "art": "J" if kopf_j else "S",
+                           "datei": datei.name, "datum": datum, "person": person,
+                           "portfolio": kopf_j.group(2).strip().lower() if kopf_j else None,
+                           "instrument": kopf_j.group(3) if kopf_j else None,
+                           "auftraggeber": kopf_s.group(2) if kopf_s else None,
+                           "zeit": None, "felder": {}, "zeilen": [zeile]}
+                bloecke.append(aktuell)
+                feld = None
                 continue
-            if aktuell and aktuell["zeit"] is None:
-                zeit = JOURNAL_ZEIT.match(zeile.strip())
+            if aktuell is None:
+                continue
+            if bereinigt.startswith("#"):
+                aktuell = None  # andere Überschrift beendet den Eintrag
+                continue
+            aktuell["zeilen"].append(zeile)
+            if aktuell["zeit"] is None:
+                zeit = JOURNAL_ZEIT.match(bereinigt)
                 if zeit:
                     aktuell["zeit"] = datetime.fromisoformat(
                         f"{zeit.group(1)}T{zeit.group(2)}").replace(tzinfo=TZ)
+            treffer_feld = JOURNAL_FELD.match(bereinigt) if zeile.startswith("-") else None
+            if treffer_feld:
+                feld = _feldname(treffer_feld.group(1))
+                aktuell["felder"][feld] = treffer_feld.group(2).strip()
+            elif feld and bereinigt:
+                aktuell["felder"][feld] = (aktuell["felder"][feld] + " " + bereinigt).strip()
+    for block in bloecke:
+        block["text"] = "\n".join(block.pop("zeilen")).rstrip()
+    return bloecke
+
+
+def journal_eintraege() -> dict[str, dict]:
+    """Journal-Einträge (J-) nach ID: {datei, person, zeit, portfolio, felder, doppelt}."""
+    eintraege: dict[str, dict] = {}
+    for block in journal_bloecke():
+        if block["art"] != "J":
+            continue
+        if block["id"] in eintraege:
+            eintraege[block["id"]]["doppelt"] = True
+            continue
+        eintraege[block["id"]] = dict(block, doppelt=False)
     return eintraege
+
+
+def session_eintraege() -> list[dict]:
+    return [b for b in journal_bloecke() if b["art"] == "S"]
 
 
 def sperre_pfad() -> Path:

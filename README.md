@@ -96,6 +96,7 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 | `python tools/buchen.py kaufen/verkaufen/aendern/storno ...` | Orders, nur mit Journal-ID |
 | `python tools/bewertung.py nachbuchen` / `bericht` / `review` | Nachbuchung, `ranking.md`, Pflicht-Review |
 | `python tools/pruefe.py [--historie]` | unabhängige Kontrolle |
+| `python tools/termine.py` | fällige Reviews (Woche, Monat, Quartal, Drawdown-Stufe 2) |
 | `python tools/init.py --startdatum JJJJ-MM-TT` | Spielstart, einmalig nach Freigabe |
 | `python tools/produkte.py ko/faktor ...` | Zertifikatsrechner, nur Anzeige |
 

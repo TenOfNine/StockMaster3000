@@ -141,6 +141,62 @@ def pruefe_journal(profil: str, eintraege: dict | None = None) -> list[Befund]:
     return befunde
 
 
+J_PFLICHTFELDER = {
+    "zeit": "Zeit", "aktion": "Aktion", "these": "These", "szenarien": "Szenarien",
+    "katalysator": "Katalysator und Zeithorizont", "einstieg": "Einstieg, Stop, Kursziel",
+    "positionsgröße": "Positionsgröße und Risikorechnung", "quellen": "Quellen", "unsicherheiten": "Unsicherheiten",
+}
+S_PFLICHTFELDER = {"zeit": "Zeit", "marktlage": "Marktlage", "offene punkte": "Offene Punkte"}
+
+
+def _hat_feld(felder: dict, praefix: str) -> str | None:
+    for name, wert in felder.items():
+        if name.startswith(praefix):
+            return wert
+    return None
+
+
+def pruefe_journal_vollstaendigkeit(bloecke: list[dict] | None = None) -> list[Befund]:
+    """Warnungen für unvollständige Journal- und Session-Einträge (Vorlagen in CLAUDE.md)."""
+    name = "Journal-Vorlage"
+    befunde = []
+    bloecke = g.journal_bloecke() if bloecke is None else bloecke
+    profile = g.vorhandene_profile() or list(g.PROFILE)
+    for block in bloecke:
+        ort = f"{block['id']} ({block['datei']})"
+        pflicht = J_PFLICHTFELDER if block["art"] == "J" else dict(
+            S_PFLICHTFELDER, **{p: p.capitalize() for p in profile})
+        fehlend = [titel for praefix, titel in pflicht.items() if not (_hat_feld(block["felder"], praefix) or "").strip()]
+        if fehlend:
+            befunde.append(warnung(name, f"{ort}: es fehlt {', '.join(fehlend)}."))
+        if block["art"] == "J":
+            quellen = _hat_feld(block["felder"], "quellen") or ""
+            if quellen and "http" not in quellen:
+                befunde.append(warnung(name, f"{ort}: Quellen ohne URL."))
+            szenarien = _hat_feld(block["felder"], "szenarien") or ""
+            if szenarien and "%" not in szenarien:
+                befunde.append(warnung(name, f"{ort}: Szenarien ohne Wahrscheinlichkeiten in %."))
+    return befunde
+
+
+def pruefe_session_eintraege(bloecke: list[dict] | None = None) -> list[Befund]:
+    """Jede Session (Journal-Datei) endet mit einem Session-Eintrag S-... (regeln.md 10)."""
+    bloecke = g.journal_bloecke() if bloecke is None else bloecke
+    sperre = g.sperre_lesen()
+    laufend = f"{g.heute().isoformat()}_{sperre['person']}.md" if sperre and not g.sperre_verwaist(sperre) else None
+    befunde = []
+    ordner = g.pfad("journal")
+    dateien = sorted(d.name for d in ordner.glob("*.md")) if ordner.exists() else []
+    mit_session = {b["datei"] for b in bloecke if b["art"] == "S"}
+    for datei in dateien:
+        if datei not in mit_session and datei != laufend:
+            befunde.append(warnung("Session-Eintrag", f"journal/{datei}: kein Session-Eintrag (S-...)."))
+    ids = [b["id"] for b in bloecke if b["art"] == "S"]
+    for doppelt in sorted({i for i in ids if ids.count(i) > 1}):
+        befunde.append(fehler("Session-Eintrag", f"Session-ID {doppelt} ist mehrfach vergeben."))
+    return befunde
+
+
 # --------------------------------------------------------------------------
 # Kursbelege
 
@@ -400,6 +456,8 @@ def pruefe_kalender() -> list[Befund]:
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
     befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
+    bloecke = g.journal_bloecke()
+    befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)
     eintraege = g.journal_eintraege()
     for profil in g.vorhandene_profile():
         befunde += pruefe_nachrechnung(profil)

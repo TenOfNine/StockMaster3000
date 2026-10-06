@@ -14,6 +14,7 @@ import subprocess
 import sys
 
 import gemeinsam as g
+import termine
 from gemeinsam import Fehler
 
 SPERRDATEI = "session.lock"
@@ -69,27 +70,40 @@ def starten(name: str, git: bool = True) -> list[str]:
                          f"Erst 'git pull', dann erneut starten.\n{push.stderr.strip()}")
         meldungen.append("Sperre committet und gepusht.")
     meldungen.insert(0, f"Session von {person} gestartet ({g.iso(g.jetzt())}).")
-    return meldungen
+    return meldungen + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
 
 def beenden(git: bool = True) -> list[str]:
     sperre = g.sperre_lesen()
     if sperre is None:
         return ["Keine Sperre vorhanden."]
+    hinweise = session_eintrag_hinweis(sperre)
     if git and _git("ls-files", "--error-unmatch", SPERRDATEI).returncode == 0:
         _git_pflicht("rm", "-q", SPERRDATEI)
         _git_pflicht("commit", "-q", "-m", f"session: Ende {sperre['person']}", "--", SPERRDATEI)
-        return [f"Sperre von {sperre['person']} entfernt und committet. Jetzt 'git push'."]
+        return hinweise + [f"Sperre von {sperre['person']} entfernt und committet. Jetzt 'git push'."]
     g.sperre_pfad().unlink()
-    return [f"Sperre von {sperre['person']} entfernt."]
+    return hinweise + [f"Sperre von {sperre['person']} entfernt."]
+
+
+def session_eintrag_hinweis(sperre: dict) -> list[str]:
+    """Warnt, wenn die Session ohne Session-Eintrag (S-...) endet (regeln.md 10)."""
+    beginn = sperre["start_dt"]
+    eintraege = [e for e in g.session_eintraege()
+                 if e["person"] == sperre["person"] and e["zeit"] and e["zeit"] >= beginn.replace(second=0)]
+    if eintraege:
+        return []
+    return [f"WARNUNG: kein Session-Eintrag (S-...) seit Sessionbeginn {sperre['start']} in "
+            f"journal/*_{sperre['person']}.md. Bitte vor dem Ende anhängen (CLAUDE.md, Session-Vorlage)."]
 
 
 def status() -> list[str]:
     sperre = g.sperre_lesen()
     if sperre is None:
-        return ["Keine Session aktiv."]
+        return ["Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""
-    return [f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."]
+    return [f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."] + \
+        [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
 
 def main(argv=None) -> int:

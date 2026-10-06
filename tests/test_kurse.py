@@ -117,3 +117,21 @@ def test_historie_ueberschreibt_gespeicherte_tage_nicht(projekt, quelle, uhr):
     kerzen = kurse.historie("SAP.DE", date(2026, 10, 9), date(2026, 10, 12))
     assert kerzen[0].close == Decimal("200")
     assert kerzen[1].close == Decimal("205")
+
+
+@pytest.mark.parametrize("zeit,offen", [
+    ("2026-11-27T18:59:00", True),    # Tag nach Thanksgiving: Schluss 13:00 New York = 19:00 Berlin
+    ("2026-11-27T19:00:00", False),
+    ("2026-12-24T18:30:00", True),
+    ("2026-12-24T19:00:00", False),
+    ("2026-12-23T21:59:00", True),    # normaler Tag
+])
+def test_fruehschluss_nyse(projekt, zeit, offen):
+    zeitpunkt = datetime.fromisoformat(zeit).replace(tzinfo=g.TZ)
+    assert kurse.markt_offen("AAPL", zeitpunkt) is offen
+
+
+def test_feiertage_bis_2028_gepflegt(projekt):
+    for jahr in (2026, 2027, 2028):
+        assert kurse.feiertage_gepflegt(jahr) == []
+    assert kurse.feiertage_gepflegt(2029) == ["xetra", "nyse"]

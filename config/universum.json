@@ -1,35 +1,105 @@
 {
   "_quelle": "regeln.md Abschnitte 3, 5, 9; Erweiterungen nur durch die Auftraggeber",
-  "_hinweis_feiertage": "Feiertage sind bis einschließlich 2027 gepflegt; pruefe.py warnt, wenn das laufende Jahr fehlt.",
+  "_hinweis_feiertage": "Feiertage und Frühschlüsse sind bis einschließlich 2028 gepflegt; pruefe.py warnt, wenn das laufende oder (ab November) das nächste Jahr fehlt.",
   "boersen": {
     "xetra": {
       "name": "Xetra",
       "zeitzone": "Europe/Berlin",
       "oeffnung": "09:00",
       "schluss": "17:30",
-      "handelstage": [0, 1, 2, 3, 4],
+      "handelstage": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
       "waehrung": "EUR",
-      "feiertage": ["2026-01-01", "2026-04-03", "2026-04-06", "2026-05-01", "2026-12-24", "2026-12-25", "2026-12-31",
-                    "2027-01-01", "2027-03-26", "2027-03-29", "2027-12-24", "2027-12-31"]
+      "feiertage": [
+        "2026-01-01",
+        "2026-04-03",
+        "2026-04-06",
+        "2026-05-01",
+        "2026-12-24",
+        "2026-12-25",
+        "2026-12-31",
+        "2027-01-01",
+        "2027-03-26",
+        "2027-03-29",
+        "2027-12-24",
+        "2027-12-31",
+        "2028-04-14",
+        "2028-04-17",
+        "2028-05-01",
+        "2028-12-25",
+        "2028-12-26"
+      ],
+      "fruehschluss": {}
     },
     "nyse": {
       "name": "NYSE/NASDAQ",
       "zeitzone": "America/New_York",
       "oeffnung": "09:30",
       "schluss": "16:00",
-      "handelstage": [0, 1, 2, 3, 4],
+      "handelstage": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
       "waehrung": "USD",
-      "feiertage": ["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03",
-                    "2026-09-07", "2026-11-26", "2026-12-25",
-                    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05",
-                    "2027-09-06", "2027-11-25", "2027-12-24"]
+      "feiertage": [
+        "2026-01-01",
+        "2026-01-19",
+        "2026-02-16",
+        "2026-04-03",
+        "2026-05-25",
+        "2026-06-19",
+        "2026-07-03",
+        "2026-09-07",
+        "2026-11-26",
+        "2026-12-25",
+        "2027-01-01",
+        "2027-01-18",
+        "2027-02-15",
+        "2027-03-26",
+        "2027-05-31",
+        "2027-06-18",
+        "2027-07-05",
+        "2027-09-06",
+        "2027-11-25",
+        "2027-12-24",
+        "2028-01-17",
+        "2028-02-21",
+        "2028-04-14",
+        "2028-05-29",
+        "2028-06-19",
+        "2028-07-04",
+        "2028-09-04",
+        "2028-11-23",
+        "2028-12-25"
+      ],
+      "fruehschluss": {
+        "2026-11-27": "13:00",
+        "2026-12-24": "13:00",
+        "2027-11-26": "13:00",
+        "2028-07-03": "13:00",
+        "2028-11-24": "13:00"
+      }
     },
     "rohstoffe": {
       "name": "Gold und Brent",
       "zeitzone": "Europe/Berlin",
       "oeffnung": "08:00",
       "schluss": "22:00",
-      "handelstage": [0, 1, 2, 3, 4],
+      "handelstage": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
       "waehrung": "USD",
       "feiertage": [],
       "bar_beginn_vortag": "23:00",
@@ -40,27 +110,61 @@
       "zeitzone": "Europe/Berlin",
       "oeffnung": "00:00",
       "schluss": "23:59",
-      "handelstage": [0, 1, 2, 3, 4],
+      "handelstage": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
       "waehrung": "EUR",
       "feiertage": []
     }
   },
   "aktien": {
-    "suffix_boerse": {".DE": "xetra"},
+    "suffix_boerse": {
+      ".DE": "xetra"
+    },
     "ohne_suffix": "nyse",
     "mindestkurs": "1"
   },
   "basiswerte": {
-    "^GDAXI": {"name": "DAX", "boerse": "xetra"},
-    "^STOXX50E": {"name": "Euro Stoxx 50", "boerse": "xetra"},
-    "^GSPC": {"name": "S&P 500", "boerse": "nyse"},
-    "^NDX": {"name": "Nasdaq 100", "boerse": "nyse"},
-    "GC=F": {"name": "Gold", "boerse": "rohstoffe"},
-    "BZ=F": {"name": "Brent", "boerse": "rohstoffe"}
+    "^GDAXI": {
+      "name": "DAX",
+      "boerse": "xetra"
+    },
+    "^STOXX50E": {
+      "name": "Euro Stoxx 50",
+      "boerse": "xetra"
+    },
+    "^GSPC": {
+      "name": "S&P 500",
+      "boerse": "nyse"
+    },
+    "^NDX": {
+      "name": "Nasdaq 100",
+      "boerse": "nyse"
+    },
+    "GC=F": {
+      "name": "Gold",
+      "boerse": "rohstoffe"
+    },
+    "BZ=F": {
+      "name": "Brent",
+      "boerse": "rohstoffe"
+    }
   },
-  "aktien_als_basiswert": {"min_marktkapitalisierung": "10000000000"},
+  "aktien_als_basiswert": {
+    "min_marktkapitalisierung": "10000000000"
+  },
   "sonstige_ticker": {
-    "EURUSD=X": {"name": "EUR/USD", "boerse": "devisen"},
-    "EUNL.DE": {"name": "iShares Core MSCI World UCITS ETF (IE00B4L5Y983)", "boerse": "xetra"}
+    "EURUSD=X": {
+      "name": "EUR/USD",
+      "boerse": "devisen"
+    },
+    "EUNL.DE": {
+      "name": "iShares Core MSCI World UCITS ETF (IE00B4L5Y983)",
+      "boerse": "xetra"
+    }
   }
 }
