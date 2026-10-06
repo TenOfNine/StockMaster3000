@@ -1,0 +1,14 @@
+{
+  "_quelle": "regeln.md Abschnitte 2, 4, 5, 7",
+  "spread": {"aktie": "0.0010", "etf": "0.0010", "ko": "0.0020", "faktor": "0.0020"},
+  "_spread_hinweis": "Gesamtspread; je zur Hälfte auf Kauf und Verkauf",
+  "gebuehr_je_order": "1.00",
+  "mindestorder": "100.00",
+  "cash_zins_pa": "0.02",
+  "ko_long_aufzinsung_pa": "0.04",
+  "ko_short_aufzinsung_pa": "0.00",
+  "faktor_kosten_pa": "0.02",
+  "tage_je_jahr": 365,
+  "verlust_ohne_stop": {"aktie": "0.20", "etf": "0.20", "ko": "1.00", "faktor": "1.00"},
+  "faktor_startwert": "100"
+}

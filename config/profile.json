@@ -1,0 +1,38 @@
+{
+  "_quelle": "regeln.md Abschnitt 7 (Spielregeln v1.1); Anteile als Dezimalzahl",
+  "profile": {
+    "defensiv": {
+      "max_anteil_zertifikate": "0.10",
+      "max_hebel": "3",
+      "max_exposure": "1.2",
+      "max_einzelposition": "0.20",
+      "min_cashquote": "0.10",
+      "max_risiko_trade": "0.01",
+      "drawdown_stufe1": "-0.08",
+      "drawdown_stufe2": "-0.15",
+      "benchmark_etf_anteil": "0.30"
+    },
+    "ausgewogen": {
+      "max_anteil_zertifikate": "0.30",
+      "max_hebel": "5",
+      "max_exposure": "2.0",
+      "max_einzelposition": "0.25",
+      "min_cashquote": "0.05",
+      "max_risiko_trade": "0.02",
+      "drawdown_stufe1": "-0.12",
+      "drawdown_stufe2": "-0.20",
+      "benchmark_etf_anteil": "0.60"
+    },
+    "aggressiv": {
+      "max_anteil_zertifikate": "0.70",
+      "max_hebel": "10",
+      "max_exposure": "4.0",
+      "max_einzelposition": "0.35",
+      "min_cashquote": "0.00",
+      "max_risiko_trade": "0.05",
+      "drawdown_stufe1": "-0.20",
+      "drawdown_stufe2": "-0.35",
+      "benchmark_etf_anteil": "1.00"
+    }
+  }
+}

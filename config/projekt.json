@@ -1,0 +1,13 @@
+{
+  "_quelle": "regeln.md Abschnitte 2, 7, 9, 12",
+  "startkapital": "1000.00",
+  "portfolio_stopp": "200.00",
+  "auftraggeber": ["patrick", "philip"],
+  "sperre_stunden": 6,
+  "zeitzone": "Europe/Berlin",
+  "benchmark_ticker": "EUNL.DE",
+  "devisen_ticker": "EURUSD=X",
+  "max_kursalter_minuten": 30,
+  "sharpe_min_handelstage": 60,
+  "risikofreier_zins_pa": "0.02"
+}

@@ -1,12 +1,12 @@
 # Projektstatus
 
-- Phase: 1 (Aufbau), nicht begonnen
+- Phase: 1 (Aufbau), in Arbeit
 - Startdatum des Spiels: noch nicht gesetzt (wird in AP11 festgelegt, nie rückwirkend)
 - Letzte Session: keine
 
 ## Arbeitspakete Phase 1
 
-- [ ] AP1 Grundgerüst und Konfiguration
+- [x] AP1 Grundgerüst und Konfiguration
 - [ ] AP2 Kursdaten (tools/kurse.py)
 - [ ] AP3 Synthetische Zertifikate (tools/produkte.py)
 - [ ] AP4 Limitprüfung (tools/limits.py)
