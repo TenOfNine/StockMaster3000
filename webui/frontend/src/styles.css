@@ -1,0 +1,186 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design-Tokens: dunkles Standard-Theme, helles Alternativ-Theme.
+   Profilfarben geprüft mit dem Palette-Validator (Farbsehschwäche, Kontrast). */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0f14;
+  --bg-raster: rgba(148, 163, 184, 0.045);
+  --flaeche: #11161d;
+  --flaeche-2: #161c25;
+  --flaeche-3: #1d2530;
+  --rand: #232c38;
+  --rand-stark: #313c4a;
+  --text: #e7edf3;
+  --text-2: #a3afbd;
+  --text-3: #7f8b9a;
+  --akzent: #8ea2ff;
+  --akzent-text: #0b0f14;
+  --gut: #3fbf6a;
+  --gut-flaeche: rgba(63, 191, 106, 0.12);
+  --schlecht: #f07171;
+  --schlecht-flaeche: rgba(240, 113, 113, 0.12);
+  --warnung: #f4b740;
+  --warnung-flaeche: rgba(244, 183, 64, 0.12);
+  --defensiv: #3987e5;
+  --ausgewogen: #199e70;
+  --aggressiv: #d95926;
+  --benchmark: #8b96a5;
+  --raster: #1f2731;
+  --schatten: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --bg-raster: rgba(15, 23, 42, 0.035);
+  --flaeche: #ffffff;
+  --flaeche-2: #f8f9fb;
+  --flaeche-3: #eef1f5;
+  --rand: #e3e7ed;
+  --rand-stark: #cfd6df;
+  --text: #0f1720;
+  --text-2: #4a5665;
+  --text-3: #6b7685;
+  --akzent: #4553d8;
+  --akzent-text: #ffffff;
+  --gut: #0a7f2e;
+  --gut-flaeche: rgba(10, 127, 46, 0.1);
+  --schlecht: #c42b2b;
+  --schlecht-flaeche: rgba(196, 43, 43, 0.09);
+  --warnung: #9a6700;
+  --warnung-flaeche: rgba(214, 150, 0, 0.12);
+  --defensiv: #2a78d6;
+  --ausgewogen: #1baf7a;
+  --aggressiv: #eb6834;
+  --benchmark: #7d8794;
+  --raster: #edf0f4;
+  --schatten: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-flaeche: var(--flaeche);
+  --color-flaeche-2: var(--flaeche-2);
+  --color-flaeche-3: var(--flaeche-3);
+  --color-rand: var(--rand);
+  --color-rand-stark: var(--rand-stark);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-akzent: var(--akzent);
+  --color-akzent-text: var(--akzent-text);
+  --color-gut: var(--gut);
+  --color-gut-flaeche: var(--gut-flaeche);
+  --color-schlecht: var(--schlecht);
+  --color-schlecht-flaeche: var(--schlecht-flaeche);
+  --color-warnung: var(--warnung);
+  --color-warnung-flaeche: var(--warnung-flaeche);
+  --color-defensiv: var(--defensiv);
+  --color-ausgewogen: var(--ausgewogen);
+  --color-aggressiv: var(--aggressiv);
+  --color-benchmark: var(--benchmark);
+  --shadow-karte: var(--schatten);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--akzent) 35%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--akzent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rand-stark) transparent;
+  }
+}
+
+@layer utilities {
+  .zahl {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum", "cv11";
+  }
+  .hintergrund-raster {
+    background-image: linear-gradient(var(--bg-raster) 1px, transparent 1px),
+      linear-gradient(90deg, var(--bg-raster) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .glanz {
+    background: radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--akzent) 9%, transparent), transparent 55%);
+  }
+}
+
+@layer components {
+/* Markdown-Ansicht (Journal, Regeln, Reviews) */
+.prosa {
+  color: var(--text-2);
+  line-height: 1.7;
+  font-size: 0.925rem;
+}
+.prosa h1 { color: var(--text); font-size: 1.5rem; font-weight: 650; margin: 0 0 1rem; letter-spacing: -0.01em; }
+.prosa h2 { color: var(--text); font-size: 1.15rem; font-weight: 620; margin: 2rem 0 0.75rem; padding-top: 0.25rem; }
+.prosa h3 { color: var(--text); font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+.prosa p { margin: 0.6rem 0; }
+.prosa ul, .prosa ol { margin: 0.6rem 0; padding-left: 1.3rem; }
+.prosa ul { list-style: disc; }
+.prosa ol { list-style: decimal; }
+.prosa li { margin: 0.25rem 0; }
+.prosa li::marker { color: var(--text-3); }
+.prosa a { color: var(--akzent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.prosa strong { color: var(--text); font-weight: 620; }
+.prosa code { font-family: var(--font-mono); font-size: 0.82em; background: var(--flaeche-3); padding: 0.1rem 0.35rem; border-radius: 5px; color: var(--text); }
+.prosa pre { background: var(--flaeche-2); border: 1px solid var(--rand); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; font-size: 0.82rem; }
+.prosa pre code { background: none; padding: 0; }
+.prosa blockquote { border-left: 3px solid var(--rand-stark); padding-left: 1rem; color: var(--text-3); margin: 1rem 0; }
+.prosa table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; display: block; overflow-x: auto; }
+.prosa th { text-align: left; color: var(--text); font-weight: 600; border-bottom: 1px solid var(--rand-stark); padding: 0.5rem 0.75rem; white-space: nowrap; }
+.prosa td { border-bottom: 1px solid var(--rand); padding: 0.5rem 0.75rem; font-variant-numeric: tabular-nums; }
+.prosa hr { border: 0; border-top: 1px solid var(--rand); margin: 1.5rem 0; }
+
+}
+
+/* Recharts: ruhige Achsen */
+.recharts-cartesian-axis-tick-value { fill: var(--text-3); font-size: 11px; }
+.recharts-surface:focus { outline: none; }
+
+@keyframes einblenden {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.einblenden { animation: einblenden 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes schimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.skelett {
+  background: linear-gradient(90deg, var(--flaeche-2), var(--flaeche-3), var(--flaeche-2));
+  background-size: 200% 100%;
+  animation: schimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .einblenden, .skelett { animation: none; }
+}
