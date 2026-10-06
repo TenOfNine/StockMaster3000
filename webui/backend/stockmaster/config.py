@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -10,7 +11,44 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+log = logging.getLogger("stockmaster")
+
 PRIVATE_NETZE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7", "::1/128"]
+SCHLUESSEL_HINWEIS = "Neu erzeugen mit: openssl rand -base64 32 (44 Zeichen, endet auf '=')."
+
+
+class SchluesselFehler(RuntimeError):
+    """SM_SCHLUESSEL fehlt oder ist ungültig. Die Meldung nennt nie den Wert selbst."""
+
+
+@lru_cache(maxsize=4)
+def schluessel_dekodieren(roh: str) -> bytes:
+    """Base64-Schlüssel mit genau 32 Byte.
+
+    Zuerst gilt das bisherige Verfahren unverändert: Bestehende Schlüssel müssen dieselben Bytes liefern
+    wie bisher, sonst würden gespeicherte Zwei-Faktor-Geheimnisse ungültig. Nur wenn das scheitert, wird
+    nachsichtig geprüft, was beim Kopieren und Einfügen schiefgeht: Leerraum, Anführungszeichen, die
+    URL-sichere Schreibweise und ein fehlendes Padding ('=' am Ende).
+    """
+    try:
+        wert = base64.b64decode(roh)
+        if len(wert) == 32:
+            return wert
+    except ValueError:  # binascii.Error ist eine ValueError
+        pass
+    text = "".join(roh.split()).strip("\"'")
+    text = text.replace("-", "+").replace("_", "/").rstrip("=")
+    try:
+        wert = base64.b64decode(text + "=" * (-len(text) % 4), validate=True)
+    except ValueError:
+        raise SchluesselFehler(
+            f"SM_SCHLUESSEL ist kein gültiges Base64 ({len(roh.strip())} Zeichen). {SCHLUESSEL_HINWEIS}"
+        ) from None
+    if len(wert) != 32:
+        raise SchluesselFehler(f"SM_SCHLUESSEL hat {len(wert)} statt 32 Byte. {SCHLUESSEL_HINWEIS}")
+    log.warning("SM_SCHLUESSEL hatte ein fehlerhaftes Format (Anführungszeichen, Leerraum oder fehlendes '=') "
+                "und wurde korrigiert. Bitte den Wert in der Konfiguration ersetzen. %s", SCHLUESSEL_HINWEIS)
+    return wert
 
 
 class Einstellungen(BaseSettings):
@@ -63,11 +101,8 @@ class Einstellungen(BaseSettings):
         if not roh:
             if os.environ.get("SM_ENTWICKLUNG") == "1":
                 return b"\x00" * 32
-            raise RuntimeError("SM_SCHLUESSEL bzw. SM_SCHLUESSEL_DATEI fehlt (32 Byte, Base64).")
-        wert = base64.b64decode(roh)
-        if len(wert) != 32:
-            raise RuntimeError("Der Schlüssel muss 32 Byte lang sein (Base64).")
-        return wert
+            raise SchluesselFehler(f"SM_SCHLUESSEL bzw. SM_SCHLUESSEL_DATEI fehlt (32 Byte, Base64). {SCHLUESSEL_HINWEIS}")
+        return schluessel_dekodieren(roh)
 
 
 @lru_cache
