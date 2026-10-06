@@ -101,3 +101,14 @@ def test_pflicht_review_stufe_2(projekt):
     p["stufe2_review"] = {"datei": "reviews/x.md", "zeit": "2026-10-14T10:00:00+02:00"}
     g.portfolio_speichern(p)
     assert all(f["art"] != "stufe2" for f in termine.faellige_reviews(date(2026, 10, 14)))
+
+
+def test_atomar_geschriebene_dateien_beachten_umask(projekt):
+    import os
+    alt = os.umask(0o022)
+    try:
+        ziel = projekt / "data" / "probe.csv"
+        g.atomar_schreiben(ziel, "x\n")
+        assert ziel.stat().st_mode & 0o777 == 0o644
+    finally:
+        os.umask(alt)

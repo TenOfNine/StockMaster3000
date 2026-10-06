@@ -149,6 +149,12 @@ def text(wert) -> str:
 # Dateien
 
 
+def _umask() -> int:
+    maske = os.umask(0)
+    os.umask(maske)
+    return maske
+
+
 def atomar_schreiben(ziel: Path, inhalt: str) -> None:
     ziel = Path(ziel)
     ziel.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +162,9 @@ def atomar_schreiben(ziel: Path, inhalt: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as datei:
             datei.write(inhalt)
+        # mkstemp legt 0600 an; Spieldateien sollen wie gewöhnliche Dateien die umask
+        # beachten, damit z. B. die Web-UI sie lesend einbinden kann.
+        os.chmod(temp, 0o666 & ~_umask())
         os.replace(temp, ziel)
     except BaseException:
         if os.path.exists(temp):
