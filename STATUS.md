@@ -1,6 +1,6 @@
 # Projektstatus
 
-- Phase: 1 (Aufbau), in Arbeit
+- Phase: 1 (Aufbau), AP1 bis AP11 erledigt; AP12 (Testsession, Anlagerichtlinien, Freigabe) offen
 - Startdatum des Spiels: noch nicht gesetzt (wird in AP11 festgelegt, nie rückwirkend)
 - Letzte Session: keine
 
@@ -15,8 +15,8 @@
 - [x] AP7 Prüfskript (tools/pruefe.py)
 - [x] AP8 Session-Sperre (tools/session.py)
 - [x] AP9 Szenario-Tests
-- [ ] AP10 GitHub Action
-- [ ] AP11 Initialisierung (tools/init.py)
+- [x] AP10 GitHub Action (grüner Lauf: https://github.com/TenOfNine/StockMaster3000/actions/runs/37445431578)
+- [x] AP11 Initialisierung (tools/init.py)
 - [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Übergang zu Phase 2
 
 ## Entscheidungen
