@@ -67,6 +67,11 @@ Technische Festlegungen Stufe 1:
   und stürzte ab. Behoben durch Healthcheck über TCP, Wartelogik der API (bis zu 2 Minuten, mit klarer
   Meldung) und einen Passwortabgleich des DB-Images bei jedem Start (geänderte Passwörter bei vorhandenem
   Volume). Der Proxy hängt nicht mehr am API-Healthcheck.
+- Veraltete Images (2026-10-06, zweiter Fund in Portainer): Compose zieht ein vorhandenes `latest` nicht
+  neu; der Redeploy startete weiter den alten Code. Der Stack nutzt jetzt `pull_policy: always`, die API
+  schreibt ihre Version (Commit) als erste Logzeile, der DB-Healthcheck prüft die Anmeldung der
+  Anwendungsrolle (API startet erst nach dem Passwortabgleich), und abgelehnte Anmeldungen werden
+  mehrfach wiederholt, bevor die API aufgibt.
 - Die Web-UI importiert die Werkzeuge des eingebundenen Spiel-Repositorys
   und ruft keine Kurse ab (Kursquelle im Prozess durch eine Attrappe ohne
   Netzwerk ersetzt); das Repository ist nur lesend eingebunden.

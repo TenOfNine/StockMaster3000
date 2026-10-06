@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def auf_datenbank_warten(versuche: int = 40, pause: float = 3.0) -> None:
 
     from .db import engine
 
+    abgelehnt = 0
     for versuch in range(1, versuche + 1):
         try:
             with engine().connect() as verbindung:
@@ -34,7 +36,10 @@ def auf_datenbank_warten(versuche: int = 40, pause: float = 3.0) -> None:
         except OperationalError as fehler:
             ursache = str(fehler.orig).strip().splitlines()[0] if fehler.orig else str(fehler)
             print(f"Datenbank noch nicht erreichbar (Versuch {versuch}/{versuche}): {ursache}", file=sys.stderr, flush=True)
-            if "password authentication failed" in ursache:
+            # Der Passwortabgleich des DB-Containers kann beim Start kurz nachlaufen: erst nach
+            # mehreren abgelehnten Anmeldungen aufgeben.
+            abgelehnt += "password authentication failed" in ursache
+            if abgelehnt >= 10:
                 raise SystemExit(
                     "Anmeldung an der Datenbank abgelehnt: Das Passwort passt nicht zur Datenbank. "
                     "Der Datenbank-Container gleicht die Passwörter bei jedem Start ab: Container 'db' neu "
@@ -52,6 +57,7 @@ def migrieren() -> None:
 
     konfig = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
     konfig.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
+    print(f"StockMaster API, Version {os.environ.get('SM_VERSION', 'unbekannt')}", flush=True)
     auf_datenbank_warten()
     command.upgrade(konfig, "head")
 
