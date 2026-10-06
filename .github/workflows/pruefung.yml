@@ -1,0 +1,33 @@
+name: Prüfung
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruefung:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken (vollständige Historie für die Nur-Anhängen-Prüfung)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Tests (ohne Netzwerk, Kursdaten gemockt)
+        run: python -m pytest -q
+
+      - name: Prüfskript über die gesamte Historie
+        run: python tools/pruefe.py --historie
