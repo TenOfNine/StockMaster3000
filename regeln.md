@@ -1,7 +1,8 @@
-# Spielregeln v1.1
+# Spielregeln v1.2
 
-Verbindlich für alle Sessions. Änderungen nur durch Patrick und Philip
-gemeinsam, per Commit mit Datum, ohne rückwirkende Anwendung. Die
+Verbindlich für alle Sessions. Änderungen nur durch die Auftraggeber
+(config/projekt.json) gemeinsam, per Commit mit Datum, ohne rückwirkende
+Anwendung. Die
 maschinenlesbaren Limits stehen in config/profile.json und müssen mit
 Abschnitt 7 übereinstimmen.
 
@@ -20,8 +21,12 @@ Abschnitt 7 übereinstimmen.
 ## 2. Kapital und Zins
 
 - Startkapital: 1.000 EUR je Portfolio (defensiv, ausgewogen, aggressiv).
-- Startdatum: erster Handelstag nach Abschluss von Phase 1, festgelegt in
-  STATUS.md. Kein festes Enddatum.
+- Startdatum: erst nach der Freigabe von AP12 durch die Auftraggeber,
+  frühestens der erste Handelstag danach; gesetzt mit tools/init.py und
+  vermerkt in STATUS.md. Kein festes Enddatum.
+- Ein Arbeitsbereich ist eine eigenständige Spielinstanz mit eigenem
+  Repository, eigenen drei Portfolios und eigenen Auftraggebern. Diese
+  Regeln gelten je Arbeitsbereich; Arbeitsbereiche sind strikt getrennt.
 - Cash-Zins: 2 % p. a., einfache Tageszinsen (Act/365) auf den
   Cash-Endbestand jedes Kalendertags, täglich gutgeschrieben. Die
   Nachbuchung erfolgt beim nächsten Session-Start.
@@ -42,6 +47,22 @@ Abschnitt 7 übereinstimmen.
   EUR bzw. USD.
 - Erweiterungen der Liste nur durch die Auftraggeber
   (config/universum.json).
+
+**Schwerpunkt je Arbeitsbereich** (optional)
+- Die Auftraggeber können das Universum eines Arbeitsbereichs in
+  config/schwerpunkt.json weiter einschränken, nie erweitern: Region
+  (Firmensitz), Handelsplatz, Sektor, erlaubte Basiswerte für
+  Zertifikate, erlaubte ETFs.
+- Durchsetzung "verbindlich": Käufe, die nicht passen, werden bei
+  Erfassung und Ausführung von tools/limits.py abgelehnt; fehlende oder
+  unbekannte Stammdaten gelten als nicht passend. Durchsetzung
+  "Leitlinie": keine Ablehnung, Claude begründet jede Abweichung im
+  Journal.
+- Anlagestil und Themen sind Leitlinien für Claude, keine prüfbaren
+  Limits.
+- Ohne config/schwerpunkt.json gilt keine zusätzliche Einschränkung.
+- Änderungen mit Datum und ohne Rückwirkung; bestehende Positionen
+  müssen nicht verkauft werden, neue Käufe müssen passen.
 
 **Nicht erlaubt:** Optionen, Optionsscheine, Futures als Direktinvestment,
 CFDs, Kryptowerte, Direkt-Leerverkauf, Kredit.
@@ -143,7 +164,7 @@ Begriffe:
   neue Käufe müssen das Portfolio wieder Richtung Limit bewegen.
 
 **Portfolio-Stopp:** Fällt ein Portfolio unter 200 EUR, wird es
-geschlossen und ausgewertet. Ein Neustart braucht die Zustimmung beider
+geschlossen und ausgewertet. Ein Neustart braucht die Zustimmung aller
 Auftraggeber; die Historie bleibt erhalten.
 
 ## 8. Dividenden, Kapitalmaßnahmen, Währung
@@ -162,7 +183,7 @@ Auftraggeber; die Historie bleibt erhalten.
 ## 10. Dokumentationspflichten
 
 - Vor jeder Order steht ein Journal-Eintrag mit eindeutiger ID
-  (J-JJJJMMTT-NN) in journal/JJJJ-MM-TT_<person>.md. Jede Order
+  (J-JJJJMMTT-NN) in journal/JJJJ-MM-TT_<kennung>.md. Jede Order
   verweist auf diese ID.
 - Ein Eintrag enthält: Portfolio, Instrument, These, Szenarien
   (Bull/Base/Bear mit groben Wahrscheinlichkeiten), Katalysator,
@@ -172,6 +193,11 @@ Auftraggeber; die Historie bleibt erhalten.
   Korrekturen erfolgen als neuer Eintrag mit Verweis.
 - Fakten mit Quelle, Einschätzungen als solche markiert, Unsicherheit
   ausdrücklich benannt.
+- Jede Session endet mit einem Session-Eintrag (S-JJJJMMTT-NN) im
+  Journal: je Portfolio die Entscheidung, erwogene und verworfene
+  Alternativen und die Begründung, auch bei Nichtstun.
+- Im Repository stehen keine Namen oder personenbezogenen Daten.
+  Personen erscheinen nur als neutrale Kennung (config/projekt.json).
 
 ## 11. Strategie, Reviews, Lernen
 
@@ -186,8 +212,10 @@ Auftraggeber; die Historie bleibt erhalten.
 
 ## 12. Sessions
 
-- Eine Session startet ein Auftraggeber. Es läuft nie mehr als eine
-  Session gleichzeitig: Sperrdatei session.lock (Person, Startzeit), die
+- Eine Session startet ein Auftraggeber oder ein Mitglied mit
+  Vollzugriff auf den Arbeitsbereich; Sperre und Journal tragen die
+  Kennung des Auftraggebers. Es läuft nie mehr als eine
+  Session gleichzeitig: Sperrdatei session.lock (Kennung, Startzeit), die
   nach 6 Stunden als verwaist gilt.
 - Claude entscheidet autonom innerhalb dieser Regeln. Ideen der
   Auftraggeber prüft Claude kritisch und begründet seine Entscheidung.
@@ -203,3 +231,12 @@ Auftraggeber; die Historie bleibt erhalten.
 - Feste Spreads und Gebühren, unabhängig von Markt und Volumen.
 - Kursdaten aus einer frei verfügbaren Quelle, die verzögert oder
   lückenhaft sein kann.
+
+## 14. Änderungshistorie
+
+- v1.1: Ausgangsfassung nach Konzept-Review.
+- v1.2 (2026-10-06): Auftraggeber als neutrale Kennungen; Startdatum erst
+  nach Freigabe von AP12; Arbeitsbereiche und Schwerpunkt je
+  Arbeitsbereich; Session-Start durch Mitglieder mit Vollzugriff;
+  Session-Eintrag und Datenschutz in der Dokumentation. Einmalig von
+  Claude im Auftrag der Auftraggeber geändert (STATUS.md, Entscheidung 10).
