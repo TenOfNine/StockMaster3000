@@ -18,6 +18,8 @@ services:
   proxy:
     <<: *haertung
     image: "${SM_IMAGE_PREFIX:-ghcr.io/tenofnine/stockmaster3000}-proxy:${SM_IMAGE_TAG:-latest}"
+    # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
+    pull_policy: always
     ports:
       - "${SM_HTTPS_PORT:-443}:8443"
       - "${SM_HTTP_PORT:-80}:8080"
@@ -43,6 +45,8 @@ services:
   api:
     <<: *haertung
     image: "${SM_IMAGE_PREFIX:-ghcr.io/tenofnine/stockmaster3000}-api:${SM_IMAGE_TAG:-latest}"
+    # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
+    pull_policy: always
     environment:
       SM_DATENBANK_URL: "postgresql+psycopg://stockmaster:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD fehlt}@db:5432/stockmaster"
       SM_SCHLUESSEL: "${SM_SCHLUESSEL:?SM_SCHLUESSEL fehlt (openssl rand -base64 32)}"
@@ -62,6 +66,8 @@ services:
   db:
     <<: *haertung
     image: "${SM_IMAGE_PREFIX:-ghcr.io/tenofnine/stockmaster3000}-db:${SM_IMAGE_TAG:-latest}"
+    # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
+    pull_policy: always
     # Postgres braucht beim Start einige Rechte für Dateirechte und Benutzerwechsel.
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     environment:
@@ -72,9 +78,10 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks: [data]
     healthcheck:
-      # Über TCP prüfen: Während der Erstinitialisierung läuft ein temporärer Server nur über den
-      # Unix-Socket und würde sonst schon als "bereit" gelten, obwohl die API ihn nicht erreicht.
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d stockmaster"]
+      # Gesund erst, wenn sich die Anwendungsrolle mit dem aktuellen Passwort anmelden kann. Das
+      # deckt zwei Fälle ab: den temporären Init-Server (nur Unix-Socket) und den Passwortabgleich
+      # des DB-Images (db-abgleich.sh) bei vorhandenem Volume. Die API startet erst danach.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_APP_PASSWORD\" psql -h 127.0.0.1 -U stockmaster -d stockmaster -tAc 'select 1' | grep -q 1"]
       interval: 5s
       timeout: 5s
       retries: 30

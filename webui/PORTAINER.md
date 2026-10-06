@@ -100,9 +100,17 @@ gelöscht werden. Den Stack danach mit *Update the stack* erneut deployen.
 
 ## Aktualisieren
 
-- **Repository-Methode:** Stacks → `stockmaster` → *Pull and redeploy* (aktiviert „Re-pull image“). Wichtig: Nach einem Update der Images (Action „Images“ muss durchgelaufen sein) immer mit „Re-pull image“ deployen, sonst bleibt das alte `latest` im Cache.
-- **Web editor:** Stack neu deployen mit aktiviertem *Re-pull image*.
-- Datenbank-Migrationen laufen beim Start der API automatisch.
+1. Auf GitHub unter *Actions → Images* warten, bis der Lauf für den neuesten Commit auf `main` grün ist.
+2. Portainer → Stacks → `stockmaster` → **Pull and redeploy** (Repository-Methode) bzw. **Update the
+   stack** (Web editor).
+
+Der Stack zieht bei jedem Deploy die Images neu (`pull_policy: always`); ein Schalter „Re-pull image“
+ist nicht mehr nötig. Datenbank-Migrationen laufen beim Start der API automatisch, das
+Datenbank-Volume bleibt erhalten.
+
+**Prüfen, welche Version läuft:** Portainer → Containers → `stockmaster-api-1` → Logs. Die erste Zeile
+lautet `StockMaster API, Version <Commit>`. Fehlt sie, läuft noch ein altes Image: Stack stoppen, unter
+*Images* die drei `stockmaster3000-*`-Images löschen und den Stack erneut deployen.
 
 ## Hinweise zur Absicherung in Portainer
 
@@ -121,7 +129,7 @@ gelöscht werden. Den Stack danach mit *Update the stack* erneut deployen.
 | Symptom | Ursache und Abhilfe |
 | --- | --- |
 | `required variable … is missing` | Pflicht-Variable fehlt in den Stack-Umgebungsvariablen. |
-| `pull access denied` / `unauthorized` | Registry-Zugang in Portainer fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
+| `pull access denied` / `unauthorized` / `manifest unknown` | Registry-Zugang in Portainer fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
 | API startet ständig neu (`restarting`) | Log des Containers ansehen (Portainer → Containers → `stockmaster-api-1` → Logs). Die API wartet bis zu 2 Minuten auf die Datenbank und nennt dort den Grund. Bei „Anmeldung an der Datenbank abgelehnt“: Container `db` neu starten (er gleicht die Passwörter bei jedem Start ab, Log-Zeile `db-abgleich`) und prüfen, dass `POSTGRES_APP_PASSWORD` nur Buchstaben und Ziffern enthält. |
 | `db`-Log: „darf nur Buchstaben und Ziffern enthalten“ | `POSTGRES_APP_PASSWORD` mit `openssl rand -hex 24` neu erzeugen und den Stack erneut deployen. |
 | API-Log: `Permission denied: /repo/...` | Dateien im Spiel-Repository sind für andere Benutzer nicht lesbar: `chmod -R a+rX /srv/stockmaster/spiel-repo`. |

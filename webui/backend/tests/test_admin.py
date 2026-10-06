@@ -148,7 +148,7 @@ def test_warten_auf_datenbank_wiederholt_und_meldet_falsches_passwort(monkeypatc
 
     monkeypatch.setattr(db, "engine", lambda: Falsch())
     with pytest.raises(SystemExit, match="Passwort passt nicht zur Datenbank"):
-        cli.auf_datenbank_warten(versuche=5)
+        cli.auf_datenbank_warten(versuche=20)
 
     monkeypatch.setattr(db, "engine", lambda: Maschine())
     aufrufe["n"] = -100
