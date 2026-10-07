@@ -145,6 +145,8 @@ test("Lauf-Seite zeigt Läufe und Zeitplan und verträgt jede Form von Daten", a
   await expect(page.getByText("Automatik an")).toBeVisible();
   await expect(page.getByText(/Nächster Lauf/)).toBeVisible();
   await page.getByRole("button", { name: /Trading-Session.*fertig/ }).click();
+  await page.waitForTimeout(800);
+  expect(await page.locator('[role="alert"]').allInnerTexts(), "Bereichsfehler in der Lauf-Ansicht").toEqual([]);
   await expect(page.getByText("Ich habe nicht gehandelt").first()).toBeVisible();
   await expect(page.getByText("Prüfung: Prüfung bestanden")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
