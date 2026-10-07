@@ -14,9 +14,11 @@ ATTRAPPE = textwrap.dedent('''\
     #!{python}
     import json, os, sys
     args = sys.argv[1:]
+    # Läufe bekommen den Auftrag als stream-json über stdin (erste Zeile).
+    eingabe = sys.stdin.readline() if "--input-format" in args else ""
     # Der Lauf bekommt eine minimale Umgebung: Protokoll und Modus liegen deshalb in Dateien.
     with open("{protokoll}", "a") as f:
-        f.write(json.dumps({{"args": args, "env": sorted(os.environ)}}) + "\\n")
+        f.write(json.dumps({{"args": args, "env": sorted(os.environ), "stdin": eingabe}}) + "\\n")
     modus = open("{modus}").read().strip() if os.path.exists("{modus}") else "ok"
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if args[:1] == ["setup-token"]:
@@ -41,6 +43,21 @@ ATTRAPPE = textwrap.dedent('''\
         sys.exit(0)
     def e(d): print(json.dumps(d), flush=True)
     e({{"type": "system", "subtype": "init", "model": args[args.index("--model") + 1]}})
+    if modus.startswith("frage|"):
+        # frage|<Befehl>|<Anzahl>: fragt wie die CLI per control_request nach, wartet auf die Antwort über stdin
+        teile = (modus.split("|") + ["1"])[:3]
+        for n in range(int(teile[2])):
+            e({{"type": "control_request", "request_id": "r" + str(n), "request": {{
+               "subtype": "can_use_tool", "tool_name": "Bash", "input": {{"command": teile[1]}},
+               "description": "Test", "tool_use_id": "t" + str(n)}}}})
+            antwort = json.loads(sys.stdin.readline())["response"]
+            urteil = antwort["response"]
+            erlaubt = urteil["behavior"] == "allow"
+            e({{"type": "user", "message": {{"content": [{{"type": "tool_result", "is_error": not erlaubt,
+               "content": "ausgefuehrt" if erlaubt else urteil["message"]}}]}}}})
+        e({{"type": "result", "subtype": "success", "is_error": False, "num_turns": 2, "duration_ms": 1000,
+           "result": "Freigabe: " + urteil["behavior"]}})
+        sys.exit(0)
     e({{"type": "assistant", "message": {{"content": [{{"type": "text", "text": "Ich lese CLAUDE.md. Token " + token}}]}}}})
     e({{"type": "assistant", "message": {{"content": [{{"type": "tool_use", "name": "Bash",
        "input": {{"command": "python tools/session.py status"}}}}]}}}})
@@ -559,3 +576,201 @@ def test_erlaubnisliste_fuer_git_mit_c():
     verboten = json.loads(claude_lauf.einstellungen_json())["permissions"]["deny"]
     assert {"Bash(git * push*)", "Bash(git * remote*)", "Bash(git * config*)", "Bash(git * reset*)"} <= set(verboten)
     assert not any("push" in e or "reset" in e or "config" in e for e in erlaubt)
+
+
+# --------------------------------------------------------------------------
+# Freigaben (Entscheidung 37): Befehle, die weder erlaubt noch verboten sind, entscheidet ein Administrator
+
+AWK = "awk 'BEGIN{print 1+1}'"
+
+
+@pytest.fixture
+def schnell(monkeypatch):
+    """Kurze Taktung und Wartezeit, damit die Läufe in Sekunden durch sind."""
+    from stockmaster import config, freigaben
+
+    monkeypatch.setattr(freigaben, "TAKT_SEKUNDEN", 0.05)
+
+    def wartezeit(sekunden: int):
+        monkeypatch.setenv("SM_FREIGABE_WARTEZEIT_SEKUNDEN", str(sekunden))
+        config.einstellungen.cache_clear()
+
+    return wartezeit
+
+
+def _offene_freigabe(admin, sekunden=20):
+    import time
+
+    ende = time.monotonic() + sekunden
+    while time.monotonic() < ende:
+        offen = admin.get("/api/freigaben", params={"offen": "true"}).json()
+        if offen:
+            return offen[0]
+        time.sleep(0.05)
+    raise AssertionError("Es kam keine Freigabe-Anfrage an.")
+
+
+def _lauf_mit_frage(admin, claude, befehl, anzahl=1):
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    claude.modus(f"frage|{befehl}|{anzahl}")
+    lauf = _lauf_starten(admin)
+    worker = Worker()
+    worker.auftraege_bearbeiten()
+    return lauf, worker
+
+
+def _entscheiden(admin, freigabe, entscheidung):
+    return admin.post(f"/api/freigaben/{freigabe['id']}/entscheidung", json={"entscheidung": entscheidung})
+
+
+def test_freigabe_erlauben_ueber_die_web_ui(admin, werkzeug_attrappe, claude, schnell):
+    lauf, worker = _lauf_mit_frage(admin, claude, AWK)
+    offen = _offene_freigabe(admin)
+    assert offen["befehl"] == AWK and offen["werkzeug"] == "Bash" and offen["lauf"] == lauf["id"]
+    assert offen["entscheidbar"] and 0 < offen["sekunden_rest"] <= 180 and offen["beschreibung"] == "Test"
+    antwort = _entscheiden(admin, offen, "erlauben")
+    assert antwort.status_code == 200 and antwort.json()["status"] == "erlaubt"
+    worker.lauf_thread.join(timeout=30)
+    fertig = admin.get(f"/api/laeufe/{lauf['id']}").json()
+    assert fertig["status"] == "ok" and "Freigabe: allow" in fertig["meldung"]
+    log = admin.get(f"/api/laeufe/{lauf['id']}/log").json()["text"]
+    assert f"? Freigabe angefragt – Bash: {AWK}" in log and "✓ Freigabe erteilt" in log and "← ausgefuehrt" in log
+    verlauf = admin.get("/api/freigaben", params={"lauf": lauf["id"]}).json()
+    assert [f["status"] for f in verlauf] == ["erlaubt"] and verlauf[0]["entschieden"]
+    aktionen = [z["aktion"] for z in admin.get("/api/admin/audit").json()]
+    assert "freigabe_erlaubt" in aktionen
+    # Der Auftrag kam über stdin, nicht über die Kommandozeile.
+    aufruf = claude()[-1]
+    assert "--input-format" in aufruf["args"] and aufruf["args"][aufruf["args"].index("--permission-prompt-tool") + 1] == "stdio"
+    assert "Trading-Session" in json.loads(aufruf["stdin"])["message"]["content"]
+    assert not any("Trading-Session" in a for a in aufruf["args"])
+
+
+def test_freigabe_ablehnen(admin, werkzeug_attrappe, claude, schnell):
+    lauf, worker = _lauf_mit_frage(admin, claude, AWK)
+    assert _entscheiden(admin, _offene_freigabe(admin), "ablehnen").json()["status"] == "abgelehnt"
+    worker.lauf_thread.join(timeout=30)
+    assert "Freigabe: deny" in admin.get(f"/api/laeufe/{lauf['id']}").json()["meldung"]
+    log = admin.get(f"/api/laeufe/{lauf['id']}/log").json()["text"]
+    assert "✗ Freigabe abgelehnt: Von einem Administrator abgelehnt." in log
+    assert "freigabe_abgelehnt" in [z["aktion"] for z in admin.get("/api/admin/audit").json()]
+
+
+def test_freigabe_verfaellt_ohne_antwort_und_wird_nicht_wiederholt(admin, werkzeug_attrappe, claude, schnell):
+    schnell(1)
+    lauf, worker = _lauf_mit_frage(admin, claude, AWK, anzahl=2)  # Claude fragt zweimal dasselbe
+    worker.lauf_thread.join(timeout=30)
+    assert admin.get(f"/api/laeufe/{lauf['id']}").json()["status"] == "ok"
+    verlauf = admin.get("/api/freigaben", params={"lauf": lauf["id"]}).json()
+    assert [f["status"] for f in verlauf] == ["abgelaufen"]  # die Wiederholung wartet nicht noch einmal
+    log = admin.get(f"/api/laeufe/{lauf['id']}/log").json()["text"]
+    assert "Keine Entscheidung innerhalb von 1 Sekunden; automatisch abgelehnt." in log
+    assert "Bereits abgelehnt (keine Entscheidung rechtzeitig)" in log
+    # Zu spät entschieden: keine Wirkung.
+    assert _entscheiden(admin, verlauf[0], "erlauben").status_code == 409
+
+
+def test_nie_freigebbar_wird_ohne_rueckfrage_abgelehnt(admin, werkzeug_attrappe, claude, schnell):
+    lauf, worker = _lauf_mit_frage(admin, claude, "echo x > /data/trades/x.csv")
+    worker.lauf_thread.join(timeout=30)
+    assert admin.get("/api/freigaben", params={"offen": "true"}).json() == []
+    verlauf = admin.get("/api/freigaben", params={"lauf": lauf["id"]}).json()
+    assert [f["status"] for f in verlauf] == ["gesperrt"] and "Umleitung" in verlauf[0]["grund"]
+    assert verlauf[0]["entscheidbar"] is False and _entscheiden(admin, verlauf[0], "erlauben").status_code == 409
+    log = admin.get(f"/api/laeufe/{lauf['id']}/log").json()["text"]
+    assert "Nicht freigebbar: Umleitung in eine Datei" in log and "Freigabe: deny" in admin.get(
+        f"/api/laeufe/{lauf['id']}").json()["meldung"]
+
+
+def test_abbruch_beendet_offene_freigabe(admin, werkzeug_attrappe, claude, schnell):
+    lauf, worker = _lauf_mit_frage(admin, claude, AWK)
+    _offene_freigabe(admin)
+    assert admin.post(f"/api/laeufe/{lauf['id']}/abbrechen").status_code == 200
+    worker.lauf_thread.join(timeout=30)
+    assert admin.get(f"/api/laeufe/{lauf['id']}").json()["status"] == "abgebrochen"
+    verlauf = admin.get("/api/freigaben", params={"lauf": lauf["id"]}).json()
+    assert [f["status"] for f in verlauf] == ["abgebrochen"] and not verlauf[0]["entscheidbar"]
+
+
+def test_freigaben_api_eingaben_und_einmal_entscheiden(admin, werkzeug_attrappe, claude, schnell):
+    lauf, worker = _lauf_mit_frage(admin, claude, AWK)
+    offen = _offene_freigabe(admin)
+    url = f"/api/freigaben/{offen['id']}/entscheidung"
+    assert admin.post(url, json={"entscheidung": "vielleicht"}).status_code == 422
+    assert admin.post(url, json={"entscheidung": "erlauben", "zusatz": 1}).status_code == 422
+    assert admin.post("/api/freigaben/gibt-es-nicht/entscheidung", json={"entscheidung": "erlauben"}).status_code == 404
+    assert admin.post(url, json={"entscheidung": "erlauben"}, headers={"X-CSRF-Token": "falsch"}).status_code == 403
+    assert _entscheiden(admin, offen, "erlauben").status_code == 200
+    assert _entscheiden(admin, offen, "ablehnen").status_code == 409  # einmal entschieden, nicht umzuentscheiden
+    worker.lauf_thread.join(timeout=30)
+
+
+def test_freigaben_nur_fuer_angemeldete_und_entscheiden_nur_admins(nutzer, client):
+    from datetime import timedelta
+
+    from stockmaster.db import jetzt_utc, neue_sitzung
+    from stockmaster.freigaben import OFFEN
+    from stockmaster.modelle import Auftrag, Freigabe
+
+    with neue_sitzung() as db:
+        auftrag = Auftrag(art="trading")
+        db.add(auftrag)
+        db.flush()
+        zeile = Freigabe(auftrag_id=auftrag.id, werkzeug="Bash", befehl="date", status=OFFEN,
+                         laeuft_ab=jetzt_utc() + timedelta(minutes=3))
+        db.add(zeile)
+        db.commit()
+        fid = zeile.id
+    assert nutzer.get("/api/freigaben").status_code == 200  # wie das Log eines Laufs für alle sichtbar
+    assert nutzer.post(f"/api/freigaben/{fid}/entscheidung", json={"entscheidung": "erlauben"}).status_code == 404
+
+
+def test_freigaben_ohne_anmeldung(client):
+    assert client.get("/api/freigaben").status_code == 401
+    assert client.post("/api/freigaben/x/entscheidung", json={"entscheidung": "erlauben"}).status_code == 401
+
+
+def test_entscheider_schwaerzt_und_begrenzt(admin):
+    from stockmaster import auftraege, claude_lauf, freigaben
+    from stockmaster.db import neue_sitzung
+
+    with neue_sitzung() as db:
+        auftrag = auftraege.anlegen(db, "trading")
+        db.commit()
+        auftrag_id = auftrag.id
+    zeit = iter(range(0, 10_000, 1000))  # jede Abfrage der Uhr springt weit: die Anfrage verfällt sofort
+    entscheiden = freigaben.entscheider_fuer(auftrag_id, claude_lauf.Schwaerzer([TOKEN]), lambda: False,
+                                             monoton=lambda: next(zeit), schlafen=lambda _s: None)
+    erlaubt, meldung = entscheiden("Bash", {"command": f"echo {TOKEN}"}, f"zeigt {TOKEN}")
+    assert (erlaubt, meldung.startswith("Keine Entscheidung")) == (False, True)
+    zeile = admin.get("/api/freigaben", params={"lauf": auftrag_id}).json()[0]
+    assert TOKEN not in zeile["befehl"] + (zeile["beschreibung"] or "") and "[geheim]" in zeile["befehl"]
+    # Andere Werkzeuge sind nie freigebbar.
+    assert entscheiden("Write", {"file_path": "/data/portfolios/x", "content": "y"})[1].startswith("Nicht freigebbar")
+    for n in range(freigaben.MAX_JE_LAUF):
+        entscheiden("Write", {"file_path": f"/data/x{n}"})
+    assert entscheiden("Write", {"file_path": "/data/y"}) == (False, "Zu viele Freigabe-Anfragen in diesem Lauf.")
+
+
+def test_offene_freigaben_werden_beim_dienststart_geschlossen(admin):
+    from datetime import timedelta
+
+    from stockmaster import freigaben
+    from stockmaster.db import jetzt_utc, neue_sitzung
+    from stockmaster.modelle import Auftrag, Freigabe
+
+    with neue_sitzung() as db:
+        auftrag = Auftrag(art="trading")
+        db.add(auftrag)
+        db.flush()
+        zeile = Freigabe(auftrag_id=auftrag.id, werkzeug="Bash", befehl="date", status="offen",
+                         laeuft_ab=jetzt_utc() + timedelta(minutes=3))
+        db.add(zeile)
+        db.commit()
+        fid = zeile.id
+    assert freigaben.schliessen() == 1
+    with neue_sitzung() as db:
+        assert db.get(Freigabe, fid).status == "abgebrochen"
+    assert admin.get("/api/freigaben", params={"offen": "true"}).json() == []

@@ -84,3 +84,26 @@ class Auftrag(Basis):
     beendet: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     abbrechen: Mapped[bool] = mapped_column(Boolean, default=False)
     pruefung_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class Freigabe(Basis):
+    """Anfrage der Claude-CLI an einen Menschen (Entscheidung 37): Befehl, der weder erlaubt noch verboten ist.
+
+    Entschieden wird in der Web-UI. Wer entschieden hat, steht nur hier und im Audit-Log, nie im Spielstand.
+    Status: offen, erlaubt, abgelehnt, abgelaufen (keine Entscheidung rechtzeitig), gesperrt (vom Server nie
+    freigebbar, ohne Rückfrage abgelehnt), abgebrochen (Lauf wurde beendet).
+    """
+
+    __tablename__ = "freigaben"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    auftrag_id: Mapped[str] = mapped_column(String(36), ForeignKey("auftraege.id", ondelete="CASCADE"), index=True)
+    werkzeug: Mapped[str] = mapped_column(String(60))
+    befehl: Mapped[str] = mapped_column(Text)
+    beschreibung: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), index=True, default="offen")
+    grund: Mapped[str | None] = mapped_column(Text, nullable=True)
+    erstellt: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=jetzt_utc, index=True)
+    laeuft_ab: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    entschieden: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    entschieden_von: Mapped[str | None] = mapped_column(String(36), nullable=True)

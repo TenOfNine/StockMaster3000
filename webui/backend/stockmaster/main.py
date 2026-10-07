@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import admin, auftraege, auth, einrichtung, sicherung
+from . import admin, auftraege, auth, einrichtung, freigaben, sicherung
 from .config import SchluesselFehler, einstellungen
 from .db import engine
 from .spiel import router as spiel
@@ -99,6 +99,7 @@ def app_erstellen() -> FastAPI:
     app.include_router(spiel.router)
     app.include_router(einrichtung.router)
     app.include_router(auftraege.router)
+    app.include_router(freigaben.router)
     app.include_router(sicherung.router)
     return app
 

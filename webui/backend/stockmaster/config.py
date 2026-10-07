@@ -93,6 +93,8 @@ class Einstellungen(BaseSettings):
     pruefung_timeout_sekunden: int = 120
     # Wie lange die API auf das Ergebnis eines Worker-Auftrags wartet (Verbindungstests).
     auftrag_warten_sekunden: float = 90.0
+    # Wie lange ein Lauf auf die Freigabe eines Befehls wartet; danach gilt sie als abgelehnt (Entscheidung 37).
+    freigabe_wartezeit_sekunden: int = Field(default=180, ge=1, le=3600)
     # Größte hochladbare Sicherung (Wiederherstellung).
     sicherung_max_mb: int = 1024
 
