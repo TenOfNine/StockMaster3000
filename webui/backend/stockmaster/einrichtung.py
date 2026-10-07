@@ -118,6 +118,16 @@ def pflichtschritte() -> list[dict]:
     if not gestartet:
         offen.append({"schritt": "spielstart", "titel": "Spiel starten",
                       "text": "Das Spiel ist noch nicht gestartet (Startdatum fehlt).", "link": "/einrichtung#spielstart"})
+    else:
+        try:
+            ohne = _werkzeuge()["gemeinsam"].richtlinien_offen()
+        except Exception:  # noqa: BLE001
+            ohne = []
+        if ohne:
+            offen.append({"schritt": "richtlinien", "titel": "Anlagerichtlinien ausformulieren",
+                          "text": f"Für {', '.join(ohne)} gibt es nur die Vorlage; vor der ersten Trading-Session "
+                                  "den Lauf „Anlagerichtlinien ausformulieren“ starten.",
+                          "link": "/laeufe"})
     return offen
 
 
@@ -240,6 +250,11 @@ def spielstart_checkliste(db) -> dict:
     sperre = auftraege.session_sperre_aktiv()
     punkte.append({"id": "keine_session", "pflicht": True, "ok": sperre is None and auftraege.offener_lauf(db) is None,
                    "text": "Keine Session aktiv." if sperre is None else f"Session von {sperre['person']} läuft."})
+    offen_richtlinien = g.richtlinien_offen()
+    punkte.append({"id": "richtlinien", "pflicht": False, "ok": not offen_richtlinien,
+                   "text": "Anlagerichtlinien aller Profile ausformuliert (AP12 Punkt 2)." if not offen_richtlinien
+                   else f"Empfohlen vor der Freigabe: Anlagerichtlinien ausformulieren ({', '.join(offen_richtlinien)}); "
+                        "Trading-Sessions starten erst, wenn sie vorliegen."})
     test = appdaten.laden()["claude"].get("letzter_test") or {}
     punkte.append({"id": "claude", "pflicht": False, "ok": bool(test.get("ok")),
                    "text": "Claude-Verbindung erfolgreich getestet." if test.get("ok")

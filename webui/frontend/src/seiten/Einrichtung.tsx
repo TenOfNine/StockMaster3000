@@ -602,6 +602,7 @@ function KursBereich({ d }: { d: EinrichtungDaten }) {
   const test = useAktion((quelle: string) => api<{ meldung: string | null }>("/api/einrichtung/kursdaten/test", { daten: { anbieter: quelle } }), (e) => e.meldung ?? "Test abgeschlossen.");
   const abruf = useAktion(() => api<{ meldung: string | null }>("/api/einrichtung/kursdaten/abrufen", { daten: {} }), (e) => e.meldung ?? "Abruf beauftragt.");
   const karten = [{ id: "keiner" as const, name: "Nur yfinance", hinweis: "Bestehende freie Quelle (Yahoo Finance, verzögert). Kein Key nötig." }, ...d.optionen.kursanbieter];
+  const verzoegert = anbieter === "keiner";
   return (
     <Bereich
       id="kursdaten"
@@ -628,6 +629,14 @@ function KursBereich({ d }: { d: EinrichtungDaten }) {
           </button>
         ))}
       </div>
+      {verzoegert && (
+        <Hinweisbox>
+          <span className="font-medium text-text">Nur yfinance: </span>
+          Die Kurse sind typischerweise etwa 15 Minuten verzögert. Das genügt den Regeln (Handel nur mit Kursen, die höchstens 30 Minuten alt sind), lässt für US-Werte aber wenig
+          Spielraum. <b>Empfehlung:</b> einen kostenlosen Finnhub-Key eintragen (Echtzeit-Kurse für US-Aktien und -ETFs). Xetra-Werte, Indizes und Futures bleiben bei yfinance, weil der
+          Anbieter sie im kostenlosen Zugang nicht als dasselbe Instrument führt; fällt ein Anbieter aus oder ist sein Kontingent erschöpft, übernimmt yfinance automatisch.
+        </Hinweisbox>
+      )}
       {d.optionen.kursanbieter.map((a) => (
         <div key={a.id} className={cn("space-y-2", anbieter !== a.id && "opacity-80")}>
           <GeheimnisFeld name={`kurs_key_${a.id}`} label={`${a.name}: API-Key`} info={d.geheimnisse[`kurs_key_${a.id}`]} platzhalter="API-Key des Anbieters" />
@@ -683,7 +692,8 @@ function NewsBereich({ d }: { d: EinrichtungDaten }) {
   const n = d.einstellungen.news;
   const [aktiv, setAktiv] = useState(n.aktiv);
   const [intervall, setIntervall] = useState(String(n.intervall_minuten));
-  const [deaktiviert, setDeaktiviert] = useState<string[]>(n.deaktiviert);
+  // Gespeicherte Kennungen, die es als Standard-Feed nicht mehr gibt (z. B. nach einem Update), fallen weg.
+  const [deaktiviert, setDeaktiviert] = useState<string[]>(n.deaktiviert.filter((id) => d.optionen.news_feeds.some((f) => !f.eigen && f.id === id)));
   const [eigene, setEigene] = useState<EigenerFeed[]>(n.eigene);
   const [agent, setAgent] = useState(n.user_agent);
   const [neuName, setNeuName] = useState("");

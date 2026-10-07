@@ -27,9 +27,12 @@ AUTH_MUSTER = re.compile(r"invalid api key|authentication|unauthori[sz]ed|401|oa
 MODELL_MUSTER = re.compile(r"model|effort", re.I)
 DURCHREICHEN = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "SSL_CERT_FILE",
                 "NODE_EXTRA_CA_CERTS", "TZ", "SM_VERSION")
+ERGEBNIS_MAX = 100_000
 ERLAUBTE_WERKZEUGE = ["Read", "Glob", "Grep", "Edit", "Write", "WebSearch", "WebFetch", "TodoWrite",
                       "Bash(python tools/*)", "Bash(python3 tools/*)", "Bash(git status*)", "Bash(git log*)",
-                      "Bash(git diff*)", "Bash(git show*)", "Bash(date*)", "Bash(ls*)"]
+                      "Bash(git diff*)", "Bash(git show*)", "Bash(date*)", "Bash(ls*)",
+                      # Das Datenverzeichnis ist ein eigenes Repository: Claude ruft git dort oft mit -C auf.
+                      "Bash(git -C * log*)", "Bash(git -C * status*)", "Bash(git -C * diff*)", "Bash(git -C * show*)"]
 
 
 class Schwaerzer:
@@ -58,7 +61,10 @@ def einstellungen_json() -> str:
                  f"{daten}/spiel.json", f"{daten}/session.lock", f"{daten}/.git/**", f"{framework}/**"):
         verboten += [f"Edit({ziel})", f"Write({ziel})"]
     verboten += [f"Read({app}/**)", f"Edit({app}/**)", f"Write({app}/**)", "Read(//proc/**)",
-                 "Bash(env*)", "Bash(printenv*)", "Bash(git push*)", "Bash(git remote*)", "Bash(curl*)", "Bash(wget*)"]
+                 "Bash(env*)", "Bash(printenv*)", "Bash(curl*)", "Bash(wget*)",
+               # git nie pushen oder umkonfigurieren, auch nicht mit -C <pfad> davor
+               "Bash(git push*)", "Bash(git * push*)", "Bash(git remote*)", "Bash(git * remote*)",
+               "Bash(git config*)", "Bash(git * config*)", "Bash(git reset*)", "Bash(git * reset*)"]
     return json.dumps({"permissions": {"deny": verboten}, "env": {"DISABLE_AUTOUPDATER": "1"}})
 
 
@@ -75,13 +81,31 @@ def prompt(art: str, auftrag) -> str:
     )
     if art == "trading":
         return ("Führe eine Trading-Session nach CLAUDE.md (Trading-Modus) durch. " + gemeinsam +
-                " Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze zusätzlich zur "
-                "Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle.")
+                " Prüfe zuerst `python tools/richtlinien.py status`: Sind Anlagerichtlinien offen, handle nicht und "
+                "melde das. Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
+                "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle.")
     if art == "review":
         return ("Erstelle nur die fälligen Reviews und den Bericht (CLAUDE.md, Schritte 2 bis 5, 10 bis 12), "
-                "ohne Orders: `python tools/buchen.py` nicht aufrufen. " + gemeinsam +
+                "ohne Orders: `python tools/buchen.py` nicht aufrufen. Starte die Sperre mit "
+                "`python tools/session.py start --person <kennung> --art review`. " + gemeinsam +
                 " Vermerke Modell und Aufwand im Review unter 'Setup'.")
-    return ("Testsession ohne Trades (AP12): Spiele den Ablauf einmal vollständig durch (Sperre, Nachbuchen, Prüfen, "
+    if art == "richtlinien":
+        return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): strategie/defensiv.md, "
+                "strategie/ausgewogen.md und strategie/aggressiv.md. Starte die Sperre mit "
+                "`python tools/session.py start --person <kennung> --art richtlinien`. Hole je Profil die Vorlage mit "
+                "den verbindlichen Limits über `python tools/richtlinien.py vorlage --profil <profil>` (Abschnitt "
+                "Risikobudget unverändert übernehmen) und schreibe die Datei neu: Ziel (Rendite gegen die "
+                "Benchmark, Rolle im Experiment), Horizont und Session-Rhythmus, erlaubte Instrumente mit "
+                "Einschränkungen dieses Profils, Benchmark und die Ausgangsstrategie mit Begründung und aktueller "
+                "Marktsicht (Kurse nur aus tools/kurse.py, News aus dem News-Speicher oder der Web-Suche, jeweils "
+                "mit URL und Datum; Fakten und Einschätzungen trennen, Unsicherheit benennen). Die drei Profile "
+                "sollen sich im Risiko deutlich unterscheiden, aber alle Limits einhalten. Ersetze die Zeile "
+                "'Stand: Vorlage aus tools/init.py …' durch den heutigen Stand und trage in der Änderungshistorie "
+                "Datum, Anlass und Prüfkriterium ein. Erfasse keine Orders und keine Journal-Einträge; "
+                "`python tools/buchen.py` nicht aufrufen. Prüfe am Ende mit `python tools/richtlinien.py status`, "
+                "dass keine Richtlinie mehr offen ist. " + gemeinsam)
+    return ("Testsession ohne Trades (AP12): Spiele den Ablauf einmal vollständig durch (Sperre mit "
+            "`python tools/session.py start --person <kennung> --art testsession`, Nachbuchen, Prüfen, "
             "Marktüberblick mit tools/kurse.py und dem News-Speicher, Bericht), aber erfasse keine Orders und "
             "schreibe keine Journal-Einträge; `python tools/buchen.py` nicht aufrufen. Fasse am Ende zusammen, ob "
             "alle Werkzeuge funktionieren und was vor der Freigabe zu klären ist. " + gemeinsam)
@@ -170,8 +194,13 @@ def ereignis_text(ereignis: dict) -> list[str]:
                     inhalt = " ".join(t.get("text", "") for t in inhalt if isinstance(t, dict))
                 zeilen.append(f"  {'✗' if teil.get('is_error') else '←'} {_kurz(inhalt or '', 300)}")
     elif art == "result":
+        # Das Ergebnis vollständig und mit Zeilenumbrüchen (Markdown, Tabellen); nur gegen Ausreißer begrenzt.
+        ergebnis = str(ereignis.get("result", ""))
+        if len(ergebnis) > ERGEBNIS_MAX:
+            ergebnis = ergebnis[:ERGEBNIS_MAX] + "\n[… gekürzt]"
         zeilen.append(f"Ende ({ereignis.get('subtype')}, {ereignis.get('num_turns', '?')} Schritte, "
-                      f"{int(ereignis.get('duration_ms', 0) / 1000)} s): {_kurz(ereignis.get('result', ''), 2000)}")
+                      f"{int(ereignis.get('duration_ms', 0) / 1000)} s):")
+        zeilen.extend(ergebnis.splitlines() or [""])
     return zeilen
 
 

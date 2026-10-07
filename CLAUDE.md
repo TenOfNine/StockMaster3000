@@ -66,13 +66,17 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 1. Frage, welcher Auftraggeber (Kennung aus config/projekt.json) die
    Session startet, falls unklar.
 2. `python tools/session.py start --person <kennung>` (committet die Sperre
-   lokal im Datenverzeichnis; kein git pull, kein git push).
+   lokal im Datenverzeichnis; kein git pull, kein git push). Für Testsession,
+   Anlagerichtlinien und reine Reviews gilt `--art testsession`, `--art richtlinien`
+   bzw. `--art review` (ohne Session-Eintrag und ohne Orders).
    Ist die Sperre durch jemand anderen belegt: abbrechen und Bescheid geben.
 3. `python tools/bewertung.py nachbuchen` und `python tools/pruefe.py`.
    Bei Fehlern im Prüfskript: erst klären, nicht handeln.
 4. Lies regeln.md (Framework), strategie/*.md, lessons.md, ranking.md, das
    letzte Review und die Journal-Einträge der letzten Sessions
-   (Datenverzeichnis).
+   (Datenverzeichnis). Sind Anlagerichtlinien noch die Vorlage
+   (`python tools/richtlinien.py status`), handelst du nicht, sondern meldest
+   das: Sie entstehen in einer eigenen Richtlinien-Session (siehe unten).
 5. Ist ein Review fällig (erste Session einer neuen Kalenderwoche,
    Monats- oder Quartalswechsel, Drawdown-Stufe 2), erstelle es zuerst.
    Welche fällig sind, nennt `python tools/termine.py` (auch
@@ -83,7 +87,8 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
    News-Speicher (`python tools/news.py liste --tage 3`, je Wert mit
    `--ticker <T>`): datierte Meldungen mit Quelle und Link. Ergänzend News,
    Makrodaten und Termine über die Web-Suche (immer mit URL und Datum). Im
-   Journal verweist du auf Meldungen aus dem Speicher mit News-ID und Link.
+   Journal verweist du auf Meldungen aus dem Speicher mit News-ID, Link und
+   Herausgeber (bei Google News ist der Link nur eine Weiterleitung).
 7. Entscheide je Portfolio im Rahmen seiner Anlagerichtlinie.
    Nichtstun ist eine gültige Entscheidung und wird kurz begründet.
 8. Für jede Order: erst Journal-Eintrag schreiben (Vorlage unten), dann
@@ -103,6 +108,18 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 13. Zusammenfassung für die Auftraggeber: Was getan und warum, Stand je
     Portfolio gegen Benchmark, offene Orders, wichtige Termine.
 
+## Richtlinien-Session (Anlagerichtlinien, AP12 Punkt 2)
+Vor der ersten Trading-Session formulierst du strategie/<profil>.md aus:
+`python tools/session.py start --person <kennung> --art richtlinien`, je
+Profil `python tools/richtlinien.py vorlage --profil <profil>` (verbindliche
+Limits aus config/profile.json unverändert übernehmen), dann Ziel, Horizont,
+erlaubte Instrumente, Benchmark und Ausgangsstrategie mit Begründung und
+aktueller Marktsicht (Quellen mit URL und Datum; Fakten und Einschätzungen
+trennen). Die Zeile "Stand: Vorlage aus tools/init.py" ersetzt du durch den
+heutigen Stand und trägst eine Änderung in die Historie ein. Keine Orders, kein
+Journal. Prüfen mit `python tools/richtlinien.py status`, dann lokal committen
+und `session.py ende`.
+
 ## Journal-Vorlage (je Order)
 
     ### J-JJJJMMTT-NN | <Portfolio> | <Instrument>
@@ -114,7 +131,7 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
     - Einstieg, Stop, Kursziel: ...
     - Positionsgröße und Risikorechnung: Einsatz, Verlust bis Stop,
       Kosten, Anteil am Portfolio
-    - Quellen: URL, Datum; aus dem News-Speicher mit News-ID (N-…) und Link
+    - Quellen: URL, Datum; aus dem News-Speicher mit News-ID (N-…), Link und Herausgeber
     - Unsicherheiten: ...
 
 ## Session-Vorlage (je Session, nur anhängen)

@@ -373,7 +373,7 @@ class Worker:
         if ergebnis.get("abgebrochen") == "zeitlimit":
             return "fehler", "Zeitlimit überschritten; Lauf abgebrochen."
         if ergebnis.get("rueckgabe") == 0 and not ergebnis.get("is_error"):
-            return "ok", (ergebnis.get("result") or "Lauf beendet.")[:2000]
+            return "ok", (ergebnis.get("result") or "Lauf beendet.")[:20000]
         return claude_lauf.fehler_einordnen(str(ergebnis.get("result") or ergebnis.get("ausgabe") or ""))
 
     def _nachlauf(self, auftrag) -> dict:

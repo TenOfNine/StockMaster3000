@@ -263,6 +263,12 @@ export function RoadmapStatus() {
                           {a.erledigt ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-gut" /> : <Circle className="mt-0.5 size-4 shrink-0 text-text-3" />}
                           <span className={cn("min-w-0 break-words [overflow-wrap:anywhere]", a.erledigt ? "text-text-2" : "text-text")}>
                             <span className="font-medium">{a.kennung}</span> {a.titel}
+                            {a.detail && (
+                              <span className="mt-0.5 block text-[12px] text-text-3">
+                                {a.instanz && "Diese Instanz: "}
+                                {a.detail}
+                              </span>
+                            )}
                           </span>
                         </li>
                       ))}

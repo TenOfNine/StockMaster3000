@@ -84,8 +84,11 @@ Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt
    *Verbindung testen*, *Jetzt abrufen*. „Markt & Kurse“ füllt sich.
 3. **News:** Feeds an- oder abschalten, eigene Feeds ergänzen, *Feed testen*.
 4. **Sessions & Zeitplan:** Automatik und Zeiten, z. B. werktags 09:35 und 21:30.
-5. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung.
-6. **Sicherung** und 7. **Systemstatus** (Ampel je Bereich).
+5. **Anlagerichtlinien:** Claude-Läufe → *Lauf starten* → „Anlagerichtlinien ausformulieren (AP12)“. Der
+   Lauf schreibt strategie/<profil>.md aus; Trading-Läufe sind erst danach (und erst ab dem Startdatum)
+   möglich. Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
+6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung.
+7. **Sicherung** und 8. **Systemstatus** (Ampel je Bereich).
 
 ## Update einer bestehenden Installation (Migration)
 
@@ -158,6 +161,7 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | Claude-Test: „Token ungültig oder abgelaufen“ | Einrichtung → Claude → *Neu anmelden* (oder Token manuell neu erzeugen und eintragen). |
 | Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
 | Anmeldung: „Claude Code hat keinen Anmeldelink ausgegeben“ | Das Ausgabeformat der CLI hat sich geändert; Token manuell erzeugen und eintragen, Fehler melden. |
+| Start eines Trading-Laufs: „Anlagerichtlinien fehlen“ oder „Das Spiel beginnt erst am …“ | Zuerst den Lauf „Anlagerichtlinien ausformulieren“ ausführen bzw. das Startdatum abwarten (regeln.md 2 und 11). |
 | Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |
 | Browser: 421 oder `ERR_SSL_PROTOCOL_ERROR` | Name bzw. IP ist dem Proxy unbekannt: `SM_HOSTNAME` verwenden oder in `SM_ZUSAETZLICHE_HOSTS` eintragen. |
 | „Zugriff nur aus dem Heimnetz“ | Anfrage nicht aus privatem Adressbereich: Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |

@@ -85,7 +85,7 @@ export interface Ueberblick {
 }
 
 export interface Pflichtschritt {
-  schritt: "kursdaten" | "claude" | "spielstart";
+  schritt: "kursdaten" | "claude" | "spielstart" | "richtlinien";
   titel: string;
   text: string;
   link: string;
@@ -119,6 +119,9 @@ export interface NewsMeldung {
   kurztext: string;
   link: string;
   ticker: string[];
+  /** Herausgeber hinter Sammeldiensten wie Google News (der Link ist dort eine Weiterleitung). */
+  herausgeber?: string | null;
+  herausgeber_url?: string | null;
 }
 
 export interface MarktEintrag {
@@ -369,7 +372,7 @@ export interface Dokument {
 
 export interface StatusDaten {
   kopf: { phase?: string; startdatum?: string; letzte_session?: string };
-  arbeitspakete: { gruppe: string; kennung: string; titel: string; erledigt: boolean; offen_markiert: boolean }[];
+  arbeitspakete: { gruppe: string; kennung: string; titel: string; erledigt: boolean; offen_markiert: boolean; instanz?: boolean; detail?: string }[];
   entscheidungen: { nummer: number; text: string }[];
   auslegungsfragen: { nummer: number; text: string; abschnitt: string; entschieden: boolean }[];
 }

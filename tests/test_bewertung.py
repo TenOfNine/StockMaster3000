@@ -103,4 +103,5 @@ def test_bericht_kennzahlen(lauf, quelle):
     assert benchmark[-1]["aggressiv"] == "1020.00"
     text = (lauf / "ranking.md").read_text()
     assert "zu wenig Daten (3/60 Handelstage)" in text
-    assert "| Portfoliowert | 1000.15 EUR |" in text
+    assert "| Portfoliowert | 1000,15 EUR |" in text
+    assert "." not in text.split("| Portfoliowert")[1].split("\n")[0]  # Dezimalkomma statt Punkt

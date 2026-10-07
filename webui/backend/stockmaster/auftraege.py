@@ -17,7 +17,7 @@ from .auth import DB, Angemeldet, Streng, audit, begrenzen
 from .db import jetzt_utc, neue_sitzung, utc
 from .modelle import Auftrag, Benutzer
 
-LAUFARTEN = ("trading", "review", "testsession")
+LAUFARTEN = ("trading", "review", "testsession", "richtlinien")
 OFFEN = ("wartet", "laeuft")
 LOG_MAX = 256_000
 
@@ -122,6 +122,29 @@ def lauf_pruefen(db: Session, art: str, modell: str, aufwand: str, auftraggeber:
     sperre = session_sperre_aktiv()
     if sperre:
         raise HTTPException(409, f"Session-Sperre von {sperre['person']} seit {sperre['start']} (tools/session.py).")
+    if art == "trading":
+        trading_voraussetzungen()
+
+
+def trading_voraussetzungen() -> None:
+    """Trading nur nach dem Startdatum und mit ausformulierten Anlagerichtlinien (regeln.md 2 und 11)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from .spiel import lesen
+
+    g = lesen.werkzeuge()["gemeinsam"]
+    start = g.spiel_lesen().get("startdatum")
+    if not start:
+        raise HTTPException(409, "Das Spiel ist noch nicht gestartet (Einrichtung → Spielstart).")
+    heute = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
+    if start > heute:
+        raise HTTPException(409, f"Das Spiel beginnt erst am {start}. Vor dem Startdatum werden keine Trades gebucht "
+                                 "(regeln.md Abschnitt 2).")
+    offen = g.richtlinien_offen()
+    if offen:
+        raise HTTPException(409, f"Anlagerichtlinien fehlen: {', '.join(offen)}. Zuerst den Lauf „Anlagerichtlinien "
+                                 "ausformulieren“ ausführen (regeln.md Abschnitt 11).")
 
 
 # --------------------------------------------------------------------------
@@ -131,7 +154,7 @@ router = APIRouter(prefix="/api/laeufe", tags=["laeufe"])
 
 
 class LaufStart(Streng):
-    art: Literal["trading", "review", "testsession"]
+    art: Literal["trading", "review", "testsession", "richtlinien"]
     auftraggeber: str = Field(max_length=40)
     modell: str | None = Field(default=None, max_length=100)
     aufwand: str | None = Field(default=None, max_length=20)
