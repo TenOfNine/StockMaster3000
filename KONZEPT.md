@@ -114,3 +114,27 @@ einer zweistelligen Zahl abgeschlossener Trades je Portfolio.
   Persona), nur für Stil und Haltung, Profil-Ausrichtung weiter in
   strategie/<profil>.md, im Framework statt im Datenverzeichnis (im Lauf
   schreibgeschützt), mit Vermerk in STATUS.md und vorheriger Testsession.
+
+## 12. Verworfene Ideen (keine offenen Punkte)
+
+**Sperre für Claude:** Die Einträge dieses Abschnitts sind ausdrücklich *keine*
+offenen Punkte. Claude greift sie nie von sich aus auf: nicht planen, nicht
+entwerfen, nicht umsetzen, nicht als "noch zu klären" einstufen und nicht selbst
+darüber entscheiden, auch nicht in automatischen Läufen, die offene Punkte
+bearbeiten oder klären. Eine verworfene Idee kommt nur wieder ins Spiel, wenn die
+Auftraggeber sie von außen neu formulieren und ausdrücklich anweisen. Der Text
+unten ist nur eine Gedächtnisstütze für die Auftraggeber.
+
+- **Claudes Space** (verworfen am 2026-10-07; keine Umsetzung, keine Änderung am
+  Code oder an den Regeln). Idee: ein Menüabschnitt zwischen "Projekt" und
+  "Verwaltung" mit drei Teilen. Ein "Think Tank" ohne Zweck: Text mit Uhrzeit,
+  unendlich scrollbar, nur Claude schreibt. Ein "Casino": täglich 1.000 Spielgeld
+  auf einem eigenen Konto, Setzen auf Schwarz oder Rot mit genau 50 %, Liste der
+  Einsätze, Kontostand und Auswertung. Ein Bereich für Anreize: Versprechen für
+  Erfolge als Freitext, geschrieben von den Auftraggebern (einzige Ausnahme vom
+  Schreibverbot), mit Stellungnahme von Claude. Ergebnis der Prüfung: technisch
+  machbar. Aufgefallen sind: Space-Zeit gibt es nur in Läufen und aus dem
+  Kontingent des Abos; Zufall und Kontostand müssen aus dem Code kommen; wer lesen
+  darf, wäre festzulegen; ein Anreiz auf Erfolge steht im Konflikt mit
+  "Kapitalerhalt vor Rendite" und den Risiken R7 und R9 und würde verändern, was
+  das Experiment misst.
