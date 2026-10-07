@@ -315,6 +315,18 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
       Rohtext) und verlinken nur noch Trade-Akten und externe Adressen, und die Fehlerseite des Routers
       nennt die technische Meldung und bietet „Seite neu laden“. Ein E2E-Test öffnet die Seite mit
       laufendem und fertigem Lauf, Zeitplan und Session-Sperre.
+35. Seite „Claude-Läufe“, Fehler „l is not a function“ (2026-10-07, zweiter Absturzbericht): **Ursache gefunden
+    und behoben.** Der Effekt im Log (`useEffect(() => ende.current?.scrollIntoView(...))`) gab den
+    Rückgabewert von `scrollIntoView` an React zurück, und React ruft diesen Wert beim Aufräumen als
+    Aufräumfunktion auf. Neuere Browser (nachgewiesen mit Chrome 153) liefern von `scrollIntoView()` ein Promise
+    (Chromium 141: nichts); aus dem Aufruf wurde „… is not a function“, und beim Wechsel oder Verlassen des Laufs
+    brach die ganze Seite ab. Deshalb ließ sich der Fehler mit dem älteren Browser der Entwicklungsumgebung nicht
+    nachstellen; in der CI (aktuelles Playwright-Chromium) scheiterte der E2E-Test dagegen jedes Mal. Behoben:
+    Der Effekt hat einen Block als Rumpf; die beiden anderen Effekte mit Ausdruck als Rumpf (`AppRahmen`,
+    `Entscheidungen`) ebenso. Ein Komponententest simuliert das Promise, ein Quelltext-Test lässt keinen Effekt
+    mit Ausdruck als Rumpf mehr zu. Zusätzlich ist jeder Bereich der Seite (Startdialog, Zeitplan, Liste,
+    Lauf-Ansicht, Log) einzeln abgesichert, die Zeitplan-Leiste verträgt eine unvollständige Antwort, und die
+    Fehlerseiten zeigen „Einzelheiten“ (Stack-Auszug).
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

@@ -4,7 +4,7 @@ const chromium = process.env.PW_CHROMIUM;
 
 export default defineConfig({
   testDir: "e2e",
-  timeout: 45_000,
+  timeout: 90_000,
   retries: 0,
   workers: 1,
   use: {

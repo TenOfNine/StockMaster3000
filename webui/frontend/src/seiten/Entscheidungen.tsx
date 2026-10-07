@@ -44,7 +44,9 @@ export function Entscheidungen() {
   const [status, setStatus] = useState("alle");
   const [suche, setSuche] = useState("");
   const [sichtbar, setSichtbar] = useState(20);
-  useEffect(() => setSichtbar(20), [profil, status, suche]);
+  useEffect(() => {
+    setSichtbar(20);
+  }, [profil, status, suche]);
 
   const gruppen = useMemo(() => {
     const s = suche.trim().toLowerCase();
