@@ -15,8 +15,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import http.client
 import json
 import re
+import socket
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -32,24 +35,77 @@ MAX_BYTES = 2_000_000
 MONATE_FUER_DUPLIKATE = 3
 
 
+class FeedFehler(Fehler):
+    """Fehler beim Abruf oder Lesen eines Feeds.
+
+    art gruppiert die Ursachen (zugriff, nicht_gefunden, gedrosselt, server, zeitueberschreitung,
+    namensaufloesung, tls, verbindung, zu_gross, kein_feed, ...); der Text nennt die Ursache im Klartext, der
+    Hinweis, was sich dagegen tun lässt (kurz, die Meldung bleibt einzeilig lesbar).
+    """
+
+    def __init__(self, art: str, text: str, hinweis: str | None = None):
+        super().__init__(text)
+        self.art, self.hinweis = art, hinweis
+
+
 def standard_konfig() -> dict:
     return g.config("news")
 
 
+def _http_fehler(code: int) -> FeedFehler:
+    if code in (401, 403):
+        return FeedFehler("zugriff", f"Zugriff verweigert (HTTP {code}).",
+                          "Der Anbieter sperrt den Abruf, oft wegen des User-Agent (die SEC verlangt eine "
+                          "Kontaktangabe, siehe Einrichtung → News) oder weil eine Anmeldung nötig ist.")
+    if code in (404, 410):
+        return FeedFehler("nicht_gefunden", f"Feed-Adresse nicht gefunden (HTTP {code}).",
+                          "Der Feed existiert unter dieser Adresse nicht (mehr): Adresse prüfen oder Feed abschalten.")
+    if code == 429:
+        return FeedFehler("gedrosselt", "Zu viele Anfragen (HTTP 429).",
+                          "Der Anbieter drosselt den Abruf: Intervall erhöhen oder Feed abschalten.")
+    if code >= 500:
+        return FeedFehler("server", f"Serverfehler beim Anbieter (HTTP {code}).",
+                          "Meist vorübergehend, der nächste Abruf versucht es erneut.")
+    return FeedFehler("http", f"Unerwartete Antwort (HTTP {code}).", "Adresse des Feeds prüfen.")
+
+
+def _verbindungsfehler(exc: Exception, timeout: float) -> FeedFehler:
+    grund = getattr(exc, "reason", exc)
+    if isinstance(grund, TimeoutError):  # socket.timeout ist seit Python 3.10 derselbe Typ
+        return FeedFehler("zeitueberschreitung", f"Keine Antwort innerhalb von {timeout:g} Sekunden.",
+                          "Der Server ist langsam oder blockiert die Verbindung, meist vorübergehend.")
+    if isinstance(grund, socket.gaierror):
+        return FeedFehler("namensaufloesung", "Servername nicht auflösbar (DNS).",
+                          "Adresse auf Tippfehler prüfen; sonst fehlt dem Container die Namensauflösung.")
+    if isinstance(grund, ssl.SSLError):
+        return FeedFehler("tls", "Gesicherte Verbindung (TLS) fehlgeschlagen.",
+                          "Zertifikat des Anbieters ungültig oder abgelaufen, oder ein Proxy greift in die Verbindung ein.")
+    if isinstance(grund, ConnectionRefusedError):
+        return FeedFehler("verbindung", "Verbindung abgelehnt.", "Der Server nimmt unter dieser Adresse keine Verbindung an.")
+    if isinstance(grund, ConnectionError):
+        return FeedFehler("verbindung", "Verbindung vom Server abgebrochen.", "Meist vorübergehend, der nächste Abruf versucht es erneut.")
+    return FeedFehler("verbindung", f"Nicht erreichbar ({str(grund)[:120]}).",
+                      "Netzwerk und Firewall des Containers prüfen; oft vorübergehend.")
+
+
 def _holen(url: str, user_agent: str, timeout: float = 15.0) -> bytes:
     if urlparse(url).scheme not in ("http", "https"):
-        raise Fehler("Nur http- und https-Feeds sind erlaubt.")
+        raise FeedFehler("ungueltig", "Nur http- und https-Feeds sind erlaubt.")
     anfrage = urllib.request.Request(url, headers={"User-Agent": user_agent,
                                                    "Accept": "application/rss+xml, application/atom+xml, */*"})
     try:
         with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 - Schema oben geprüft
             daten = antwort.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as exc:
-        raise Fehler(f"HTTP {exc.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise Fehler(f"nicht erreichbar ({getattr(exc, 'reason', exc)})") from None
+        raise _http_fehler(exc.code) from None
+    except http.client.HTTPException:
+        raise FeedFehler("verbindung", "Antwort des Servers unvollständig oder ungültig.",
+                         "Meist vorübergehend, der nächste Abruf versucht es erneut.") from None
+    except (urllib.error.URLError, OSError) as exc:  # TimeoutError ist ein OSError
+        raise _verbindungsfehler(exc, timeout) from None
     if len(daten) > MAX_BYTES:
-        raise Fehler("Feed größer als 2 MB.")
+        raise FeedFehler("zu_gross", "Feed größer als 2 MB.",
+                         "Zu große Antworten werden nicht verarbeitet; einen kleineren Feed verwenden.")
     return daten
 
 
@@ -111,8 +167,16 @@ def parsen(daten: bytes, maximal: int = 300) -> list[dict]:
 
     feed = feedparser.parse(daten)
     if not feed.entries and (feed.bozo or not feed.get("version")):
+        if not daten.strip():
+            raise FeedFehler("kein_feed", "Kein gültiger RSS/Atom-Feed: leere Antwort.",
+                             "Der Server liefert keinen Inhalt, meist vorübergehend.")
+        if daten[:1024].lstrip().lower().startswith((b"<!doctype html", b"<html")):
+            raise FeedFehler("kein_feed", "Kein gültiger RSS/Atom-Feed: die Adresse liefert eine Webseite (HTML).",
+                             "Falscher Link oder eine Schutzseite (Anmeldung, Cookie-Abfrage, Bot-Schutz): "
+                             "Feed-Adresse im Browser prüfen.")
         grund = type(feed.bozo_exception).__name__ if feed.bozo else "kein RSS/Atom erkannt"
-        raise Fehler(f"Kein gültiger RSS/Atom-Feed ({grund}).")
+        raise FeedFehler("kein_feed", f"Kein gültiger RSS/Atom-Feed ({grund}).",
+                         "Die Antwort ist weder RSS noch Atom: Adresse des Feeds prüfen.")
     meldungen = []
     for eintrag in feed.entries:
         link = eintrag.get("link") or ""
@@ -182,6 +246,62 @@ def stand_pfad() -> Path:
     return pfade.cache_pfad("news_stand.json")
 
 
+def _vorheriger_stand() -> dict:
+    try:
+        return g.json_lesen(stand_pfad())
+    except (OSError, ValueError):
+        return {}
+
+
+def _anzeigename(feed: dict) -> str:
+    """Name des Feeds; bei je Wert aufgelösten Vorlagen mit dem Ticker (\"Yahoo Finance (SAP.DE)\")."""
+    name = feed.get("name") or feed["id"]
+    return f"{name} ({feed['id'].split(':', 1)[1]})" if ":" in feed["id"] else name
+
+
+def _fehlerstatus(feed: dict, exc: Exception, vorher: dict, alte_zeit: str | None, jetzt: str) -> dict:
+    """Status eines fehlgeschlagenen Feeds samt Verlauf: seit wann und wie viele Abrufe in Folge."""
+    if isinstance(exc, FeedFehler):
+        art, text, hinweis = exc.art, str(exc), exc.hinweis
+    elif isinstance(exc, Fehler):
+        art, text, hinweis = "sonstig", str(exc)[:200], None
+    else:  # ein kaputter Feed stoppt die anderen nicht
+        art, text, hinweis = "intern", f"Unerwarteter Fehler beim Verarbeiten ({type(exc).__name__}: {str(exc)[:160]}).", None
+    if vorher and not vorher.get("ok", True):
+        seit, in_folge, erfolg = vorher.get("seit") or jetzt, int(vorher.get("in_folge") or 1) + 1, vorher.get("letzter_erfolg")
+    else:
+        seit, in_folge, erfolg = jetzt, 1, (vorher.get("letzter_erfolg") or alte_zeit) if vorher else None
+    return {"name": feed.get("name"), "anzeige": _anzeigename(feed), "url": feed["url"], "ok": False, "fehler": text,
+            "art": art, "hinweis": hinweis, "seit": seit, "in_folge": in_folge, "letzter_erfolg": erfolg, "anzahl": 0}
+
+
+def zusammenfassung(stand: dict, maximal: int = 3) -> str:
+    """Eine Zeile für Worker und Oberfläche: Ergebnis und – falls vorhanden – welche Feeds warum ausfielen."""
+    text = f"News: {stand['neu']} neue Meldungen aus {stand['anzahl_feeds']} Feeds"
+    fehler = [s for s in stand["feeds"].values() if not s["ok"]]
+    if not fehler:
+        return text + "."
+    teile = [f"{s.get('anzeige') or s.get('name')}: {s['fehler'].rstrip('.')}" for s in fehler[:maximal]]
+    if len(fehler) > maximal:
+        teile.append(f"und {len(fehler) - maximal} weitere")
+    return f"{text}, {len(fehler)} mit Fehler – {'; '.join(teile)}."
+
+
+def fehlerzeilen(stand: dict) -> list[str]:
+    """Je fehlerhaftem Feed eine eingerückte Zeile mit Kennung, Ursache, Dauer und Hinweis."""
+    zeilen = []
+    for kennung, s in stand["feeds"].items():
+        if s["ok"]:
+            continue
+        zeile = f"  {kennung}: {s['fehler']}"
+        if s.get("in_folge", 1) > 1 and s.get("seit"):
+            zeile += f" ({s['in_folge']} Abrufe in Folge, seit {s['seit'][:16].replace('T', ' ')})"
+        if s.get("hinweis"):
+            zeile += f" Hinweis: {s['hinweis']}"
+        zeilen.append(zeile)
+    return zeilen
+
+
 def abrufen(konfig: dict | None = None) -> dict:
     """Ruft alle aktiven Feeds ab und hängt neue Meldungen an news/JJJJ-MM.jsonl an."""
     import kurse
@@ -193,16 +313,15 @@ def abrufen(konfig: dict | None = None) -> dict:
     feeds = feeds_aufloesen(konfig, kurse.markt_tickers())
     abruf = g.jetzt()
     bekannt = _bekannte_ids()
+    alter_stand = _vorheriger_stand()
+    vorherige = alter_stand.get("feeds") or {}
     neu, status = [], {}
     for feed in feeds:
         try:
             meldungen = parsen(HOLEN(feed["url"], agent), maximal)
-        except Fehler as exc:
-            status[feed["id"]] = {"name": feed.get("name"), "ok": False, "fehler": str(exc)[:200], "anzahl": 0}
-            continue
         except Exception as exc:  # ein kaputter Feed stoppt die anderen nicht
-            status[feed["id"]] = {"name": feed.get("name"), "ok": False,
-                                  "fehler": f"{type(exc).__name__}: {str(exc)[:160]}", "anzahl": 0}
+            status[feed["id"]] = _fehlerstatus(feed, exc, vorherige.get(feed["id"]) or {}, alter_stand.get("zeit"),
+                                               g.iso(abruf))
             continue
         zaehler = gefiltert = dubletten = 0
         for meldung in meldungen:
@@ -223,8 +342,10 @@ def abrufen(konfig: dict | None = None) -> dict:
                         "kurztext": meldung["kurztext"], "link": meldung["link"], "ticker": ticker,
                         "herausgeber": meldung["herausgeber"], "herausgeber_url": meldung["herausgeber_url"]})
             zaehler += 1
-        status[feed["id"]] = {"name": feed.get("name"), "ok": True, "fehler": None, "anzahl": len(meldungen),
-                              "neu": zaehler, "gefiltert": gefiltert, "dubletten": dubletten}
+        status[feed["id"]] = {"name": feed.get("name"), "anzeige": _anzeigename(feed), "url": feed["url"], "ok": True,
+                              "fehler": None, "art": None, "hinweis": None, "seit": None, "in_folge": 0,
+                              "letzter_erfolg": g.iso(abruf), "anzahl": len(meldungen), "neu": zaehler,
+                              "gefiltert": gefiltert, "dubletten": dubletten}
     if neu:
         g.text_anhaengen(g.pfad("news", f"{abruf:%Y-%m}.jsonl"),
                          "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in neu))
@@ -251,11 +372,9 @@ def main(argv=None) -> int:
         if args.befehl == "abrufen":
             konfig = g.json_lesen(Path(args.konfig)) if args.konfig else None
             stand = abrufen(konfig)
-            print(f"News: {stand['neu']} neue Meldungen aus {stand['anzahl_feeds']} Feeds "
-                  f"({stand['fehlerhaft']} mit Fehler).")
-            for kennung, s in stand["feeds"].items():
-                if not s["ok"]:
-                    print(f"  {kennung}: {s['fehler']}")
+            print(zusammenfassung(stand))
+            for zeile in fehlerzeilen(stand):
+                print(zeile)
         elif args.befehl == "liste":
             meldungen = [m for m in gespeicherte(args.tage) if not args.ticker or args.ticker in m["ticker"]]
             meldungen = meldungen[: args.anzahl]
@@ -273,7 +392,8 @@ def main(argv=None) -> int:
             for m in meldungen[:5]:
                 print(f"- {m['titel']}")
     except Fehler as exc:
-        print(f"Fehler: {exc}", file=sys.stderr)
+        hinweis = getattr(exc, "hinweis", None)
+        print(f"Fehler: {exc}" + (f" {hinweis}" if hinweis else ""), file=sys.stderr)
         return 1
     return 0
 

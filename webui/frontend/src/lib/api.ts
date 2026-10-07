@@ -169,11 +169,49 @@ export interface TestErgebnis {
   beispiele?: string[];
 }
 
+/** Einzelne Ursache hinter einer Ampel-Zeile, z. B. ein ausgefallener News-Feed. */
+export interface AmpelDetail {
+  titel: string;
+  text: string;
+  hinweis: string | null;
+  /** Seit wann der Fehler besteht und wie viele Abrufe in Folge er auftrat. */
+  seit: string | null;
+  anzahl: number;
+  url: string | null;
+}
+
 export interface Ampel {
   id: string;
   titel: string;
   stufe: "gruen" | "gelb" | "rot";
   text: string;
+  details: AmpelDetail[];
+  /** Anker des Bereichs, in dem sich das beheben lässt (z. B. "#news"). */
+  link: string | null;
+}
+
+export interface NewsFeedStatus {
+  id: string;
+  name: string;
+  url: string | null;
+  ok: boolean;
+  fehler: string | null;
+  art: string | null;
+  hinweis: string | null;
+  seit: string | null;
+  in_folge: number;
+  letzter_erfolg: string | null;
+  anzahl: number;
+  neu: number;
+}
+
+/** Ergebnis des letzten News-Abrufs je Feed, Fehlerhafte zuerst. */
+export interface NewsStatus {
+  zeit: string | null;
+  neu: number;
+  anzahl_feeds: number;
+  fehlerhaft: number;
+  feeds: NewsFeedStatus[];
 }
 
 export interface LaufPlan {
@@ -223,6 +261,7 @@ export interface EinrichtungDaten {
   migration: { aus_umgebung: string[]; ueberfluessige_variablen: string[] };
   pflichtschritte: Pflichtschritt[];
   systemstatus: Ampel[];
+  news_status: NewsStatus;
   spielstart: {
     punkte: { id: string; pflicht: boolean; ok: boolean; text: string }[];
     bereit: boolean;

@@ -99,6 +99,10 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   await expect(page.getByRole("textbox", { name: "Claude-Token" })).toHaveValue("");
   expect(await page.content()).not.toContain(token);
   await expect(page.getByText("Hintergrunddienst", { exact: true })).toBeVisible();
+  // Systemstatus: Ohne laufenden Hintergrunddienst ist die Zeile rot, und das Banner darüber (wie der Punkt in der Navigation) auch.
+  await expect(page.locator('#system li[data-stufe="rot"]').filter({ hasText: "Hintergrunddienst" })).toBeVisible();
+  await expect(page.locator('#system [role="status"][data-stufe="rot"]')).toContainText("Gesamtstatus: Handlungsbedarf");
+  await expect(page.locator('#system li[data-stufe="gruen"]').filter({ hasText: "Datenverzeichnis" })).toBeVisible();
 });
 
 test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({ page, browser }) => {

@@ -160,6 +160,7 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | API-Log: `Konfigurationsfehler: Es gibt gespeicherte Zwei-Faktor-Geheimnisse, aber keinen Master-Schlüssel` | Update ohne `SM_SCHLUESSEL`: den bisherigen Wert einmalig wieder setzen und deployen. |
 | API-Log: `Anmeldung an der Datenbank abgelehnt` | Container `db` neu starten (gleicht die Passwörter aus dem Volume `geheim` ab, Log `db-abgleich`). |
 | Systemstatus „Hintergrunddienst“ rot | Container `stockmaster-worker-1` läuft nicht oder ist unhealthy; dessen Log ansehen. |
+| Systemstatus „Letzter News-Abruf“ gelb | Mindestens ein Feed fiel aus oder der Abruf ist überfällig. Die Zeile nennt Feed, Ursache, Dauer und Abhilfe (auch unter Einrichtung → News → Abrufstatus); typisch: HTTP 403 bei der SEC (Kontaktangabe im User-Agent fehlt), 404 (Adresse geändert), 429 (zu oft abgerufen). Gelb bleibt es, bis der nächste Abruf den Feed wieder erreicht. |
 | „Markt & Kurse“ zeigt „veraltet“ | Keine Quelle lieferte einen aktuellen Kurs; der Grund steht beim Wert. Einrichtung → Kursdaten → *Verbindung testen*. |
 | Claude-Test: „Token ungültig oder abgelaufen“ | Einrichtung → Claude → *Neu anmelden* (oder Token manuell neu erzeugen und eintragen). |
 | Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
