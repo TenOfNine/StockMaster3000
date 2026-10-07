@@ -669,6 +669,32 @@ def markt(tickers: list[str] | None = None, historie_auffrischen: bool = False) 
     return stand
 
 
+def verbindung_testen(kennung: str) -> dict:
+    """Ein Testkurs von genau dieser Quelle (Key aus STOCKMASTER_KURSANBIETER_KEY); nicht protokolliert."""
+    if kennung == "yfinance":
+        quelle, ticker = YFinanceQuelle(), g.projekt()["benchmark_ticker"]
+    else:
+        konfig = anbieter_konfig()["anbieter"].get(kennung)
+        if konfig is None:
+            raise Fehler(f"Unbekannter Kursanbieter '{kennung}'.")
+        key = os.environ.get("STOCKMASTER_KURSANBIETER_KEY", "").strip()
+        if not key:
+            raise Fehler("Kein API-Key übergeben.")
+        quelle, ticker = AnbieterQuelle(kennung, key, konfig), konfig.get("test_ticker", "AAPL")
+    beginn = time.monotonic()
+    try:
+        wert, zeit = quelle.aktuell(ticker)[:2]
+    except NichtUnterstuetzt:
+        return {"ok": False, "meldung": f"{ticker} wird von {kennung} nicht geführt."}
+    except Exception as exc:  # noqa: BLE001 - Klartext für die Einrichtungsseite
+        return {"ok": False, "meldung": f"{kennung}: {exc}"[:300]}
+    alter = int((g.jetzt() - zeit.astimezone(g.TZ)).total_seconds() // 60)
+    return {"ok": True, "ticker": ticker, "kurs": g.text(_runden(wert)), "kurs_zeit": g.iso(zeit),
+            "alter_minuten": alter, "dauer_ms": int((time.monotonic() - beginn) * 1000),
+            "meldung": f"{ticker}: {g.text(_runden(wert))} (Kurszeit {zeit.astimezone(g.TZ):%d.%m. %H:%M}, "
+                       f"vor {alter} Min.)"}
+
+
 # --------------------------------------------------------------------------
 # Kommandozeile
 
@@ -685,6 +711,8 @@ def main(argv=None) -> int:
     p_markt = unter.add_parser("markt", help="Marktübersicht für die Web-UI (alle Werte des Universums)")
     p_markt.add_argument("--historie", action="store_true", help="zusätzlich Tagesdaten (400 Tage) ergänzen")
     p_markt.add_argument("ticker", nargs="*", help="nur diese Ticker (Standard: Universum und Portfolios)")
+    p_test = unter.add_parser("test", help="Verbindung zu einer Kursquelle prüfen (ohne Protokoll, bucht nichts)")
+    p_test.add_argument("--anbieter", required=True, help="finnhub, twelvedata oder yfinance")
     args = parser.parse_args(argv)
 
     try:
@@ -699,6 +727,8 @@ def main(argv=None) -> int:
                 eur = in_eur(k.kurs, k.waehrung, fx.kurs if fx else None)
                 print(f"{k.ticker:<12} {g.text(k.kurs):>14} {k.waehrung:<4} {eur:>14.4f} "
                       f"{'offen' if k.markt_offen else 'zu':<8} {k.kurs_zeit.isoformat()}")
+        elif args.befehl == "test":
+            print(json.dumps(verbindung_testen(args.anbieter), ensure_ascii=False))
         elif args.befehl == "markt":
             stand = markt(args.ticker or None, historie_auffrischen=args.historie)
             print(f"Marktübersicht: {stand['erfolgreich']} von {stand['anzahl']} Kursen aktuell "

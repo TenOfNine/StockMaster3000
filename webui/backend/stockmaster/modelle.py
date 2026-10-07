@@ -57,3 +57,30 @@ class AuditEintrag(Basis):
     zeit: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=jetzt_utc)
     ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     meta: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Auftrag(Basis):
+    """Auftrag an den Hintergrunddienst (Worker): Claude-Läufe und Verbindungstests.
+
+    Die API hat keinen Internetzugang; alles, was nach außen geht, erledigt der Worker. Wer einen
+    Lauf gestartet hat, steht nur hier und im Audit-Log, nie im Spielstand (Entscheidung 9).
+    """
+
+    __tablename__ = "auftraege"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    art: Mapped[str] = mapped_column(String(30), index=True)
+    status: Mapped[str] = mapped_column(String(20), index=True, default="wartet")
+    parameter: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ergebnis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meldung: Mapped[str | None] = mapped_column(Text, nullable=True)
+    modell: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    aufwand: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    auftraggeber: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ausloeser: Mapped[str] = mapped_column(String(20), default="manuell")
+    erstellt_von: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    erstellt: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=jetzt_utc, index=True)
+    begonnen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    beendet: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    abbrechen: Mapped[bool] = mapped_column(Boolean, default=False)
+    pruefung_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
