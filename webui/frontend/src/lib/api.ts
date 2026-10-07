@@ -109,6 +109,25 @@ export interface Lauf {
   ergebnis: Record<string, unknown> | null;
 }
 
+export type FreigabeStatus = "offen" | "erlaubt" | "abgelehnt" | "abgelaufen" | "gesperrt" | "abgebrochen";
+
+/** Anfrage der Claude-CLI an einen Administrator: Darf dieser Befehl laufen? Verfällt nach wenigen Minuten. */
+export interface Freigabe {
+  id: string;
+  lauf: string;
+  werkzeug: string;
+  befehl: string;
+  /** Erklärung, die Claude selbst zum Befehl abgibt (ungeprüft). */
+  beschreibung: string | null;
+  status: FreigabeStatus;
+  grund: string | null;
+  erstellt: string;
+  laeuft_ab: string;
+  entschieden: string | null;
+  entscheidbar: boolean;
+  sekunden_rest: number;
+}
+
 export interface NewsMeldung {
   id: string;
   abgerufen: string;

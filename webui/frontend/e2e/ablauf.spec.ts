@@ -186,5 +186,25 @@ test("Lauf-Seite zeigt Läufe und Zeitplan und verträgt jede Form von Daten", a
     expect(await page.getByText(/konnte nicht angezeigt werden/).allInnerTexts(), `Plan ${i}`).toEqual([]);
     await page.unrouteAll();
   }
+
+  // Freigabe-Anfrage der Claude-CLI: Hinweis in der Kopfzeile (auf jeder Seite), Karte im Lauf, Entscheidung an die API.
+  const befehl = "for t in ^GSPC ^GDAXI; do python tools/kurse.py historie $t | awk 'NR<=2'; done";
+  const anfrage = { id: "f-1", lauf: "x", werkzeug: "Bash", befehl, beschreibung: "Kurse seit Juli holen", status: "offen", grund: null, erstellt: new Date().toISOString(),
+    laeuft_ab: new Date(Date.now() + 150_000).toISOString(), entschieden: null, entscheidbar: true, sekunden_rest: 150 };
+  let gesendet: unknown = null;
+  await page.route("**/api/freigaben?*", (r) => r.fulfill({ json: [anfrage] }));
+  await page.route("**/api/freigaben/f-1/entscheidung", async (r) => {
+    gesendet = r.request().postDataJSON();
+    await r.fulfill({ json: { ...anfrage, status: "erlaubt", entscheidbar: false } });
+  });
+  await page.goto("/");
+  await page.getByRole("link", { name: "1 Freigabe offen" }).click();
+  await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+  await expect(page.getByText("Freigabe angefragt: Bash")).toBeVisible();
+  await expect(page.getByText(befehl)).toBeVisible();
+  await expect(page.getByText(/Beschreibung von Claude \(ungeprüft\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Erlauben" }).click();
+  await expect.poll(() => gesendet).toEqual({ entscheidung: "erlauben" });
+  await page.unrouteAll();
   expect(fehler).toEqual([]);
 });
