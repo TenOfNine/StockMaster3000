@@ -11,6 +11,7 @@ permissions:
 jobs:
   pruefung:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Repository auschecken (vollständige Historie für die Nur-Anhängen-Prüfung)
         uses: actions/checkout@v4
@@ -50,6 +51,7 @@ jobs:
   webui-backend:
     name: Web-UI Backend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: webui/backend
@@ -68,6 +70,7 @@ jobs:
   webui-frontend:
     name: Web-UI Frontend und E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: webui/frontend
@@ -95,14 +98,18 @@ jobs:
       - name: Backend-Abhängigkeiten für E2E
         working-directory: webui/backend
         run: uv sync --frozen
+      # Ohne --with-deps: Der Runner bringt alle Bibliotheken für Chromium mit; --with-deps lud nur zusätzliche
+      # Schriften per apt nach, und der Azure-Mirror lief dabei je Paket ins Timeout (über 2 Minuten, mitunter
+      # deutlich länger). Fehlt künftig eine Bibliothek, meldet Playwright das beim Start der Tests sofort.
       - name: Playwright-Browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
       - name: E2E-Tests
         run: pnpm e2e
 
   webui-docker:
     name: Web-UI Docker-Rauchtest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Stack bauen, starten und prüfen
