@@ -237,9 +237,8 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Trading-Session**: Laufart „Anlagerichtlinien ausformulieren“ (`session.py start --art richtlinien`,
     Vorlage mit den verbindlichen Limits aus `python tools/richtlinien.py vorlage`). Begründung: Die
     Richtlinie braucht Recherche und Zeit, die eine Trading-Session mit Orders nicht nebenbei haben soll;
-    die Trennung hält die Prüfspur sauber. Trading-Läufe werden von der App abgelehnt, solange das Spiel
-    nicht gestartet ist, das Startdatum in der Zukunft liegt (regeln.md 2) oder eine Richtlinie noch die
-    Vorlage ist; `pruefe.py` meldet eine Vorlage nach dem Spielstart als Warnung (kein Fehler, damit die
+    die Trennung hält die Prüfspur sauber. (Die ursprüngliche Ablehnung manueller Trading-Läufe in der App
+    ist mit Entscheidung 33 durch Hinweise ersetzt.) `pruefe.py` meldet eine Vorlage nach dem Spielstart als Warnung (kein Fehler, damit die
     Prüfung Sessions nicht blockiert). Cockpit und Einrichtung zeigen den offenen Schritt.
 27. AP12 gehört zur Instanz: Die Checkbox in STATUS.md bleibt als Framework-Vorlage offen (sie gilt für alle
     Instanzen und wird nicht je Instanz abgehakt). „Roadmap & Status“ leitet den Stand aus dem
@@ -262,6 +261,29 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
 32. Das Ergebnis eines Claude-Laufs wird vollständig gespeichert und als Markdown angezeigt (vorher
     gekürzt auf 2.000 Zeichen). Die Erlaubnisliste der Läufe kennt `git -C <pfad> log/status/diff/show`;
     `git push`, `remote`, `config` und `reset` sind auch mit `-C` verboten.
+33. Läufe lassen sich jederzeit manuell und geplant starten und stoppen; es gibt kein festes Enddatum
+    (regeln.md: „Kein festes Enddatum“) und kein zwingendes Startdatum für die App:
+    - **Manuell** startet jeder Lauf immer (Admin, Bestätigung, Token, höchstens ein Lauf, Session-Sperre).
+      Der Startdialog zeigt nur Hinweise (`GET /api/laeufe/vorpruefung`): Spiel nicht gestartet,
+      Startdatum in der Zukunft, Anlagerichtlinien offen. Der Trading-Prompt weist Claude an, dann nur zu
+      recherchieren und zu dokumentieren. Orders vor dem Startdatum lehnt `buchen.py` weiterhin ab
+      (regeln.md 2, unverändert); damit bleibt das Backdating-Verbot technisch gesichert.
+    - **Geplant** (Zeitplan-Automatik) überspringt einen Trading-Termin mit Grund im Zustand, wenn er nichts
+      bewirken würde (nicht gestartet, Startdatum in der Zukunft, Richtlinien offen), und schont so das
+      Abo-Kontingent; Reviews laufen immer.
+    - **Stoppen:** „Lauf stoppen“ bricht den laufenden Lauf ab (Prozess beendet, Sperre freigegeben);
+      „Automatik stoppen/starten“ auf der Lauf-Seite schaltet den Zeitplan (`POST
+      /api/einrichtung/zeitplan/automatik`, Admin + Zwei-Faktor, Audit) ohne die Termine zu verlieren.
+      `GET /api/laeufe/plan` zeigt Automatik, nächste Termine (Wochentag, Zeitzone, Handelstag) und die
+      zuletzt übersprungenen.
+    - **Startdatum:** Vorschlag im Spielstart ist heute (bzw. der nächste Xetra-Handelstag) statt morgen.
+      Ein bereits gesetztes, noch unberührtes Startdatum lässt sich auf heute vorziehen
+      (`tools/init.py --vorziehen`, in der App mit Passwort): nur nach vorne, nie vor heute (kein
+      Backdating), nur an einem Handelstag, nur wenn keine Session läuft und keine Buchung, Order,
+      Position, Nachbuchung oder Bewertung existiert (die Historie ändert sich nicht). Das alte Datum bleibt
+      in `spiel.json` (`startdatum_vorher`) und im Commit nachvollziehbar.
+    - Offener Punkt für die Auftraggeber: Ein Start „mitten in der Woche ohne Abwarten“ ist damit möglich;
+      regeln.md bleibt unverändert, weil sie kein festes Startdatum vorschreibt.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

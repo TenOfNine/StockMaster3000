@@ -57,7 +57,9 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 - Spielstand gehört nie ins Framework-Repository; Tests und Prüfungen nutzen
   ein eigenes Datenverzeichnis (`python tools/datenverzeichnis.py einrichten`).
 - Kleine, nachvollziehbare Commits je Arbeitspaket.
-- Vor dem Startdatum werden keine Spiel-Trades gebucht.
+- Vor dem Startdatum werden keine Spiel-Trades gebucht. Das Startdatum ist kein
+  fester Termin: Es lässt sich, solange nichts gebucht wurde, mit
+  `python tools/init.py --startdatum <heute> --vorziehen` vorziehen (nie vor heute).
 - Wenn regeln.md für die Umsetzung nicht eindeutig ist: wähle die
   konservativere Auslegung, markiere sie im Code mit einem Kommentar
   und frage am Ende des Arbeitspakets nach.

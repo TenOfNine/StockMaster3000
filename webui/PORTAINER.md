@@ -83,11 +83,14 @@ Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt
 2. **Kursdaten:** Anbieter wählen (nur yfinance, Finnhub oder Twelve Data), ggf. API-Key eintragen,
    *Verbindung testen*, *Jetzt abrufen*. „Markt & Kurse“ füllt sich.
 3. **News:** Feeds an- oder abschalten, eigene Feeds ergänzen, *Feed testen*.
-4. **Sessions & Zeitplan:** Automatik und Zeiten, z. B. werktags 09:35 und 21:30.
+4. **Sessions & Zeitplan:** Zeiten, z. B. werktags 09:35 und 21:30. Die Automatik lässt sich auch direkt auf
+   der Seite „Claude-Läufe“ starten und stoppen; manuelle Läufe gehen jederzeit („Lauf starten“,
+   „Lauf stoppen“).
 5. **Anlagerichtlinien:** Claude-Läufe → *Lauf starten* → „Anlagerichtlinien ausformulieren (AP12)“. Der
-   Lauf schreibt strategie/<profil>.md aus; Trading-Läufe sind erst danach (und erst ab dem Startdatum)
-   möglich. Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
-6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung.
+   Lauf schreibt strategie/<profil>.md aus; Ein Trading-Lauf handelt erst danach
+   (und gebucht wird erst ab dem Startdatum). Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
+6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung. Vorschlag ist heute; ein noch
+   unberührtes Startdatum lässt sich später auf heute vorziehen. Ein Enddatum gibt es nicht.
 7. **Sicherung** und 8. **Systemstatus** (Ampel je Bereich).
 
 ## Update einer bestehenden Installation (Migration)
@@ -161,7 +164,7 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | Claude-Test: „Token ungültig oder abgelaufen“ | Einrichtung → Claude → *Neu anmelden* (oder Token manuell neu erzeugen und eintragen). |
 | Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
 | Anmeldung: „Claude Code hat keinen Anmeldelink ausgegeben“ | Das Ausgabeformat der CLI hat sich geändert; Token manuell erzeugen und eintragen, Fehler melden. |
-| Start eines Trading-Laufs: „Anlagerichtlinien fehlen“ oder „Das Spiel beginnt erst am …“ | Zuerst den Lauf „Anlagerichtlinien ausformulieren“ ausführen bzw. das Startdatum abwarten (regeln.md 2 und 11). |
+| Startdialog zeigt „Anlagerichtlinien fehlen“ oder „Das Startdatum ist …“ | Nur ein Hinweis, der Lauf startet trotzdem. Er kann dann nicht handeln: erst den Lauf „Anlagerichtlinien ausformulieren“ ausführen bzw. in der Einrichtung das Startdatum auf heute vorziehen (regeln.md 2 und 11). Geplante Trading-Läufe werden in diesem Fall mit Grund übersprungen. |
 | Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |
 | Browser: 421 oder `ERR_SSL_PROTOCOL_ERROR` | Name bzw. IP ist dem Proxy unbekannt: `SM_HOSTNAME` verwenden oder in `SM_ZUSAETZLICHE_HOSTS` eintragen. |
 | „Zugriff nur aus dem Heimnetz“ | Anfrage nicht aus privatem Adressbereich: Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |

@@ -267,11 +267,29 @@ def spielstart_checkliste(db) -> dict:
     punkte.append({"id": "testsession", "pflicht": False, "ok": testsession is not None,
                    "text": "Testsession ohne Trades (AP12) durchgeführt." if testsession
                    else "Empfohlen: Testsession ohne Trades (AP12) durchführen, bevor die Freigabe erteilt wird."})
-    morgen = date.today() if datetime.now(TZ).hour < 9 else date.today() + timedelta(days=1)
+    heute = datetime.now(TZ).date()
     return {"punkte": punkte, "bereit": all(p["ok"] for p in punkte if p["pflicht"]),
             "gestartet": bool(spiel.get("startdatum")), "spiel": spiel,
-            "vorschlag_startdatum": naechster_handelstag(morgen).isoformat(),
+            "vorschlag_startdatum": naechster_handelstag(heute).isoformat(),
+            "vorziehen": _vorziehen_stand(heute, spiel),
             "auftraggeber": g.projekt()["auftraggeber"]}
+
+
+def _vorziehen_stand(heute: date, spiel: dict) -> dict:
+    """Ob und worauf das noch unberührte Startdatum vorgezogen werden kann (tools/init.py prüft verbindlich)."""
+    if not spiel.get("startdatum"):
+        return {"moeglich": False, "grund": "Das Spiel ist noch nicht gestartet.", "ziel": None}
+    ziel = naechster_handelstag(heute)
+    if ziel.isoformat() >= spiel["startdatum"]:
+        return {"moeglich": False, "grund": "Das Startdatum liegt nicht in der Zukunft.", "ziel": None}
+    import init as init_werkzeug  # noqa: PLC0415
+
+    try:
+        init_werkzeug.vorziehen_pruefen(ziel)
+    except Exception as exc:  # noqa: BLE001
+        return {"moeglich": False, "grund": str(exc), "ziel": ziel.isoformat()}
+    return {"moeglich": True, "grund": None, "ziel": ziel.isoformat()}
+
 
 
 # --------------------------------------------------------------------------
@@ -652,8 +670,27 @@ def zeitplan_speichern(daten: ZeitplanDaten, request: Request, db: DB, admin: Ad
     return {"ok": True, "zeitplan": appdaten.laden()["zeitplan"]}
 
 
+class AutomatikDaten(Streng):
+    an: bool
+
+
+@router.post("/zeitplan/automatik")
+def automatik_schalten(daten: AutomatikDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+    """Automatik ein- oder ausschalten, ohne den Zeitplan neu zu speichern (Start/Stopp per Klick)."""
+    plan = appdaten.laden()["zeitplan"]
+    if daten.an:
+        if not plan["termine"]:
+            raise HTTPException(422, "Für die Automatik mindestens einen Termin angeben (Einrichtung → Zeitplan).")
+        if not appdaten.geheimnis_info("claude_token")["gesetzt"]:
+            raise HTTPException(422, "Die Automatik braucht ein Claude-Token (Einrichtung → Claude).")
+    appdaten.bereich_speichern("zeitplan", {**plan, "automatik": daten.an})
+    audit(db, admin.id, "einrichtung_automatik", request, meta={"automatik": daten.an})
+    db.commit()
+    return {"ok": True, "automatik": daten.an}
+
+
 # --------------------------------------------------------------------------
-# Spielstart (tools/init.py), nur einmal
+# Spielstart (tools/init.py)
 
 
 class SpielstartDaten(Streng):
@@ -687,5 +724,34 @@ def spielstart(daten: SpielstartDaten, request: Request, db: DB, admin: Admin2FA
                              f"aufbau: Spielstart {daten.startdatum} (Freigabe AP12: {daten.freigabe_durch})"],
                             capture_output=True, text=True, env=umgebung, timeout=60, cwd=e.daten_pfad)
     audit(db, admin.id, "spielstart", request, ziel=daten.startdatum, meta={"freigabe": daten.freigabe_durch})
+    db.commit()
+    return {"ok": True, "meldungen": ergebnis.stdout.strip().splitlines(), "commit": commit.stdout.strip()}
+
+
+class VorziehenDaten(Streng):
+    startdatum: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    passwort: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/spielstart/vorziehen")
+def spielstart_vorziehen(daten: VorziehenDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+    """Noch unberührtes Startdatum auf heute/den nächsten Handelstag vorziehen (tools/init.py --vorziehen)."""
+    from .admin import bestaetigen
+
+    bestaetigen(admin, daten.passwort)
+    if auftraege.session_sperre_aktiv() is not None or auftraege.offener_lauf(db) is not None:
+        raise HTTPException(409, "Es läuft gerade eine Session oder ein Lauf.")
+    e = einstellungen()
+    umgebung = {**os.environ, "STOCKMASTER_DATA_DIR": str(e.daten_pfad),
+                "STOCKMASTER_FRAMEWORK_DIR": str(e.framework_pfad), "PYTHONDONTWRITEBYTECODE": "1"}
+    werkzeug = e.framework_pfad / "tools"
+    ergebnis = subprocess.run([sys.executable, str(werkzeug / "init.py"), "--startdatum", daten.startdatum, "--vorziehen"],
+                              capture_output=True, text=True, env=umgebung, timeout=120, cwd=e.daten_pfad)
+    if ergebnis.returncode != 0:
+        raise HTTPException(422, (ergebnis.stderr or ergebnis.stdout).strip().removeprefix("Fehler: ")[:500])
+    commit = subprocess.run([sys.executable, str(werkzeug / "datenverzeichnis.py"), "commit", "-m",
+                             f"aufbau: Startdatum auf {daten.startdatum} vorgezogen"],
+                            capture_output=True, text=True, env=umgebung, timeout=60, cwd=e.daten_pfad)
+    audit(db, admin.id, "spielstart_vorgezogen", request, ziel=daten.startdatum)
     db.commit()
     return {"ok": True, "meldungen": ergebnis.stdout.strip().splitlines(), "commit": commit.stdout.strip()}

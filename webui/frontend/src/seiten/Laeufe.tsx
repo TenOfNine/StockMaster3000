@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bot, CircleStop, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
+import { Bot, CalendarClock, CircleStop, Info, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Markdown } from "@/components/Markdown";
 import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
-import { api, ApiFehler, type EinrichtungDaten, type Lauf, type LaufStatus } from "@/lib/api";
+import { api, ApiFehler, type EinrichtungDaten, type Lauf, type LaufPlan, type LaufStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { relativ, zeit } from "@/lib/format";
@@ -93,6 +93,11 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
   const [modell, setModell] = useState("");
   const [aufwand, setAufwand] = useState("");
   const d = einrichtung.data;
+  const vorpruefung = useQuery({
+    queryKey: ["vorpruefung", art],
+    queryFn: () => api<{ hinweise: string[] }>(`/api/laeufe/vorpruefung?art=${art}`),
+    enabled: offen,
+  });
   useEffect(() => {
     if (d && !auftraggeber) setAuftraggeber(d.einstellungen.zeitplan.auftraggeber || d.optionen.auftraggeber[0]);
   }, [d, auftraggeber]);
@@ -108,7 +113,7 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
   });
   const auswahlKlasse = "h-10 w-full rounded-lg border border-rand bg-flaeche-2 px-3 text-sm text-text";
   return (
-    <Dialog offen={offen} setOffen={setOffen} titel="Claude-Lauf starten" beschreibung="Der Lauf startet im Container mit dem hinterlegten Pro-Abo. Die Session-Sperre gilt; es läuft nie mehr als ein Lauf." breit>
+    <Dialog offen={offen} setOffen={setOffen} titel="Claude-Lauf starten" beschreibung="Manuell jederzeit möglich. Der Lauf startet im Container mit dem hinterlegten Pro-Abo; es läuft nie mehr als ein Lauf, und bis zum Startdatum bucht das Werkzeug nichts." breit>
       {!d ? (
         <Skelett className="h-48" />
       ) : (
@@ -176,6 +181,17 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
               </div>
             )}
           </div>
+          {!!vorpruefung.data?.hinweise.length && (
+            <ul className="space-y-1.5 rounded-xl border border-warnung/30 bg-warnung-flaeche p-3.5 text-[12.5px] text-text" aria-label="Hinweise zum Start">
+              {vorpruefung.data.hinweise.map((h) => (
+                <li key={h} className="flex items-start gap-2">
+                  <Info className="mt-0.5 size-3.5 shrink-0 text-warnung" aria-hidden />
+                  <span>{h}</span>
+                </li>
+              ))}
+              <li className="pl-5 text-text-3">Das ist nur ein Hinweis: Der Lauf lässt sich trotzdem jederzeit starten.</li>
+            </ul>
+          )}
           {start.isError && (
             <p className="text-[12.5px] text-schlecht" role="alert">
               {start.error instanceof ApiFehler ? start.error.message : "Start fehlgeschlagen."}
@@ -192,6 +208,59 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
         </form>
       )}
     </Dialog>
+  );
+}
+
+const ARTKURZ: Record<string, string> = { trading: "Trading", review: "Reviews" };
+
+function PlanLeiste({ admin }: { admin: boolean }) {
+  const client = useQueryClient();
+  const plan = useQuery({ queryKey: ["laeufe-plan"], queryFn: () => api<LaufPlan>("/api/laeufe/plan"), refetchInterval: 60_000 });
+  const schalten = useMutation({
+    mutationFn: (an: boolean) => api<{ automatik: boolean }>("/api/einrichtung/zeitplan/automatik", { daten: { an } }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["laeufe-plan"] }),
+  });
+  const p = plan.data;
+  if (!p) return <Skelett className="mb-4 h-16 rounded-2xl" />;
+  const naechster = p.naechste[0];
+  return (
+    <Karte className="mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+        <div className="flex items-start gap-3">
+          <CalendarClock className="mt-0.5 size-5 text-text-3" aria-hidden />
+          <div>
+            <div className="flex items-center gap-2 text-[13.5px] font-medium text-text">
+              Zeitplan
+              <Abzeichen ton={p.automatik ? "gut" : "neutral"}>{p.automatik ? "Automatik an" : "Automatik aus"}</Abzeichen>
+            </div>
+            <p className="mt-0.5 text-[12.5px] text-text-3">
+              {p.automatik
+                ? naechster
+                  ? `Nächster Lauf: ${ARTKURZ[naechster.art] ?? naechster.art} am ${zeit(naechster.zeit)} (${p.zeitzone}) für ${p.auftraggeber}.`
+                  : "Kein Termin in den nächsten zwei Wochen."
+                : "Es starten nur manuelle Läufe. Mit der Automatik laufen die Termine aus der Einrichtung von selbst, nur an Handelstagen."}
+              {p.automatik && p.letzte[0] && ` Zuletzt: ${p.letzte[0].termin.replace("T", " ")} – ${p.letzte[0].ergebnis}.`}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {admin ? (
+            <Knopf variante={p.automatik ? "geist" : "primaer"} klein onClick={() => schalten.mutate(!p.automatik)} laedt={schalten.isPending} disabled={!p.automatik && !p.token_gesetzt}>
+              {p.automatik ? <CircleStop className="size-4" /> : <Play className="size-4" />} {p.automatik ? "Automatik stoppen" : "Automatik starten"}
+            </Knopf>
+          ) : null}
+          <Link to="/einrichtung" hash="zeitplan" className="text-[12.5px] font-medium text-akzent hover:underline">
+            Termine ändern
+          </Link>
+        </div>
+      </div>
+      {schalten.isError && (
+        <p className="px-5 pb-3 text-[12.5px] text-schlecht" role="alert">
+          {schalten.error instanceof ApiFehler ? schalten.error.message : "Umschalten fehlgeschlagen."}
+        </p>
+      )}
+      {!p.automatik && !p.token_gesetzt && admin && <p className="px-5 pb-3 text-[12.5px] text-text-3">Für die Automatik zuerst die Claude-Anmeldung in der Einrichtung abschließen.</p>}
+    </Karte>
   );
 }
 
@@ -215,7 +284,8 @@ export function Laeufe() {
   });
   if (laeufe.isError) return <Fehleranzeige fehler={laeufe.error} erneut={() => void laeufe.refetch()} />;
   const gewaehlt = laeufe.data?.find((l) => l.id === auswahl);
-  const aktiv = laeufe.data?.some((l) => l.status === "laeuft" || l.status === "wartet");
+  const laufender = laeufe.data?.find((l) => l.status === "laeuft" || l.status === "wartet");
+  const aktiv = !!laufender;
   return (
     <div className="einblenden">
       <Seitenkopf
@@ -223,13 +293,21 @@ export function Laeufe() {
         untertitel="Trading-Sessions, Reviews und Testsessions im Container: Live-Log, Ergebnis und die anschließende Prüfung mit tools/pruefe.py."
         aktionen={
           admin ? (
-            <Knopf variante="primaer" onClick={() => setStartOffen(true)} disabled={aktiv}>
-              <Play className="size-4" /> Lauf starten
-            </Knopf>
+            <div className="flex items-center gap-2">
+              {laufender && (
+                <Knopf variante="gefahr" onClick={() => abbrechen.mutate(laufender.id)} laedt={abbrechen.isPending}>
+                  <CircleStop className="size-4" /> Lauf stoppen
+                </Knopf>
+              )}
+              <Knopf variante="primaer" onClick={() => setStartOffen(true)} disabled={aktiv}>
+                <Play className="size-4" /> Lauf starten
+              </Knopf>
+            </div>
           ) : undefined
         }
       />
       {admin && <StartDialog offen={startOffen} setOffen={setStartOffen} />}
+      <PlanLeiste admin={admin} />
       {!laeufe.data ? (
         <Skelett className="h-96 rounded-2xl" />
       ) : !laeufe.data.length ? (

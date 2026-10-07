@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from datetime import timedelta
+from datetime import date, timedelta
 
 import gemeinsam as g
 import kurse
@@ -125,14 +125,77 @@ def initialisieren(startdatum_text: str, freigabe: str) -> list[str]:
     return meldungen
 
 
+def vorziehen_pruefen(neu: date) -> None:
+    """Prüft, ob das Startdatum vorgezogen werden darf (sonst Fehler mit Grund).
+
+    Erlaubt nur, solange nichts passiert ist: keine Buchung, keine Order, keine Position, keine
+    Nachbuchung, keine Bewertung. Dann ändert das Vorziehen keine Historie. Ein Datum vor heute
+    ist Backdating und bleibt verboten.
+    """
+    spiel = g.spiel_lesen()
+    alt = spiel.get("startdatum")
+    if not alt:
+        raise Fehler("Das Spiel ist noch nicht gestartet; das Startdatum wird beim Spielstart gesetzt.")
+    if neu >= g.datum_lesen(alt):
+        raise Fehler(f"Das neue Startdatum {neu} liegt nicht vor dem bisherigen ({alt}).")
+    if neu < g.heute():
+        raise Fehler(f"Startdatum {neu} liegt in der Vergangenheit (heute {g.heute()}). Kein Backdating.")
+    if not kurse.ist_handelstag(g.projekt()["benchmark_ticker"], neu):
+        raise Fehler(f"{neu} ist kein Xetra-Handelstag. Bitte einen Handelstag wählen.")
+    if g.sperre_lesen() is not None and not g.sperre_verwaist(g.sperre_lesen()):
+        raise Fehler("Eine Session läuft (Session-Sperre). Das Startdatum lässt sich erst danach ändern.")
+    profile = g.vorhandene_profile()
+    if not profile:
+        raise Fehler("Es sind keine Portfolios angelegt.")
+    for profil in profile:
+        portfolio = g.portfolio_laden(profil)
+        unberuehrt = (not g.trades_lesen(profil) and not portfolio["positionen"] and not portfolio["offene_orders"]
+                      and not g.csv_lesen(g.pfad("data", "nav", f"{profil}.csv"))
+                      and portfolio["verarbeitet_bis"] == (g.datum_lesen(alt) - timedelta(days=1)).isoformat()
+                      and portfolio["status"] == "aktiv")
+        if not unberuehrt:
+            raise Fehler(f"Das Portfolio {profil} hat schon Buchungen, Orders oder Bewertungen. Ein Vorziehen "
+                         "würde die Historie ändern und ist nicht erlaubt.")
+    if g.csv_lesen(g.pfad("data", "benchmark.csv")):
+        raise Fehler("Die Benchmark hat schon Werte; ein Vorziehen würde die Historie ändern.")
+
+
+def vorziehen(neu_text: str) -> list[str]:
+    """Zieht ein noch unberührtes Startdatum vor (frühestens heute, nie rückwirkend)."""
+    neu = g.datum_lesen(neu_text)
+    vorziehen_pruefen(neu)
+    alt = g.spiel_lesen()["startdatum"]
+    with g.schreibsperre():
+        for profil in g.vorhandene_profile():
+            portfolio = g.portfolio_laden(profil)
+            portfolio["startdatum"] = neu.isoformat()
+            portfolio["verarbeitet_bis"] = (neu - timedelta(days=1)).isoformat()
+            g.portfolio_speichern(portfolio)
+        spiel = g.spiel_lesen()
+        spiel.setdefault("startdatum_vorher", []).append({"datum": alt, "geaendert": g.iso(g.jetzt())})
+        spiel["startdatum"] = neu.isoformat()
+        g.json_schreiben(g.spiel_pfad(), spiel)
+    return [f"Startdatum von {alt} auf {neu.isoformat()} vorgezogen (es gab noch keine Buchung).",
+            "Jetzt prüfen und im Datenverzeichnis committen (python tools/datenverzeichnis.py commit)."]
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Spiel initialisieren: drei Portfolios mit je 1.000 EUR.")
     parser.add_argument("--startdatum", required=True, help="erster Handelstag, JJJJ-MM-TT (heute oder später)")
-    parser.add_argument("--freigabe", required=True,
+    parser.add_argument("--freigabe",
                         help="Kennung des Auftraggebers, der AP12 freigegeben hat (config/projekt.json)")
+    parser.add_argument("--vorziehen", action="store_true",
+                        help="bereits gesetztes, noch unberührtes Startdatum auf ein früheres (frühestens heute) "
+                             "vorziehen; nichts darf gebucht sein")
     args = parser.parse_args(argv)
     try:
-        for meldung in initialisieren(args.startdatum, args.freigabe):
+        if args.vorziehen:
+            meldungen = vorziehen(args.startdatum)
+        elif not args.freigabe:
+            parser.error("--freigabe ist beim Spielstart nötig")
+        else:
+            meldungen = initialisieren(args.startdatum, args.freigabe)
+        for meldung in meldungen:
             print(meldung)
     except Fehler as exc:
         print(f"Fehler: {exc}", file=sys.stderr)

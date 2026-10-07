@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import Field
@@ -103,8 +104,13 @@ def session_sperre_aktiv() -> dict | None:
     return sperre if sperre and not sperre["verwaist"] else None
 
 
-def lauf_pruefen(db: Session, art: str, modell: str, aufwand: str, auftraggeber: str) -> None:
-    """Gemeinsame Prüfung für manuelle und geplante Läufe (HTTPException mit Klartext)."""
+def lauf_pruefen(db: Session, art: str, modell: str, aufwand: str, auftraggeber: str, geplant: bool = False) -> None:
+    """Gemeinsame Prüfung für manuelle und geplante Läufe (HTTPException mit Klartext).
+
+    Manuelle Läufe sind jederzeit möglich; Startdatum und Anlagerichtlinien führen nur zu Hinweisen
+    (siehe hinweise()). Ein geplanter Trading-Lauf, der nichts bewirken könnte, wird übersprungen,
+    damit er kein Abo-Kontingent verbraucht.
+    """
     from .spiel import lesen
 
     if art not in LAUFARTEN:
@@ -122,29 +128,38 @@ def lauf_pruefen(db: Session, art: str, modell: str, aufwand: str, auftraggeber:
     sperre = session_sperre_aktiv()
     if sperre:
         raise HTTPException(409, f"Session-Sperre von {sperre['person']} seit {sperre['start']} (tools/session.py).")
-    if art == "trading":
-        trading_voraussetzungen()
+    if geplant and art == "trading":
+        offen = [h["text"] for h in hinweise(art) if h["bremst"]]
+        if offen:
+            raise HTTPException(409, " ".join(offen))
 
 
-def trading_voraussetzungen() -> None:
-    """Trading nur nach dem Startdatum und mit ausformulierten Anlagerichtlinien (regeln.md 2 und 11)."""
+def hinweise(art: str) -> list[dict]:
+    """Hinweise vor dem Start eines Laufs. `bremst`: ein geplanter Lauf würde nichts bewirken und entfällt."""
+    if art != "trading":
+        return []
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
     from .spiel import lesen
 
     g = lesen.werkzeuge()["gemeinsam"]
+    ergebnis = []
     start = g.spiel_lesen().get("startdatum")
-    if not start:
-        raise HTTPException(409, "Das Spiel ist noch nicht gestartet (Einrichtung → Spielstart).")
     heute = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
-    if start > heute:
-        raise HTTPException(409, f"Das Spiel beginnt erst am {start}. Vor dem Startdatum werden keine Trades gebucht "
-                                 "(regeln.md Abschnitt 2).")
+    if not start:
+        ergebnis.append({"text": "Das Spiel ist noch nicht gestartet (Einrichtung → Spielstart); Orders sind noch nicht "
+                                 "möglich.", "bremst": True})
+    elif start > heute:
+        ergebnis.append({"text": f"Das Startdatum ist {start}: Vorher kann nichts gebucht werden, der Lauf kann nur "
+                                 "recherchieren. In der Einrichtung lässt sich das noch unberührte Startdatum auf "
+                                 "heute vorziehen.", "bremst": True})
     offen = g.richtlinien_offen()
     if offen:
-        raise HTTPException(409, f"Anlagerichtlinien fehlen: {', '.join(offen)}. Zuerst den Lauf „Anlagerichtlinien "
-                                 "ausformulieren“ ausführen (regeln.md Abschnitt 11).")
+        ergebnis.append({"text": f"Anlagerichtlinien fehlen ({', '.join(offen)}): Claude handelt dann nicht, sondern "
+                                 "meldet das. Zuerst den Lauf „Anlagerichtlinien ausformulieren“ ausführen.",
+                         "bremst": True})
+    return ergebnis
 
 
 # --------------------------------------------------------------------------
@@ -166,6 +181,51 @@ def liste(db: DB, _benutzer: Angemeldet, anzahl: Annotated[int, Query(ge=1, le=2
     laeufe = db.scalars(select(Auftrag).where(Auftrag.art.in_(LAUFARTEN)).order_by(Auftrag.erstellt.desc())
                         .limit(anzahl)).all()
     return [als_dict(a) for a in laeufe]
+
+
+@router.get("/vorpruefung")
+def vorpruefung(_benutzer: Angemeldet, art: Annotated[Literal["trading", "review", "testsession", "richtlinien"],
+                                                      Query()] = "trading") -> dict:
+    """Hinweise für den Startdialog (keine Sperre: manuelle Läufe gehen immer)."""
+    return {"hinweise": [h["text"] for h in hinweise(art)]}
+
+
+def naechste_termine(plan: dict, jetzt: datetime, anzahl: int = 5) -> list[dict]:
+    """Die nächsten geplanten Läufe laut Zeitplan (Wochentage, Zeitzone, Xetra-/US-Handelstag).
+
+    Spiegelt die Regel des Worker-Dienstes: ein Termin gilt nur an Handelstagen und ab seiner Uhrzeit.
+    """
+    from .spiel import lesen
+
+    kurse = lesen.werkzeuge()["kurse"]
+    zone = ZoneInfo(plan["zeitzone"])
+    lokal = jetzt.astimezone(zone)
+    treffer: list[dict] = []
+    for tage in range(0, 15):
+        tag = (lokal + timedelta(days=tage)).date()
+        if not any(kurse.ist_handelstag(t, tag) for t in ("EUNL.DE", "^GSPC")):
+            continue
+        for termin in plan["termine"]:
+            if tag.weekday() not in termin["wochentage"]:
+                continue
+            stunde, minute = map(int, termin["uhrzeit"].split(":"))
+            beginn = datetime(tag.year, tag.month, tag.day, stunde, minute, tzinfo=zone)
+            if beginn + timedelta(minutes=30) <= lokal:
+                continue
+            treffer.append({"zeit": beginn.isoformat(), "art": termin["art"]})
+    treffer.sort(key=lambda t: t["zeit"])
+    return treffer[:anzahl]
+
+
+@router.get("/plan")
+def plan(_benutzer: Angemeldet) -> dict:
+    """Zeitplan-Stand für die Lauf-Seite: Automatik, nächste Termine, zuletzt übersprungene."""
+    p = appdaten.laden()["zeitplan"]
+    erledigt = appdaten.zustand_lesen("planer").get("zeitplan_erledigt", {})
+    letzte = [{"termin": k, "ergebnis": v} for k, v in sorted(erledigt.items(), reverse=True)[:5]]
+    return {"automatik": p["automatik"], "zeitzone": p["zeitzone"], "auftraggeber": p["auftraggeber"],
+            "naechste": naechste_termine(p, jetzt_utc(), 5) if p["automatik"] else [],
+            "token_gesetzt": appdaten.geheimnis_info("claude_token")["gesetzt"], "letzte": letzte}
 
 
 @router.get("/{auftrag_id}")
