@@ -1,0 +1,38 @@
+{
+  "_quelle": "Kursquellen für tools/kurse.py (regeln.md Abschnitt 5: alle Kurse kommen aus tools/kurse.py und werden mit Quelle protokolliert). Anbieterwahl und API-Key stehen in der App-Konfiguration (Einrichtung → Kursdaten), nie hier.",
+  "_hinweis_zuordnung": "Ein Anbieter wird nur für Ticker gefragt, die dort dasselbe Instrument bezeichnen. Indizes (^GDAXI …) und Futures (GC=F, BZ=F) haben keine Zuordnung und kommen weiter aus der bestehenden Quelle (yfinance); Spot-Kurse statt Futures wären ein anderes Instrument.",
+  "_reihenfolge": "1. konfigurierter Anbieter, 2. yfinance, 3. nur zur Anzeige: letzter bekannter Kurs mit Kennzeichnung 'veraltet' (nie für Buchungen).",
+  "fallback": "yfinance",
+  "zwischenspeicher_sekunden": 60,
+  "anbieter": {
+    "finnhub": {
+      "name": "Finnhub",
+      "url": "https://finnhub.io/api/v1/quote",
+      "test_ticker": "AAPL",
+      "batch": false,
+      "max_pro_minute": 50,
+      "max_pro_tag": null,
+      "symbole": {},
+      "suffix": {},
+      "hinweis": "Kostenloser Zugang: US-Aktien und -ETFs in Echtzeit, 60 Anfragen je Minute. Xetra-Werte nur in Bezahltarifen, deshalb ohne Zuordnung.",
+      "doku": "https://finnhub.io/docs/api/quote"
+    },
+    "twelvedata": {
+      "name": "Twelve Data",
+      "url": "https://api.twelvedata.com/quote",
+      "test_ticker": "AAPL",
+      "batch": true,
+      "batch_groesse": 8,
+      "max_pro_minute": 8,
+      "max_pro_tag": 800,
+      "symbole": {
+        "EURUSD=X": "EUR/USD"
+      },
+      "suffix": {
+        ".DE": ":XETR"
+      },
+      "hinweis": "Kostenloser Zugang: 8 Abfragen je Minute und 800 je Tag (je Symbol eine Abfrage). Bei erschöpftem Kontingent übernimmt yfinance.",
+      "doku": "https://twelvedata.com/docs#quote"
+    }
+  }
+}
