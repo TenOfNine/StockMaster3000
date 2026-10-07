@@ -26,7 +26,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
-import { api, ApiFehler, rohAnfrage, type Ampel, type EigenerFeed, type EinrichtungDaten, type GeheimnisInfo, type TestErgebnis, type Voreinstellung, type ZeitplanTermin } from "@/lib/api";
+import { api, ApiFehler, rohAnfrage, type Ampel, type AmpelDetail, type EigenerFeed, type EinrichtungDaten, type GeheimnisInfo, type NewsFeedStatus, type NewsStatus, type TestErgebnis, type Voreinstellung, type ZeitplanTermin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { relativ, zeit } from "@/lib/format";
@@ -51,15 +51,18 @@ function useEinrichtung() {
   return useQuery({ queryKey: ["einrichtung"], queryFn: () => api<EinrichtungDaten>("/api/einrichtung"), refetchInterval: 30_000 });
 }
 
-/** Mutation mit Rückmeldung im Klartext; lädt danach Einrichtung und Cockpit neu. */
-function useAktion<E = unknown, V = void>(ausfuehren: (v: V) => Promise<E>, erfolg?: (e: E) => string) {
+type Meldung = { ok: boolean; text: string; warnung?: boolean };
+
+/** Mutation mit Rückmeldung im Klartext; lädt danach Einrichtung und Cockpit neu. Der Rückgabewert von erfolg darf ihn zur Warnung (Erfolg mit Einschränkung) oder zum Fehler (ok: false) machen. */
+function useAktion<E = unknown, V = void>(ausfuehren: (v: V) => Promise<E>, erfolg?: (e: E) => string | { text: string; ok?: boolean; warnung?: boolean }) {
   const client = useQueryClient();
-  const [meldung, setMeldung] = useState<{ ok: boolean; text: string } | null>(null);
+  const [meldung, setMeldung] = useState<Meldung | null>(null);
   const mutation = useMutation({
     mutationFn: ausfuehren,
     onMutate: () => setMeldung(null),
     onSuccess: (e) => {
-      setMeldung({ ok: true, text: erfolg ? erfolg(e) : "Gespeichert." });
+      const ergebnis = erfolg ? erfolg(e) : "Gespeichert.";
+      setMeldung({ ok: true, ...(typeof ergebnis === "string" ? { text: ergebnis } : ergebnis) });
       void client.invalidateQueries({ queryKey: ["einrichtung"] });
       void client.invalidateQueries({ queryKey: ["ueberblick"] });
     },
@@ -68,11 +71,12 @@ function useAktion<E = unknown, V = void>(ausfuehren: (v: V) => Promise<E>, erfo
   return { ...mutation, meldung, setMeldung };
 }
 
-function Rueckmeldung({ meldung }: { meldung: { ok: boolean; text: string } | null }) {
+function Rueckmeldung({ meldung }: { meldung: Meldung | null }) {
   if (!meldung) return null;
+  const gut = meldung.ok && !meldung.warnung;
   return (
-    <p role={meldung.ok ? "status" : "alert"} className={cn("flex items-start gap-1.5 text-[12.5px]", meldung.ok ? "text-gut" : "text-schlecht")}>
-      {meldung.ok ? <Check className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
+    <p role={meldung.ok ? "status" : "alert"} className={cn("flex items-start gap-1.5 text-[12.5px]", gut ? "text-gut" : meldung.ok ? "text-warnung" : "text-schlecht")}>
+      {gut ? <Check className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
       <span>{meldung.text}</span>
     </p>
   );
@@ -187,7 +191,7 @@ export function Einrichtung() {
             <ul className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
               {BEREICHE.map((b) => {
                 const pflicht = offen.has(b.id as never);
-                const stufe = b.id === "claude" ? ampel("claude") : b.id === "kursdaten" ? ampel("kurse") : b.id === "news" ? ampel("news") : b.id === "system" ? (d.systemstatus.some((s) => s.stufe === "rot") ? "rot" : d.systemstatus.some((s) => s.stufe === "gelb") ? "gelb" : "gruen") : b.id === "spielstart" ? (d.spielstart.gestartet ? "gruen" : "gelb") : undefined;
+                const stufe = b.id === "claude" ? ampel("claude") : b.id === "kursdaten" ? ampel("kurse") : b.id === "news" ? ampel("news") : b.id === "system" ? gesamtstufe(d.systemstatus) : b.id === "spielstart" ? (d.spielstart.gestartet ? "gruen" : "gelb") : undefined;
                 return (
                   <li key={b.id}>
                     <a href={`#${b.id}`} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium whitespace-nowrap text-text-2 hover:bg-flaeche-2 hover:text-text">
@@ -233,9 +237,36 @@ export function Einrichtung() {
   );
 }
 
+const STUFE_TEXT: Record<Ampel["stufe"], string> = { gruen: "in Ordnung", gelb: "Hinweis", rot: "Problem" };
+
 function Punkt({ stufe }: { stufe: Ampel["stufe"] }) {
-  const text = { gruen: "in Ordnung", gelb: "Hinweis", rot: "Problem" }[stufe];
+  const text = STUFE_TEXT[stufe];
   return <span className={cn("size-2.5 shrink-0 rounded-full", stufe === "gruen" ? "bg-gut" : stufe === "gelb" ? "bg-warnung" : "bg-schlecht")} role="img" aria-label={text} title={text} />;
+}
+
+/** Schlechteste Stufe aller Zeilen: so färbt sich der Punkt vor „Systemstatus“ in der Navigation und das Banner im Bereich. */
+export function gesamtstufe(liste: Ampel[]): Ampel["stufe"] {
+  return liste.some((s) => s.stufe === "rot") ? "rot" : liste.some((s) => s.stufe === "gelb") ? "gelb" : "gruen";
+}
+
+/** Eine einzelne Ursache (z. B. ein ausgefallener Feed): was, warum, seit wann, was dagegen hilft. */
+function FehlerDetail({ detail }: { detail: AmpelDetail }) {
+  const verlauf = [detail.seit ? `seit ${zeit(detail.seit)}` : null, detail.anzahl > 1 ? `${detail.anzahl} Abrufe in Folge` : null].filter(Boolean).join(" · ");
+  return (
+    <li className="rounded-lg border border-rand bg-flaeche px-3 py-2">
+      <div className="text-[12.5px] text-text">
+        <span className="font-medium">{detail.titel}</span>: {detail.text}
+      </div>
+      {detail.hinweis && <div className="mt-0.5 text-[12px] text-text-2">{detail.hinweis}</div>}
+      {(verlauf || detail.url) && (
+        <div className="mt-0.5 text-[11.5px] break-all text-text-3">
+          {verlauf}
+          {verlauf && detail.url ? " · " : ""}
+          {detail.url && <Mono className="text-[11.5px]">{detail.url}</Mono>}
+        </div>
+      )}
+    </li>
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -688,6 +719,60 @@ function kennung(name: string): string {
   return basis.length >= 2 ? `eigen-${basis}` : `eigen-${Date.now().toString(36)}`;
 }
 
+/** Ergebnis des letzten Abrufs: ausgefallene Feeds mit Ursache, Dauer und Hinweis; darunter alle Feeds. */
+export function NewsAbrufstatus({ status }: { status: NewsStatus }) {
+  if (!status.zeit) return <p className="text-[12.5px] text-text-3">Noch kein Abruf. „Jetzt abrufen“ startet ihn sofort, sonst übernimmt es der Hintergrunddienst.</p>;
+  const ausgefallen = status.feeds.filter((f) => !f.ok);
+  const stufe: Ampel["stufe"] = ausgefallen.length === 0 ? "gruen" : ausgefallen.length === status.anzahl_feeds ? "rot" : "gelb";
+  return (
+    <div data-stufe={stufe} className={cn("rounded-xl border px-4 py-3", BANNER[stufe].rahmen)}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[13px] font-medium text-text">
+          Letzter Abruf {relativ(status.zeit)}: {status.neu} neue Meldungen aus {status.anzahl_feeds} Feeds
+        </div>
+        {stufe === "gruen" ? (
+          <Abzeichen ton="gut">alle Feeds erreichbar</Abzeichen>
+        ) : (
+          <Abzeichen ton={stufe === "gelb" ? "warnung" : "schlecht"} icon={<AlertTriangle className="size-3" />}>
+            {ausgefallen.length} von {status.anzahl_feeds} mit Fehler
+          </Abzeichen>
+        )}
+      </div>
+      {ausgefallen.length > 0 && (
+        <ul className="mt-2.5 space-y-1.5" aria-label="Feeds mit Fehler">
+          {ausgefallen.map((f) => (
+            <FehlerDetail key={f.id} detail={{ titel: f.name, text: f.fehler ?? "Fehler ohne Angabe.", hinweis: f.hinweis, seit: f.seit, anzahl: f.in_folge, url: f.url }} />
+          ))}
+        </ul>
+      )}
+      <details className="mt-2.5 text-[12.5px]">
+        <summary className="cursor-pointer text-text-2 hover:text-text">Alle {status.anzahl_feeds} Feeds im letzten Abruf</summary>
+        <ul className="mt-2 divide-y divide-rand rounded-lg border border-rand bg-flaeche">
+          {status.feeds.map((f) => (
+            <li key={f.id} className="flex items-start justify-between gap-3 px-3 py-1.5">
+              <span className="min-w-0 text-text-2">{f.name}</span>
+              <span className={cn("shrink-0 text-right", f.ok ? "text-text-3" : "text-schlecht")}>{f.ok ? `${f.neu} neu von ${f.anzahl}` : "Fehler"}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+/** Kurzhinweis an einem Feed der Liste, wenn dessen letzter Abruf fehlschlug (Einzelheiten stehen im Abrufstatus). */
+function FeedAusfall({ feeds }: { feeds?: NewsFeedStatus[] }) {
+  if (!feeds?.length) return null;
+  const erste = feeds[0];
+  const text = feeds.length === 1 ? `Letzter Abruf fehlgeschlagen: ${erste.fehler ?? "Fehler"}` : `Letzter Abruf bei ${feeds.length} Werten fehlgeschlagen, z. B. ${erste.name}: ${erste.fehler ?? "Fehler"}`;
+  return (
+    <p className="mt-1 ml-12 flex items-start gap-1.5 text-[12px] text-warnung">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>{text}</span>
+    </p>
+  );
+}
+
 function NewsBereich({ d }: { d: EinrichtungDaten }) {
   const n = d.einstellungen.news;
   const [aktiv, setAktiv] = useState(n.aktiv);
@@ -704,10 +789,22 @@ function NewsBereich({ d }: { d: EinrichtungDaten }) {
     () => api("/api/einrichtung/news", { methode: "PUT", daten: { aktiv, intervall_minuten: Number(intervall), deaktiviert, eigene, user_agent: agent } }),
     () => "News-Einstellungen gespeichert.",
   );
-  const test = useAktion((url: string) => api<{ status: string; meldung: string | null; ergebnis: { beispiele?: string[] } | null }>("/api/einrichtung/news/test", { daten: { url } }), (e) =>
-    [e.meldung ?? "Test abgeschlossen.", ...(e.ergebnis?.beispiele ?? []).map((b) => `„${b}“`)].join(" "),
+  // Ein fehlgeschlagener Test ist ein Fehler und kein Erfolg: Ursache und Abhilfe stehen in der Meldung.
+  const test = useAktion((url: string) => api<{ status: string; meldung: string | null; ergebnis: { beispiele?: string[] } | null }>("/api/einrichtung/news/test", { daten: { url } }), (e) => ({
+    text: [e.meldung ?? "Test abgeschlossen.", ...(e.ergebnis?.beispiele ?? []).map((b) => `„${b}“`)].join(" "),
+    ok: e.status !== "fehler",
+  }));
+  const abruf = useAktion(
+    () => api<{ status: string; meldung: string | null; ergebnis: { fehlerhaft?: number } | null }>("/api/einrichtung/news/abrufen", { daten: {} }),
+    (e) => ({ text: e.meldung ?? "Abruf beauftragt.", warnung: e.status === "fehler" || (e.ergebnis?.fehlerhaft ?? 0) > 0 }),
   );
-  const abruf = useAktion(() => api<{ meldung: string | null }>("/api/einrichtung/news/abrufen", { daten: {} }), (e) => e.meldung ?? "Abruf beauftragt.");
+  // Ausgefallene Feeds nach Kennung der Konfiguration; je Wert aufgelöste Vorlagen ("yahoo-ticker:SAP.DE") laufen unter der Vorlage.
+  const ausfaelle = new Map<string, NewsFeedStatus[]>();
+  for (const f of d.news_status.feeds) {
+    if (f.ok) continue;
+    const basis = f.id.split(":")[0];
+    ausfaelle.set(basis, [...(ausfaelle.get(basis) ?? []), f]);
+  }
   const hinzufuegen = () => {
     if (!neuName.trim() || !/^https?:\/\//.test(neuUrl.trim())) return;
     const ticker = neuTicker.split(/[\s,;]+/).map((t) => t.trim().toUpperCase()).filter(Boolean);
@@ -729,6 +826,7 @@ function NewsBereich({ d }: { d: EinrichtungDaten }) {
           <Eingabe id="n-intervall" inputMode="numeric" value={intervall} onChange={(e) => setIntervall(e.target.value.replace(/\D/g, ""))} />
         </Feld>
       </div>
+      <NewsAbrufstatus status={d.news_status} />
       <div>
         <div className="mb-2 text-[13px] font-medium text-text-2">Standard-Feeds (config/news.json)</div>
         <ul className="divide-y divide-rand rounded-xl border border-rand">
@@ -738,6 +836,7 @@ function NewsBereich({ d }: { d: EinrichtungDaten }) {
               <li key={f.id} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
                 <div className="min-w-0 flex-1">
                   <Schalter an={an} setAn={(a) => setDeaktiviert(a ? deaktiviert.filter((x) => x !== f.id) : [...deaktiviert, f.id])} label={f.name} beschreibung={f.je_ticker ? "je Wert im Universum und in den Portfolios" : f.url} />
+                  {an && <FeedAusfall feeds={ausfaelle.get(f.id)} />}
                 </div>
                 {!f.je_ticker && (
                   <Knopf klein variante="geist" onClick={() => test.mutate(f.url)} laedt={test.isPending && test.variables === f.url}>
@@ -757,6 +856,7 @@ function NewsBereich({ d }: { d: EinrichtungDaten }) {
               <li key={f.id} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
                 <div className="min-w-0 flex-1">
                   <Schalter an={f.aktiv} setAn={(a) => setEigene(eigene.map((x, j) => (j === i ? { ...x, aktiv: a } : x)))} label={f.name} beschreibung={`${f.url}${f.ticker.length ? ` · ${f.ticker.join(", ")}` : ""}`} />
+                  {f.aktiv && <FeedAusfall feeds={ausfaelle.get(f.id)} />}
                 </div>
                 <Knopf klein variante="geist" onClick={() => test.mutate(f.url)} laedt={test.isPending && test.variables === f.url}>
                   Feed testen
@@ -1113,23 +1213,83 @@ function SicherungBereich() {
 // --------------------------------------------------------------------------
 // 7 Systemstatus
 
-function SystemBereich({ d }: { d: EinrichtungDaten }) {
+const BANNER: Record<Ampel["stufe"], { rahmen: string; titel: string; text: string }> = {
+  gruen: { rahmen: "border-gut/30 bg-gut-flaeche", titel: "text-gut", text: "Alles in Ordnung" },
+  gelb: { rahmen: "border-warnung/30 bg-warnung-flaeche", titel: "text-warnung", text: "Es gibt Hinweise" },
+  rot: { rahmen: "border-schlecht/30 bg-schlecht-flaeche", titel: "text-schlecht", text: "Handlungsbedarf" },
+};
+
+const ZEILE: Record<Ampel["stufe"], string> = {
+  gruen: "border-l-transparent",
+  gelb: "border-l-warnung bg-warnung-flaeche",
+  rot: "border-l-schlecht bg-schlecht-flaeche",
+};
+
+/** „1 Problem: Hintergrunddienst · 2 Hinweise: Kursabruf, News“ – wer das Banner liest, weiß, wohin er schauen muss. */
+function betroffene(liste: Ampel[]): string {
+  const nenne = (stufe: Ampel["stufe"], eins: string, viele: string) => {
+    const treffer = liste.filter((s) => s.stufe === stufe);
+    return treffer.length ? `${treffer.length} ${treffer.length === 1 ? eins : viele}: ${treffer.map((s) => s.titel).join(", ")}` : null;
+  };
+  return [nenne("rot", "Problem", "Probleme"), nenne("gelb", "Hinweis", "Hinweise")].filter(Boolean).join(" · ");
+}
+
+export function SystemBereich({ d }: { d: EinrichtungDaten }) {
   const reihenfolge = useMemo(() => ["daten", "git", "kurse", "news", "claude", "worker"], []);
   const liste = [...d.systemstatus].sort((a, b) => reihenfolge.indexOf(a.id) - reihenfolge.indexOf(b.id));
+  const gesamt = gesamtstufe(liste);
+  const banner = BANNER[gesamt];
   return (
-    <Bereich id="system" titel="Systemstatus" icon={<Activity className="size-4" />} untertitel="Aktualisiert sich alle 30 Sekunden. Grün: in Ordnung · Gelb: Hinweis · Rot: Handlungsbedarf.">
-      <ul className="divide-y divide-rand rounded-xl border border-rand">
-        {liste.map((s) => (
-          <li key={s.id} className="flex items-start gap-3 px-4 py-3">
-            <span className="mt-1.5">
-              <Punkt stufe={s.stufe} />
-            </span>
-            <div className="min-w-0">
-              <div className="text-[13.5px] font-medium text-text">{s.titel}</div>
-              <div className="text-[12.5px] text-text-3">{s.text}</div>
-            </div>
-          </li>
-        ))}
+    <Bereich
+      id="system"
+      titel="Systemstatus"
+      icon={<Activity className="size-4" />}
+      untertitel="Aktualisiert sich alle 30 Sekunden. Grün: in Ordnung · Gelb: Hinweis · Rot: Handlungsbedarf."
+      status={gesamt === "gruen" ? <Abzeichen ton="gut">in Ordnung</Abzeichen> : <Abzeichen ton={gesamt === "gelb" ? "warnung" : "schlecht"} icon={<AlertTriangle className="size-3" />}>{STUFE_TEXT[gesamt]}</Abzeichen>}
+    >
+      <div role="status" data-stufe={gesamt} className={cn("flex items-start gap-3 rounded-xl border px-4 py-3", banner.rahmen)}>
+        <span className="mt-1.5">
+          <Punkt stufe={gesamt} />
+        </span>
+        <div className="min-w-0">
+          <div className={cn("text-[13.5px] font-semibold", banner.titel)}>Gesamtstatus: {banner.text}</div>
+          {gesamt !== "gruen" && <div className="text-[12.5px] text-text-2">{betroffene(liste)}</div>}
+        </div>
+      </div>
+      <ul className="divide-y divide-rand overflow-hidden rounded-xl border border-rand">
+        {liste.map((s) => {
+          const ziel = s.stufe !== "gruen" ? BEREICHE.find((b) => `#${b.id}` === s.link) : undefined;
+          return (
+            <li key={s.id} data-stufe={s.stufe} className={cn("flex items-start gap-3 border-l-[3px] px-4 py-3", ZEILE[s.stufe])}>
+              <span className="mt-1.5">
+                <Punkt stufe={s.stufe} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[13.5px] font-medium text-text">{s.titel}</span>
+                  {s.stufe !== "gruen" && (
+                    <Abzeichen ton={s.stufe === "gelb" ? "warnung" : "schlecht"} icon={<AlertTriangle className="size-3" />}>
+                      {STUFE_TEXT[s.stufe]}
+                    </Abzeichen>
+                  )}
+                </div>
+                <div className={cn("text-[12.5px]", s.stufe === "gruen" ? "text-text-3" : "text-text-2")}>{s.text}</div>
+                {s.details.length > 0 && (
+                  <ul className="mt-2 space-y-1.5" aria-label={`Einzelheiten zu ${s.titel}`}>
+                    {s.details.map((detail, i) => (
+                      <FehlerDetail key={`${detail.titel}-${i}`} detail={detail} />
+                    ))}
+                  </ul>
+                )}
+                {ziel && (
+                  <a href={s.link ?? undefined} className="mt-1.5 inline-block text-[12.5px] font-medium text-akzent hover:underline">
+                    Zum Bereich „{ziel.titel}“
+                  </a>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       <KarteKopf
         titel="Verzeichnisse im Volume"

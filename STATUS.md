@@ -327,6 +327,23 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     mit Ausdruck als Rumpf mehr zu. Zusätzlich ist jeder Bereich der Seite (Startdialog, Zeitplan, Liste,
     Lauf-Ansicht, Log) einzeln abgesichert, die Zeitplan-Leiste verträgt eine unvollständige Antwort, und die
     Fehlerseiten zeigen „Einzelheiten“ (Stack-Auszug).
+36. Systemstatus und News-Fehler (2026-10-07, Rückmeldung eines Auftraggebers: gelber Punkt ohne erkennbaren Grund,
+    Meldung „1 mit Fehler“ ohne Angabe, welcher Feed): **Umgesetzt.** Systemstatus: Zeilen mit Hinweis (gelb) oder
+    Problem (rot) sind farblich hinterlegt, mit Beschriftung („Hinweis“/„Problem“, nie nur Farbe), und ein Banner
+    „Gesamtstatus“ oben nennt die betroffenen Zeilen; Punkt in der Navigation und Banner nutzen dieselbe Funktion.
+    Jede Zeile nennt die Ursache (auch „überfällig“ bei Kurs- und News-Abruf) und verlinkt auf den Bereich, in
+    dem sich das beheben lässt. News: `tools/news.py` übersetzt Fehler in Klartext mit Abhilfe (HTTP 403/404/429/5xx,
+    Zeitüberschreitung, DNS, TLS, abgelehnte oder abgebrochene Verbindung, Webseite statt Feed, leere Antwort, zu
+    groß) und führt je Feed `url`, `art`, `hinweis`, `seit`, `in_folge` und `letzter_erfolg` in
+    `.cache/news_stand.json` (nicht im Spielstand). Die Abschlussmeldung nennt die Feeds und den Grund („News: 3 neue
+    Meldungen aus 18 Feeds, 1 mit Fehler – SEC 8-K: Zugriff verweigert (HTTP 403).“); der Hintergrunddienst
+    zeigt sie ohne doppeltes Präfix. Einsehbar: Systemstatus-Zeile „Letzter News-Abruf“ mit Einzelheiten (höchstens
+    fünf Feeds, Rest als Verweis), Bereich „News“ mit Abrufstatus (ausgefallene Feeds mit Ursache, Dauer und
+    Abhilfe, aufklappbar alle Feeds) und Hinweis am betroffenen Feed in der Liste. „Jetzt abrufen“ meldet
+    ausgefallene Feeds als Warnung statt als Erfolg. Stufen unverändert: gelb bei mindestens einem fehlerhaften
+    Feed oder überfälligem Abruf, rot erst, wenn alle Feeds ausfallen. Tests: Werkzeug (Klartext je Ursache,
+    Verlauf, Zusammenfassung), Backend (Details, Status je Feed, Worker), Oberfläche (Färbung, Banner, Details,
+    Abrufstatus) und E2E.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
