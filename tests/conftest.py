@@ -1,4 +1,4 @@
-"""Gemeinsame Test-Fixtures: isoliertes Projektverzeichnis, feste Uhr, Kursquelle ohne Netzwerk."""
+"""Gemeinsame Test-Fixtures: getrenntes Framework und Datenverzeichnis, feste Uhr, Kursquelle ohne Netzwerk."""
 
 import shutil
 import sys
@@ -14,16 +14,26 @@ import gemeinsam  # noqa: E402
 
 
 @pytest.fixture
-def projekt(tmp_path, monkeypatch):
-    """Leeres Projektverzeichnis mit echter Konfiguration und Regeln."""
-    shutil.copytree(WURZEL / "config", tmp_path / "config")
+def framework(tmp_path, monkeypatch):
+    """Framework-Kopie (config/, regeln.md, STATUS.md, Vorlagen), damit Tests sie ändern dürfen."""
+    ziel = tmp_path / "framework"
+    shutil.copytree(WURZEL / "config", ziel / "config")
+    shutil.copytree(WURZEL / "vorlagen", ziel / "vorlagen")
     for name in ("regeln.md", "STATUS.md"):
-        shutil.copy(WURZEL / name, tmp_path / name)
+        shutil.copy(WURZEL / name, ziel / name)
+    monkeypatch.setenv("STOCKMASTER_FRAMEWORK_DIR", str(ziel))
+    return ziel
+
+
+@pytest.fixture
+def projekt(tmp_path, monkeypatch, framework):
+    """Leeres Datenverzeichnis (Spielstand), getrennt vom Framework."""
+    daten = tmp_path / "daten"
     for ordner in ("portfolios", "trades", "journal", "data/kurse", "data/historie",
-                   "data/nav", "data/limits", "strategie", "reviews"):
-        (tmp_path / ordner).mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("BOERSE_ROOT", str(tmp_path))
-    return tmp_path
+                   "data/nav", "data/limits", "strategie", "reviews", "news"):
+        (daten / ordner).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("STOCKMASTER_DATA_DIR", str(daten))
+    return daten
 
 
 @pytest.fixture

@@ -2,7 +2,11 @@
 
 Geldbeträge sind Decimal und auf Cent gerundet, Stückzahlen haben bis zu
 6 Nachkommastellen. Zeiten gelten in Europe/Berlin und werden im ISO-Format
-mit Zeitzone gespeichert. Alle Schreibvorgänge sind atomar.
+mit Zeitzone gespeichert. Alle Schreibvorgänge sind atomar; Anhängen ist über
+eine Sperrdatei gegen parallele Prozesse (Session, Hintergrund-Abrufe) geschützt.
+
+Pfade: Spielstand liegt im Datenverzeichnis (pfad(), STOCKMASTER_DATA_DIR),
+Konfiguration und Regeln im Framework (framework_pfad()); siehe pfade.py.
 """
 
 from __future__ import annotations
@@ -13,10 +17,20 @@ import json
 import os
 import re
 import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import pfade
+from pfade import Fehler
+
+try:  # POSIX; unter Windows ohne Sperre (nur Entwicklung)
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 TZ = ZoneInfo("Europe/Berlin")
 PROFILE = ("defensiv", "ausgewogen", "aggressiv")
@@ -39,10 +53,6 @@ NAV_FELDER = [
 ]
 
 
-class Fehler(Exception):
-    """Fachlicher Fehler mit verständlicher deutscher Meldung."""
-
-
 class KursFehler(Fehler):
     """Kein oder kein verlässlicher Kurs verfügbar."""
 
@@ -52,15 +62,18 @@ class KursFehler(Fehler):
 
 
 def root() -> Path:
-    """Projektwurzel; in Tests über BOERSE_ROOT umlenkbar."""
-    umgebung = os.environ.get("BOERSE_ROOT")
-    if umgebung:
-        return Path(umgebung)
-    return Path(__file__).resolve().parent.parent
+    """Datenverzeichnis mit dem Spielstand (STOCKMASTER_DATA_DIR)."""
+    return pfade.daten()
 
 
 def pfad(*teile: str) -> Path:
-    return root().joinpath(*teile)
+    """Pfad im Datenverzeichnis (Spielstand)."""
+    return pfade.daten_pfad(*teile)
+
+
+def framework_pfad(*teile: str) -> Path:
+    """Pfad im Framework (config/, regeln.md, STATUS.md, Vorlagen)."""
+    return pfade.framework_pfad(*teile)
 
 
 def jetzt() -> datetime:
@@ -172,6 +185,50 @@ def atomar_schreiben(ziel: Path, inhalt: str) -> None:
         raise
 
 
+_sperre_lokal = threading.RLock()
+_sperre_tiefe = 0
+
+
+@contextmanager
+def schreibsperre():
+    """Exklusive Sperre für Lesen-Ändern-Schreiben im Datenverzeichnis.
+
+    Prozessübergreifend über flock auf .schreibsperre, innerhalb eines Prozesses
+    wiedereintrittsfähig (verschachtelte Aufrufe blockieren sich nicht).
+    """
+    global _sperre_tiefe
+    with _sperre_lokal:
+        if _sperre_tiefe:
+            _sperre_tiefe += 1
+            try:
+                yield
+            finally:
+                _sperre_tiefe -= 1
+            return
+        datei = pfad(".schreibsperre")
+        datei.parent.mkdir(parents=True, exist_ok=True)
+        with open(datei, "a", encoding="utf-8") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            _sperre_tiefe = 1
+            try:
+                yield
+            finally:
+                _sperre_tiefe = 0
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def text_anhaengen(datei: Path, neu: str) -> None:
+    """Hängt Text an; bisheriger Inhalt bleibt Byte für Byte erhalten (unter Schreibsperre)."""
+    datei = Path(datei)
+    with schreibsperre():
+        bisher = datei.read_text(encoding="utf-8") if datei.exists() else ""
+        if bisher and not bisher.endswith("\n"):
+            bisher += "\n"
+        atomar_schreiben(datei, bisher + neu)
+
+
 def _json_default(wert):
     if isinstance(wert, Decimal):
         return text(wert)
@@ -212,16 +269,17 @@ def csv_schreiben(datei: Path, felder: list[str], zeilen: list[dict]) -> None:
 
 
 def csv_anhaengen(datei: Path, felder: list[str], neue: list[dict]) -> None:
-    """Hängt Zeilen an; bestehender Inhalt bleibt Byte für Byte erhalten."""
+    """Hängt Zeilen an; bestehender Inhalt bleibt Byte für Byte erhalten (unter Schreibsperre)."""
     datei = Path(datei)
-    if datei.exists() and datei.stat().st_size > 0:
-        bisher = datei.read_text(encoding="utf-8")
-        if not bisher.endswith("\n"):
-            bisher += "\n"
-        anhang = _csv_text(felder, neue).split("\n", 1)[1]
-        atomar_schreiben(datei, bisher + anhang)
-    else:
-        csv_schreiben(datei, felder, neue)
+    with schreibsperre():
+        if datei.exists() and datei.stat().st_size > 0:
+            bisher = datei.read_text(encoding="utf-8")
+            if not bisher.endswith("\n"):
+                bisher += "\n"
+            anhang = _csv_text(felder, neue).split("\n", 1)[1]
+            atomar_schreiben(datei, bisher + anhang)
+        else:
+            csv_schreiben(datei, felder, neue)
 
 
 # --------------------------------------------------------------------------
@@ -229,7 +287,7 @@ def csv_anhaengen(datei: Path, felder: list[str], neue: list[dict]) -> None:
 
 
 def config(name: str) -> dict:
-    return json_lesen(pfad("config", f"{name}.json"))
+    return json_lesen(framework_pfad("config", f"{name}.json"))
 
 
 def limits_fuer(profil: str) -> dict:
@@ -327,11 +385,9 @@ class Buchungslauf:
         if self.zeilen:
             csv_anhaengen(trades_pfad(profil), TRADE_FELDER, self.zeilen)
         if self.limit_eintraege:
-            datei = pfad("data", "limits", f"{profil}.jsonl")
-            bisher = datei.read_text(encoding="utf-8") if datei.exists() else ""
             neu = "".join(json.dumps(e, default=_json_default, ensure_ascii=False) + "\n"
                           for e in self.limit_eintraege)
-            atomar_schreiben(datei, bisher + neu)
+            text_anhaengen(pfad("data", "limits", f"{profil}.jsonl"), neu)
         portfolio_speichern(self.portfolio)
         self.zeilen = []
         self.limit_eintraege = []
@@ -438,6 +494,16 @@ def journal_eintraege() -> dict[str, dict]:
 
 def session_eintraege() -> list[dict]:
     return [b for b in journal_bloecke() if b["art"] == "S"]
+
+
+def spiel_pfad() -> Path:
+    """spiel.json: Startdatum und Freigabe (geschrieben von tools/init.py)."""
+    return pfad("spiel.json")
+
+
+def spiel_lesen() -> dict:
+    datei = spiel_pfad()
+    return json_lesen(datei) if datei.exists() else {}
 
 
 def sperre_pfad() -> Path:

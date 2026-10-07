@@ -1,0 +1,5 @@
+# Zwischenspeicher und Sperrdatei der Werkzeuge (nicht versioniert, nicht im Export)
+.cache/
+.schreibsperre
+*.tmp
+__pycache__/

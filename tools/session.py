@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Session-Sperre (regeln.md Abschnitt 12): nie mehr als eine Session gleichzeitig.
 
-`start --person <name>` legt session.lock an, committet und pusht sie, damit
-die anderen Auftraggeber sie sehen. `ende` entfernt die Sperre und committet
-das (der Push folgt am Ende der Session). Eine fremde Sperre jünger als
+`start --person <kennung>` legt session.lock im Datenverzeichnis an und
+committet sie im lokalen Spielstand-Git (ohne Remote, es wird nie gepusht).
+`ende` entfernt die Sperre und committet das. Eine fremde Sperre jünger als
 6 Stunden bricht ab; ältere gelten als verwaist und werden übernommen.
 """
 
@@ -21,7 +21,16 @@ SPERRDATEI = "session.lock"
 
 
 def _git(*argumente) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *argumente], cwd=g.root(), capture_output=True, text=True)
+    """Git im Datenverzeichnis (lokales Spielstand-Repository)."""
+    return subprocess.run(["git", "-c", f"safe.directory={g.root()}", *argumente], cwd=g.root(),
+                          capture_output=True, text=True)
+
+
+def _eigenes_git() -> None:
+    """Nie in ein übergeordnetes Repository (z. B. das Framework) committen."""
+    if not (g.root() / ".git").exists():
+        raise Fehler(f"Das Datenverzeichnis {g.root()} ist kein eigenes Git-Repository "
+                     "(python tools/datenverzeichnis.py einrichten).")
 
 
 def _git_pflicht(*argumente) -> None:
@@ -55,20 +64,13 @@ def starten(name: str, git: bool = True) -> list[str]:
     if git:
         nachricht = f"session: Start {person}"
         try:
+            _eigenes_git()
             _git_pflicht("add", SPERRDATEI)
             _git_pflicht("commit", "-q", "-m", nachricht, "--", SPERRDATEI)
         except Fehler:
             g.sperre_pfad().unlink(missing_ok=True)
             raise
-        push = _git("push", "-q", "origin", "HEAD")
-        if push.returncode != 0:
-            # Eigenen Sperr-Commit zurücknehmen, damit kein halber Zustand bleibt.
-            _git("reset", "-q", "--soft", "HEAD~1")
-            _git("reset", "-q", "--", SPERRDATEI)
-            g.sperre_pfad().unlink(missing_ok=True)
-            raise Fehler("Push der Sperre fehlgeschlagen (vermutlich hat jemand anderes gepusht). "
-                         f"Erst 'git pull', dann erneut starten.\n{push.stderr.strip()}")
-        meldungen.append("Sperre committet und gepusht.")
+        meldungen.append("Sperre im lokalen Spielstand-Git committet.")
     meldungen.insert(0, f"Session von {person} gestartet ({g.iso(g.jetzt())}).")
     return meldungen + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
@@ -78,10 +80,10 @@ def beenden(git: bool = True) -> list[str]:
     if sperre is None:
         return ["Keine Sperre vorhanden."]
     hinweise = session_eintrag_hinweis(sperre)
-    if git and _git("ls-files", "--error-unmatch", SPERRDATEI).returncode == 0:
+    if git and (g.root() / ".git").exists() and _git("ls-files", "--error-unmatch", SPERRDATEI).returncode == 0:
         _git_pflicht("rm", "-q", SPERRDATEI)
         _git_pflicht("commit", "-q", "-m", f"session: Ende {sperre['person']}", "--", SPERRDATEI)
-        return hinweise + [f"Sperre von {sperre['person']} entfernt und committet. Jetzt 'git push'."]
+        return hinweise + [f"Sperre von {sperre['person']} entfernt und im lokalen Spielstand-Git committet."]
     g.sperre_pfad().unlink()
     return hinweise + [f"Sperre von {sperre['person']} entfernt."]
 
@@ -99,17 +101,20 @@ def session_eintrag_hinweis(sperre: dict) -> list[str]:
 
 def status() -> list[str]:
     sperre = g.sperre_lesen()
+    spiel = g.spiel_lesen()
+    start = (f"Spiel gestartet am {spiel['startdatum']}." if spiel.get("startdatum")
+             else "Spiel noch nicht gestartet (Startdatum fehlt).")
     if sperre is None:
-        return ["Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
+        return [start, "Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""
-    return [f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."] + \
+    return [start, f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."] + \
         [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Session-Sperre setzen, prüfen und entfernen.")
     unter = parser.add_subparsers(dest="befehl", required=True)
-    p = unter.add_parser("start", help="Session starten (Sperre anlegen, committen, pushen)")
+    p = unter.add_parser("start", help="Session starten (Sperre anlegen und lokal committen)")
     p.add_argument("--person", required=True, help="Kennung des Auftraggebers aus config/projekt.json")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei anlegen (für Tests)")
     p = unter.add_parser("ende", help="Session beenden (Sperre entfernen und committen)")
