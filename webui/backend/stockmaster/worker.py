@@ -122,7 +122,8 @@ class Worker:
                          **({"historie_zeit": jetzt.isoformat()} if historie else {}))
         news = app["news"]
         if news["aktiv"] and self._faellig(self.zustand.get("news_zeit"), news["intervall_minuten"], jetzt):
-            meldungen.append("News: " + self.news_abrufen())
+            ergebnis = self.news_abrufen()
+            meldungen.append(ergebnis if ergebnis.startswith("News:") else "News: " + ergebnis)
             self._merken(news_zeit=jetzt.isoformat())
         return meldungen
 
@@ -272,9 +273,14 @@ class Worker:
             self._merken(kurse_zeit=datetime.now(UTC).isoformat())
             return {"ok": not meldung.startswith("Fehler"), "meldung": meldung}
         if art == "news_jetzt":
+            from .einrichtung import news_status
+
             meldung = self.news_abrufen()
             self._merken(news_zeit=datetime.now(UTC).isoformat())
-            return {"ok": not meldung.startswith("Fehler"), "meldung": meldung}
+            ergebnis = {"ok": not meldung.startswith("Fehler"), "meldung": meldung}
+            if ergebnis["ok"]:  # einzelne ausgefallene Feeds: die Oberfläche zeigt eine Warnung statt eines Erfolgs
+                ergebnis["fehlerhaft"] = news_status()["fehlerhaft"]
+            return ergebnis
         return {"ok": False, "meldung": f"Unbekannter Auftrag {art}."}
 
     # ------------------------------------------------------------------ Claude-Anmeldung (setup-token)

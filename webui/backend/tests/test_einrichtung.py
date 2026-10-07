@@ -93,6 +93,86 @@ def test_news_feeds_validiert_und_wirksam(admin):
     assert admin.put("/api/einrichtung/news", json=doppelt).status_code == 422
 
 
+def _news_stand(zeit, kaputt=(), gesamt=18):
+    """news_stand.json wie tools/news.py sie schreibt: kaputt sind die ersten Feeds mit (Kennung, Fehler)."""
+    feeds = {}
+    for i in range(gesamt):
+        if i < len(kaputt):
+            kennung, fehler = kaputt[i]
+            feeds[kennung] = {"name": kennung.upper(), "anzeige": kennung.upper(), "url": f"https://{kennung}.example/rss",
+                              "ok": False, "fehler": fehler, "art": "zugriff", "hinweis": "Hinweis zur Behebung.",
+                              "seit": "2026-10-07T08:00:00+02:00", "in_folge": 3, "letzter_erfolg": None, "anzahl": 0}
+        else:
+            feeds[f"feed-{i}"] = {"name": f"Feed {i}", "anzeige": f"Feed {i}", "url": f"https://feed-{i}.example/rss",
+                                  "ok": True, "fehler": None, "art": None, "hinweis": None, "seit": None, "in_folge": 0,
+                                  "letzter_erfolg": zeit, "anzahl": 10, "neu": 1}
+    return {"zeit": zeit, "neu": 3, "feeds": feeds, "fehlerhaft": len(kaputt), "anzahl_feeds": gesamt}
+
+
+def _cache_vorgeben(monkeypatch, **dateien):
+    from stockmaster import einrichtung
+
+    original = einrichtung._cache
+    monkeypatch.setattr(einrichtung, "_cache", lambda name: dateien[name] if name in dateien else original(name))
+
+
+def _jetzt(minuten=0):
+    from datetime import UTC, timedelta
+
+    return (datetime.now(UTC) - timedelta(minutes=minuten)).isoformat(timespec="seconds")
+
+
+def test_systemstatus_news_nennt_fehlerhafte_feeds(admin, monkeypatch):
+    _cache_vorgeben(monkeypatch, **{"news_stand.json": _news_stand(_jetzt(), [("sec-8k", "Zugriff verweigert (HTTP 403).")])})
+    daten = admin.get("/api/einrichtung").json()
+    zeile = next(s for s in daten["systemstatus"] if s["id"] == "news")
+    assert zeile["stufe"] == "gelb" and zeile["link"] == "#news"
+    assert zeile["text"] == "gerade eben: 3 neue Meldungen, 1 von 18 Feeds mit Fehler."
+    assert zeile["details"] == [{"titel": "SEC-8K", "text": "Zugriff verweigert (HTTP 403).",
+                                 "hinweis": "Hinweis zur Behebung.", "seit": "2026-10-07T08:00:00+02:00", "anzahl": 3,
+                                 "url": "https://sec-8k.example/rss"}]
+    # Alle Zeilen haben dieselbe Form; grüne Zeilen ohne Einzelheiten.
+    assert all({"details", "link"} <= set(s) for s in daten["systemstatus"])
+    assert next(s for s in daten["systemstatus"] if s["id"] == "daten")["details"] == []
+    # Abrufstatus je Feed für die News-Seite: Fehlerhafte zuerst.
+    status = daten["news_status"]
+    assert (status["anzahl_feeds"], status["fehlerhaft"], status["neu"]) == (18, 1, 3)
+    assert status["feeds"][0]["id"] == "sec-8k" and status["feeds"][0]["fehler"] == "Zugriff verweigert (HTTP 403)."
+    assert [f["ok"] for f in status["feeds"]] == [False] + [True] * 17
+
+
+def test_systemstatus_news_gruen_rot_und_ueberfaellig(admin, monkeypatch):
+    def news_zeile(stand):
+        _cache_vorgeben(monkeypatch, **{"news_stand.json": stand})
+        return next(s for s in admin.get("/api/einrichtung").json()["systemstatus"] if s["id"] == "news")
+
+    gruen = news_zeile(_news_stand(_jetzt(2)))
+    assert (gruen["stufe"], gruen["text"], gruen["details"]) == ("gruen", "vor 2 Min.: 3 neue Meldungen aus 18 Feeds.", [])
+    alle = [(f"f{i}", "HTTP 500.") for i in range(18)]
+    rot = news_zeile(_news_stand(_jetzt(), alle))
+    assert rot["stufe"] == "rot" and "18 von 18 Feeds mit Fehler" in rot["text"]
+    # Nicht jeder Ausfall füllt die Zeile: fünf Feeds einzeln, der Rest als Verweis auf die News-Seite.
+    assert [d["titel"] for d in rot["details"]] == ["F0", "F1", "F10", "F11", "F12", "… und 13 weitere"]
+    assert rot["details"][-1] == {"titel": "… und 13 weitere", "text": "Alle Feeds mit Fehler stehen unter Einrichtung → News.",
+                                  "hinweis": None, "seit": None, "anzahl": 0, "url": None}
+    alt = news_zeile(_news_stand(_jetzt(180)))
+    assert alt["stufe"] == "gelb" and "Überfällig: erwartet wird ein Abruf alle 15 Minuten" in alt["text"]
+
+
+def test_news_status_ohne_abruf_und_mit_altem_format(admin, monkeypatch):
+    # Stand einer älteren Version: ohne Anzeigename, URL und Verlauf.
+    alt = {"zeit": _jetzt(), "neu": 0, "anzahl_feeds": 1, "fehlerhaft": 1,
+           "feeds": {"ezb": {"name": "EZB", "ok": False, "fehler": "HTTP 404", "anzahl": 0}}}
+    _cache_vorgeben(monkeypatch, **{"news_stand.json": alt})
+    feed = admin.get("/api/einrichtung").json()["news_status"]["feeds"][0]
+    assert feed == {"id": "ezb", "name": "EZB", "url": None, "ok": False, "fehler": "HTTP 404", "art": None, "hinweis": None,
+                    "seit": None, "in_folge": 0, "letzter_erfolg": None, "anzahl": 0, "neu": 0}
+    _cache_vorgeben(monkeypatch, **{"news_stand.json": {}})
+    leer = admin.get("/api/einrichtung").json()
+    assert leer["news_status"] == {"zeit": None, "neu": 0, "anzahl_feeds": 0, "fehlerhaft": 0, "feeds": []}
+    assert next(s for s in leer["systemstatus"] if s["id"] == "news")["stufe"] == "rot"
+
+
 def test_zeitplan_validiert(admin):
     plan = {"automatik": True, "zeitzone": "Europe/Berlin", "auftraggeber": "auftraggeber-a",
             "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"}]}

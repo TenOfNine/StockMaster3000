@@ -122,6 +122,36 @@ def test_abrufe_nach_intervall(app, werkzeug_attrappe):
     assert not any(a[0] == "kurse" for a in werkzeug_attrappe)
 
 
+def test_news_abruf_meldet_ausgefallene_feeds(admin, werkzeug_attrappe, monkeypatch):
+    import json as _json
+
+    from stockmaster import einrichtung
+    from stockmaster.db import neue_sitzung
+    from stockmaster.modelle import Auftrag
+    from stockmaster.worker import Worker
+
+    stand = {"zeit": "2026-10-12T10:00:00+02:00", "neu": 3, "anzahl_feeds": 2, "fehlerhaft": 1,
+             "feeds": {"a": {"name": "A", "ok": True, "anzahl": 1}, "b": {"name": "B", "ok": False, "fehler": "HTTP 404"}}}
+    original = einrichtung._cache
+    monkeypatch.setattr(einrichtung, "_cache", lambda name: stand if name == "news_stand.json" else original(name))
+    auftrag_id = admin.post("/api/einrichtung/news/abrufen").json()["id"]
+    Worker().auftraege_bearbeiten()
+    with neue_sitzung() as db:
+        ergebnis = _json.loads(db.get(Auftrag, auftrag_id).ergebnis)
+    assert ergebnis["ok"] is True and ergebnis["fehlerhaft"] == 1
+
+
+def test_news_meldung_im_herzschlag_ohne_doppeltes_praefix(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    w.news_abrufen = lambda: "News: 3 neue Meldungen aus 18 Feeds, 1 mit Fehler – SEC 8-K: HTTP 403."
+    meldungen = w.planen(datetime(2026, 10, 12, 9, 0, tzinfo=UTC))
+    assert "News: 3 neue Meldungen aus 18 Feeds, 1 mit Fehler – SEC 8-K: HTTP 403." in meldungen
+    w.news_abrufen = lambda: "Fehler: nicht erreichbar"
+    assert "News: Fehler: nicht erreichbar" in w.planen(datetime(2026, 10, 12, 9, 20, tzinfo=UTC))  # 15-Minuten-Takt
+
+
 def test_commit_stuendlich_nicht_waehrend_session(app, werkzeug_attrappe, monkeypatch):
     from stockmaster import auftraege
     from stockmaster.worker import Worker

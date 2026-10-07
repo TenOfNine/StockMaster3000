@@ -131,8 +131,34 @@ def pflichtschritte() -> list[dict]:
     return offen
 
 
-def _ampel(kennung: str, titel: str, stufe: str, text: str) -> dict:
-    return {"id": kennung, "titel": titel, "stufe": stufe, "text": text}
+def _ampel(kennung: str, titel: str, stufe: str, text: str, details: list[dict] | None = None,
+           link: str | None = None) -> dict:
+    """Eine Zeile des Systemstatus. details nennt die Ursache im Einzelnen (z. B. die fehlerhaften Feeds),
+    link führt zum Bereich der Einrichtung, in dem sich das beheben lässt."""
+    return {"id": kennung, "titel": titel, "stufe": stufe, "text": text, "details": details or [], "link": link}
+
+
+NEWS_DETAILS_IM_STATUS = 5
+
+
+def news_status() -> dict:
+    """Ergebnis des letzten News-Abrufs je Feed (Fehlerhafte zuerst) aus .cache/news_stand.json."""
+    stand = _cache("news_stand.json")
+    feeds = []
+    for kennung, s in (stand.get("feeds") or {}).items():
+        feeds.append({"id": kennung, "name": s.get("anzeige") or s.get("name") or kennung, "url": s.get("url"),
+                      "ok": bool(s.get("ok")), "fehler": s.get("fehler"), "art": s.get("art"),
+                      "hinweis": s.get("hinweis"), "seit": s.get("seit"), "in_folge": int(s.get("in_folge") or 0),
+                      "letzter_erfolg": s.get("letzter_erfolg"), "anzahl": int(s.get("anzahl") or 0),
+                      "neu": int(s.get("neu") or 0)})
+    feeds.sort(key=lambda f: (f["ok"], f["name"].casefold()))
+    return {"zeit": stand.get("zeit"), "neu": int(stand.get("neu") or 0), "anzahl_feeds": len(feeds),
+            "fehlerhaft": sum(1 for f in feeds if not f["ok"]), "feeds": feeds}
+
+
+def _feed_detail(feed: dict) -> dict:
+    return {"titel": feed["name"], "text": feed["fehler"] or "Fehler ohne Angabe.", "hinweis": feed["hinweis"],
+            "seit": feed["seit"], "anzahl": feed["in_folge"], "url": feed["url"]}
 
 
 def systemstatus() -> list[dict]:
@@ -166,7 +192,7 @@ def systemstatus() -> list[dict]:
     markt = _cache("markt.json")
     markt_zeit = _zeit(markt.get("zeit"))
     if not markt_zeit:
-        status.append(_ampel("kurse", "Letzter Kursabruf", "rot", "Noch kein Kursabruf."))
+        status.append(_ampel("kurse", "Letzter Kursabruf", "rot", "Noch kein Kursabruf.", link="#kursdaten"))
     else:
         alt = datetime.now(UTC) - markt_zeit > timedelta(minutes=2 * int(kurs["intervall_geschlossen_minuten"]) + 10)
         teilweise = markt.get("erfolgreich", 0) < markt.get("anzahl", 0)
@@ -175,32 +201,48 @@ def systemstatus() -> list[dict]:
                 f" (zuerst gefragt: {markt.get('quelle_konfiguriert', '–')}).")
         if teilweise:
             text += " Fehlende Werte zeigen den letzten bekannten Kurs mit Kennzeichnung „veraltet“."
-        status.append(_ampel("kurse", "Letzter Kursabruf", stufe, text))
+        if alt:
+            text += (f" Überfällig: außerhalb der Handelszeiten wird alle {kurs['intervall_geschlossen_minuten']} Minuten "
+                     "abgerufen (Hintergrunddienst prüfen).")
+        status.append(_ampel("kurse", "Letzter Kursabruf", stufe, text, link="#kursdaten"))
 
     news = _cache("news_stand.json")
     news_zeit = _zeit(news.get("zeit"))
-    intervall = int(appdaten.laden()["news"]["intervall_minuten"])
-    if not appdaten.laden()["news"]["aktiv"]:
-        status.append(_ampel("news", "Letzter News-Abruf", "gelb", "News-Abruf ist ausgeschaltet."))
+    news_einstellung = appdaten.laden()["news"]
+    intervall = int(news_einstellung["intervall_minuten"])
+    if not news_einstellung["aktiv"]:
+        status.append(_ampel("news", "Letzter News-Abruf", "gelb", "News-Abruf ist ausgeschaltet.", link="#news"))
     elif not news_zeit:
-        status.append(_ampel("news", "Letzter News-Abruf", "rot", "Noch kein News-Abruf."))
+        status.append(_ampel("news", "Letzter News-Abruf", "rot", "Noch kein News-Abruf.", link="#news"))
     else:
         alt = datetime.now(UTC) - news_zeit > timedelta(minutes=3 * intervall + 5)
-        fehler = news.get("fehlerhaft", 0)
-        stufe = "rot" if fehler and fehler == news.get("anzahl_feeds") else ("gelb" if alt or fehler else "gruen")
-        status.append(_ampel("news", "Letzter News-Abruf", stufe,
-                             f"{_alter_text(news_zeit)}: {news.get('neu', 0)} neue Meldungen, {fehler} von "
-                             f"{news.get('anzahl_feeds', 0)} Feeds mit Fehler."))
+        abruf = news_status()
+        kaputt = [f for f in abruf["feeds"] if not f["ok"]]
+        stufe = "rot" if kaputt and len(kaputt) == abruf["anzahl_feeds"] else ("gelb" if alt or kaputt else "gruen")
+        text = f"{_alter_text(news_zeit)}: {abruf['neu']} neue Meldungen"
+        if kaputt:
+            text += f", {len(kaputt)} von {abruf['anzahl_feeds']} Feeds mit Fehler."
+        else:
+            text += f" aus {abruf['anzahl_feeds']} Feeds."
+        if alt:
+            text += f" Überfällig: erwartet wird ein Abruf alle {intervall} Minuten (Hintergrunddienst prüfen)."
+        details = [_feed_detail(f) for f in kaputt[:NEWS_DETAILS_IM_STATUS]]
+        if len(kaputt) > NEWS_DETAILS_IM_STATUS:
+            details.append({"titel": f"… und {len(kaputt) - NEWS_DETAILS_IM_STATUS} weitere", "text":
+                            "Alle Feeds mit Fehler stehen unter Einrichtung → News.", "hinweis": None, "seit": None,
+                            "anzahl": 0, "url": None})
+        status.append(_ampel("news", "Letzter News-Abruf", stufe, text, details, link="#news"))
 
     info = appdaten.geheimnis_info("claude_token")
     test = appdaten.laden()["claude"].get("letzter_test") or {}
     if not info["gesetzt"]:
-        status.append(_ampel("claude", "Claude-Verbindung", "rot", "Kein Claude-Token hinterlegt."))
+        status.append(_ampel("claude", "Claude-Verbindung", "rot", "Kein Claude-Token hinterlegt.", link="#claude"))
     elif not test:
-        status.append(_ampel("claude", "Claude-Verbindung", "gelb", "Token hinterlegt, Verbindung noch nicht getestet."))
+        status.append(_ampel("claude", "Claude-Verbindung", "gelb", "Token hinterlegt, Verbindung noch nicht getestet.",
+                             link="#claude"))
     else:
         status.append(_ampel("claude", "Claude-Verbindung", "gruen" if test.get("ok") else "rot",
-                             f"Test {_alter_text(_zeit(test.get('zeit')))}: {test.get('meldung', '')}"))
+                             f"Test {_alter_text(_zeit(test.get('zeit')))}: {test.get('meldung', '')}", link="#claude"))
 
     herz = appdaten.zustand_lesen("worker")
     herz_zeit = _zeit(herz.get("zeit"))
@@ -307,6 +349,7 @@ def ueberblick(db: DB) -> dict:
                       "ueberfluessige_variablen": appdaten.ueberfluessige_variablen()},
         "pflichtschritte": pflichtschritte(),
         "systemstatus": systemstatus(),
+        "news_status": news_status(),
         "spielstart": spielstart_checkliste(db),
         "pfade": {"daten": str(einstellungen().daten_pfad), "app": str(einstellungen().app_pfad)},
     }
