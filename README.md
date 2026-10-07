@@ -102,7 +102,8 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 
 | Befehl | Zweck |
 | --- | --- |
-| `python tools/session.py start --person <kennung>` / `ende` / `status` | Session-Sperre |
+| `python tools/session.py start --person <kennung> [--art testsession\|richtlinien\|review]` / `ende` / `status` | Session-Sperre |
+| `python tools/richtlinien.py status` / `vorlage --profil <p>` | Anlagerichtlinien: Stand und Vorlage mit den Limits |
 | `python tools/kurse.py aktuell <ticker...>` | aktuelle Kurse, protokolliert in `data/kurse/` |
 | `python tools/kurse.py historie <ticker> --von --bis` | Tagesdaten mit Dividenden und Splits |
 | `python tools/kurse.py markt [--historie]` | Marktübersicht für die Web-UI (Fallback-Kette, „veraltet“) |

@@ -230,6 +230,39 @@ News"; innerhalb von regeln.md und config/profile.json, ohne Limits, Kosten oder
     gegen Claude Code 2.1.292 geprüft (Link, Eingabe, Ablehnung eines ungültigen Codes); den Erfolgsfall
     deckt ein Test mit einer Attrappe ab. Das manuelle Eintragen bleibt als Ausweg.
 
+Ergebnisse der Testsession (AP12) vom 2026-10-07 und Entscheidungen dazu (Claude im Auftrag der
+Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen geändert):
+
+26. Anlagerichtlinien (regeln.md 11, AP12 Punkt 2) entstehen in einer **eigenen Session vor der ersten
+    Trading-Session**: Laufart „Anlagerichtlinien ausformulieren“ (`session.py start --art richtlinien`,
+    Vorlage mit den verbindlichen Limits aus `python tools/richtlinien.py vorlage`). Begründung: Die
+    Richtlinie braucht Recherche und Zeit, die eine Trading-Session mit Orders nicht nebenbei haben soll;
+    die Trennung hält die Prüfspur sauber. Trading-Läufe werden von der App abgelehnt, solange das Spiel
+    nicht gestartet ist, das Startdatum in der Zukunft liegt (regeln.md 2) oder eine Richtlinie noch die
+    Vorlage ist; `pruefe.py` meldet eine Vorlage nach dem Spielstart als Warnung (kein Fehler, damit die
+    Prüfung Sessions nicht blockiert). Cockpit und Einrichtung zeigen den offenen Schritt.
+27. AP12 gehört zur Instanz: Die Checkbox in STATUS.md bleibt als Framework-Vorlage offen (sie gilt für alle
+    Instanzen und wird nicht je Instanz abgehakt). „Roadmap & Status“ leitet den Stand aus dem
+    Datenverzeichnis ab: erledigt, wenn das Spiel gestartet (spiel.json mit Freigabe) und alle Richtlinien
+    ausformuliert sind; das Detail nennt, was fehlt.
+28. Testsessions, Richtlinien-Sessions und Review-Sessions schreiben keine Session-Einträge: Die Sperre
+    merkt die Art (`--art`), `session.py ende` warnt dann nicht mehr. Trading-Sessions warnen weiter.
+29. News: Je Feed filtern `titel_enthaelt` und `titel_ohne` das Rauschen aus (ganze Wörter, „Gold“ trifft
+    nicht „Goldman“); Gold und Öl sind getrennte Feeds mit eigenem Ticker, MSCI World sucht nur im Titel;
+    gleiche Titel aus mehreren Feeds oder Länderausgaben werden nur einmal gespeichert; bei Google News
+    steht der Herausgeber im Feld `herausgeber` (der Link ist dort nur eine Weiterleitung, ein Auflösen
+    wäre ein weiterer Abruf je Meldung), der Titel ohne Herausgeber-Suffix. Im Journal gilt für solche
+    Meldungen News-ID, Link und Herausgeber als Beleg.
+30. Echtzeit-Anbieter: Empfehlung Finnhub (kostenlos, Echtzeit für US-Aktien und -ETFs). Xetra, Indizes und
+    Futures bleiben bei yfinance (etwa 15 Minuten, unter der Grenze von 30 Minuten), weil die kostenlosen
+    Zugänge sie nicht als dasselbe Instrument führen; ein Key wird nicht von Claude, sondern von den
+    Auftraggebern in der Einrichtung eingetragen. Die Einrichtung zeigt bei „Nur yfinance“ einen Hinweis.
+31. `ranking.md` verwendet das Dezimalkomma (Anzeige für Menschen); Dateien und Berechnung bleiben beim
+    Punkt.
+32. Das Ergebnis eines Claude-Laufs wird vollständig gespeichert und als Markdown angezeigt (vorher
+    gekürzt auf 2.000 Zeichen). Die Erlaubnisliste der Läufe kennt `git -C <pfad> log/status/diff/show`;
+    `git push`, `remote`, `config` und `reset` sind auch mit `-C` verboten.
+
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere
@@ -344,9 +377,10 @@ Kosten (Abschnitte 4 und 5) bedeuten würde. Je Frage die Begründung:
   Bewertung zu Mittelkursen ohne Spread.
 - Yahoo-Tagesdaten sind rückwirkend split-bereinigt; kurse.py rechnet sie
   auf gehandelte Kurse zurück und überschreibt gespeicherte Tage nie. Gegen
-  Live-Daten noch ungeprüft, weil Yahoo aus der Cloud-Umgebung von
-  Claude Code (Netzwerkrichtlinie) nicht erreichbar war; Prüfung in der
-  Testsession (AP12) auf einem Rechner mit Internetzugang.
+  echte Daten geprüft am 2026-10-07 in der Testsession (AP12) im Betrieb:
+  NVDA vor dem Split 1.208,88 am 2024-06-07, Split 10:1 am 2024-06-10,
+  Dividende 0,01 am 2024-06-11 stimmen; Xetra-Kurse über yfinance waren etwa
+  15 Minuten verzögert (Grenze 30 Minuten).
 
 ## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
 
