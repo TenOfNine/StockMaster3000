@@ -219,6 +219,7 @@ def ausfuehren(befehl_liste: list[str], env: dict, cwd: Path, log: Path, schwaer
                           else f"Lauf nach {zeitlimit_s // 60} Minuten abgebrochen (Zeitlimit).")
                 break
         rueckgabe = prozess.wait()
+        prozess.stdout.close()
     ergebnis["rueckgabe"] = rueckgabe
     ergebnis["abgebrochen"] = abgebrochen
     for schluessel in ("result", "ausgabe"):

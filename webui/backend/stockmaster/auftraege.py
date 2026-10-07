@@ -59,6 +59,22 @@ def warten(auftrag_id: str, sekunden: float) -> Auftrag | None:
         time.sleep(0.5)
 
 
+def warten_bis(auftrag_id: str, sekunden: float, bedingung) -> Auftrag | None:
+    """Wartet, bis `bedingung(auftrag)` zutrifft, der Auftrag endet oder die Zeit abläuft."""
+    ende = time.monotonic() + sekunden
+    while True:
+        with neue_sitzung() as db:
+            auftrag = db.get(Auftrag, auftrag_id)
+            if auftrag is None or auftrag.status not in OFFEN or bedingung(auftrag) or time.monotonic() >= ende:
+                return auftrag
+        time.sleep(0.5)
+
+
+def anmeldecode_pfad(auftrag_id: str):
+    """Übergabe des Anmeldecodes von der API an den Worker (0600, sofort nach dem Lesen gelöscht)."""
+    return appdaten.app_pfad("tmp", f"anmeldung-{auftrag_id}.code")
+
+
 def als_dict(a: Auftrag) -> dict:
     def zeit(wert):
         return utc(wert).isoformat() if wert else None

@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from . import appdaten, auftraege, claude_lauf, claude_optionen
+from . import appdaten, auftraege, claude_anmeldung, claude_lauf, claude_optionen
 from .config import einstellungen
 from .db import jetzt_utc, neue_sitzung, utc
 from .modelle import AuditEintrag, Auftrag
@@ -59,6 +59,7 @@ def _letzte_zeile(lauf: subprocess.CompletedProcess) -> str:
 class Worker:
     def __init__(self):
         self.lauf_thread: threading.Thread | None = None
+        self.anmeldung_thread: threading.Thread | None = None
         self.zustand = appdaten.zustand_lesen("planer")
 
     # ------------------------------------------------------------------ Zustand
@@ -195,6 +196,10 @@ class Worker:
             elif art in auftraege.LAUFARTEN and not self.lauf_aktiv():
                 self.lauf_thread = threading.Thread(target=self.lauf_ausfuehren, args=(auftrag_id,), daemon=True)
                 self.lauf_thread.start()
+            elif art == "claude_anmeldung" and not (self.anmeldung_thread and self.anmeldung_thread.is_alive()):
+                self.anmeldung_thread = threading.Thread(target=self.anmeldung_ausfuehren, args=(auftrag_id,),
+                                                         daemon=True)
+                self.anmeldung_thread.start()
 
     def _status(self, auftrag_id: str, **werte) -> None:
         with neue_sitzung() as db:
@@ -258,6 +263,63 @@ class Worker:
             self._merken(news_zeit=datetime.now(UTC).isoformat())
             return {"ok": not meldung.startswith("Fehler"), "meldung": meldung}
         return {"ok": False, "meldung": f"Unbekannter Auftrag {art}."}
+
+    # ------------------------------------------------------------------ Claude-Anmeldung (setup-token)
+
+    def anmeldung_ausfuehren(self, auftrag_id: str) -> None:
+        """`claude setup-token` interaktiv: Link an die UI, Code aus der UI, Token verschlüsselt speichern.
+
+        Ausgaben des Befehls werden weder geloggt noch gespeichert (sie enthalten das Token).
+        """
+        self._status(auftrag_id, status="laeuft", begonnen=jetzt_utc(),
+                     ergebnis=json.dumps({"phase": "starte"}))
+        code_datei = auftraege.anmeldecode_pfad(auftrag_id)
+
+        def link_melden(link: str) -> None:
+            self._status(auftrag_id, ergebnis=json.dumps({"phase": "warte_auf_code", "link": link}))
+
+        def code_holen() -> str | None:
+            if not code_datei.exists():
+                return None
+            code = code_datei.read_text(encoding="utf-8").strip()
+            code_datei.unlink(missing_ok=True)
+            self._status(auftrag_id, ergebnis=json.dumps({"phase": "pruefe_code"}))
+            return code or None
+
+        def abbrechen() -> bool:
+            with neue_sitzung() as db:
+                return bool(db.get(Auftrag, auftrag_id).abbrechen)
+
+        try:
+            with claude_lauf.TempVerzeichnis() as temp:
+                ergebnis = claude_anmeldung.ausfuehren(link_melden, code_holen, abbrechen,
+                                                       claude_anmeldung.umgebung(temp), temp)
+        except claude_anmeldung.AnmeldeFehler as exc:
+            status = "abgebrochen" if abbrechen() else "fehler"
+            self._status(auftrag_id, status=status, beendet=jetzt_utc(), meldung=str(exc),
+                         ergebnis=json.dumps({"phase": "fehler"}))
+            return
+        except FileNotFoundError:
+            self._status(auftrag_id, status="fehler", beendet=jetzt_utc(), ergebnis=json.dumps({"phase": "fehler"}),
+                         meldung="Claude Code CLI ist im Container nicht installiert.")
+            return
+        except Exception as exc:  # noqa: BLE001 - nur Typ und eigene Meldung, nie Ausgaben des Befehls
+            log.error("Claude-Anmeldung %s fehlgeschlagen: %s", auftrag_id, type(exc).__name__)
+            self._status(auftrag_id, status="fehler", beendet=jetzt_utc(), ergebnis=json.dumps({"phase": "fehler"}),
+                         meldung=f"Anmeldung fehlgeschlagen ({type(exc).__name__}).")
+            return
+        finally:
+            code_datei.unlink(missing_ok=True)
+        appdaten.geheimnis_setzen("claude_token", ergebnis.token, quelle="anmeldung")
+        appdaten.bereich_speichern("claude", {"letzter_test": None})
+        test = self._test("test_claude", {})
+        with neue_sitzung() as db:
+            db.add(AuditEintrag(akteur=None, aktion="claude_anmeldung_abgeschlossen", ziel=auftrag_id,
+                                meta=json.dumps({"text": "Claude-Token über die App-Anmeldung gespeichert"})))
+            db.commit()
+        self._status(auftrag_id, status="ok", beendet=jetzt_utc(),
+                     meldung="Claude-Konto verbunden, Token verschlüsselt gespeichert. " + test.get("meldung", ""),
+                     ergebnis=json.dumps({"phase": "fertig", "test_ok": bool(test.get("ok"))}))
 
     # ------------------------------------------------------------------ Claude-Lauf
 
