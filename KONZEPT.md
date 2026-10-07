@@ -105,3 +105,12 @@ einer zweistelligen Zahl abgeschlossener Trades je Portfolio.
 - Session-Rhythmus nach Phase 2 festlegen.
 - Automatischer Session-Start (Kosten, Zugangsdaten, Sicherheit).
 - Ob reale Zertifikatskurse später ergänzend genutzt werden.
+- Überlegung (2026-10-07, nicht entschieden): Eine eigene Persona-Datei für die
+  Claude-Instanz ("soul.md"). Sie würde nicht automatisch geladen, sondern nur
+  über CLAUDE.md oder den Lauf-Prompt, und Analyse, Ton und Begründungen prägen,
+  nicht Limits und Buchungen (die setzt der Code durch). Gegen weiche Regeln
+  (Kapitalerhalt, Nichtstun, Quellenpflicht) könnte sie arbeiten; das berührt R7
+  und R9. Käme sie, dann mit ausdrücklicher Rangfolge (regeln.md vor CLAUDE.md vor
+  Persona), nur für Stil und Haltung, Profil-Ausrichtung weiter in
+  strategie/<profil>.md, im Framework statt im Datenverzeichnis (im Lauf
+  schreibgeschützt), mit Vermerk in STATUS.md und vorheriger Testsession.
