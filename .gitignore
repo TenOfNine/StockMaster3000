@@ -9,3 +9,19 @@ venv/
 # Web-UI Betrieb
 secrets/
 .env
+
+# Spielstand gehört nie ins Framework-Repository, sondern ins Datenverzeichnis
+# (STOCKMASTER_DATA_DIR, im Container /data; Vorlage: vorlagen/datenverzeichnis/).
+/portfolios/
+/trades/
+/data/
+/journal/
+/reviews/
+/strategie/
+/news/
+/lessons.md
+/ranking.md
+/session.lock
+/spiel.json
+/.cache/
+/.schreibsperre

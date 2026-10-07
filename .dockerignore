@@ -1,4 +1,4 @@
-# Nur das Nötige in den Build-Kontext; nie Geheimnisse.
+# Nur das Nötige in den Build-Kontext; nie Geheimnisse und nie Spielstand.
 secrets/
 .env
 .git/
@@ -9,7 +9,16 @@ secrets/
 **/.pytest_cache/
 **/test-results/
 **/*.db
-data/
-portfolios/
-trades/
-journal/
+/portfolios/
+/trades/
+/data/
+/journal/
+/reviews/
+/strategie/
+/news/
+/lessons.md
+/ranking.md
+/session.lock
+/spiel.json
+/.cache/
+/.schreibsperre
