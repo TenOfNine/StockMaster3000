@@ -8,10 +8,12 @@ import {
   CalendarClock,
   Check,
   CircleDashed,
+  Copy,
   Download,
   ExternalLink,
   KeyRound,
   LineChart,
+  LogIn,
   Newspaper,
   Plus,
   PlugZap,
@@ -292,6 +294,198 @@ function GeheimnisFeld({ name, label, info, hinweis, platzhalter }: { name: stri
 // --------------------------------------------------------------------------
 // 1 Claude
 
+interface Anmeldung {
+  id: string | null;
+  status: "wartet" | "laeuft" | "ok" | "fehler" | "abgebrochen";
+  phase: "starte" | "warte_auf_code" | "pruefe_code" | "fertig" | "fehler";
+  link: string | null;
+  test_ok: boolean | null;
+  meldung: string | null;
+  token: GeheimnisInfo;
+}
+
+function Schritt({ nummer, titel, children, aktiv = true }: { nummer: number; titel: string; children: ReactNode; aktiv?: boolean }) {
+  return (
+    <div className={cn("flex gap-3", !aktiv && "opacity-50")}>
+      <span className="grid size-7 shrink-0 place-items-center rounded-full border border-rand-stark text-[12px] font-semibold text-text-2">{nummer}</span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="text-[13.5px] font-medium text-text">{titel}</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Anmeldung mit dem Claude-Abo: der Container führt `claude setup-token` aus, Link und Code laufen über die UI. */
+function ClaudeAnmeldung({ verbunden }: { verbunden: boolean }) {
+  const client = useQueryClient();
+  const [offen, setOffen] = useState(false);
+  const [stand, setStand] = useState<Anmeldung | null>(null);
+  const [code, setCode] = useState("");
+  const [fehler, setFehler] = useState<string | null>(null);
+  const [kopiert, setKopiert] = useState(false);
+  const laeuft = stand != null && (stand.status === "wartet" || stand.status === "laeuft");
+
+  useEffect(() => {
+    if (!offen || !stand?.id || !laeuft) return;
+    const zeitgeber = setTimeout(async () => {
+      try {
+        setStand(await api<Anmeldung>(`/api/einrichtung/claude/anmeldung/${stand.id}`));
+      } catch (f) {
+        setFehler(fehlerText(f));
+      }
+    }, 1000);
+    return () => clearTimeout(zeitgeber);
+  }, [offen, stand, laeuft]);
+
+  useEffect(() => {
+    if (stand?.status === "ok") {
+      void client.invalidateQueries({ queryKey: ["einrichtung"] });
+      void client.invalidateQueries({ queryKey: ["ueberblick"] });
+    }
+  }, [stand?.status, client]);
+
+  const starten = useMutation({
+    mutationFn: () => api<Anmeldung>("/api/einrichtung/claude/anmeldung", { daten: {} }),
+    onMutate: () => {
+      setFehler(null);
+      setCode("");
+      setStand(null);
+    },
+    onSuccess: setStand,
+    onError: (f) => setFehler(fehlerText(f)),
+  });
+  const senden = useMutation({
+    mutationFn: () => api<Anmeldung>(`/api/einrichtung/claude/anmeldung/${stand!.id}/code`, { daten: { code: code.trim() } }),
+    onMutate: () => setFehler(null),
+    onSuccess: (s) => {
+      setStand(s);
+      setCode("");
+    },
+    onError: (f) => setFehler(fehlerText(f)),
+  });
+
+  const oeffnen = () => {
+    setOffen(true);
+    starten.mutate();
+  };
+  const schliessen = (neu: boolean) => {
+    if (!neu && stand?.id && laeuft) void api(`/api/einrichtung/claude/anmeldung/${stand.id}/abbrechen`, { daten: {} }).catch(() => undefined);
+    setOffen(neu);
+  };
+  const kopieren = async () => {
+    if (!stand?.link) return;
+    try {
+      await navigator.clipboard.writeText(stand.link);
+      setKopiert(true);
+      setTimeout(() => setKopiert(false), 2000);
+    } catch {
+      setFehler("Kopieren nicht möglich – den Link bitte markieren und kopieren.");
+    }
+  };
+
+  const phase = stand?.phase ?? "starte";
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-akzent/30 bg-akzent/5 p-4 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <div className="text-[13.5px] font-semibold text-text">{verbunden ? "Claude-Abo verbunden" : "Mit dem Claude-Abo anmelden"}</div>
+        <p className="mt-0.5 text-[12.5px] text-text-3">
+          Der Container erzeugt den Anmeldelink selbst (<Mono>claude setup-token</Mono>). Link öffnen, mit dem Pro-Konto anmelden, den angezeigten Code hier einfügen – das Token
+          wird verschlüsselt gespeichert und nie angezeigt.
+        </p>
+      </div>
+      <Knopf variante={verbunden ? "sekundaer" : "primaer"} onClick={oeffnen}>
+        <LogIn className="size-4" /> {verbunden ? "Neu anmelden" : "Mit Claude anmelden"}
+      </Knopf>
+      <Dialog offen={offen} setOffen={schliessen} titel="Mit dem Claude-Abo anmelden" beschreibung="Ein Jahr gültiges Token für die Sessions im Container (Claude Pro, Max, Team oder Enterprise)." breit>
+        <div className="space-y-5">
+          {stand?.status === "ok" ? (
+            <div className="flex items-start gap-3 rounded-xl border border-gut/30 bg-gut-flaeche p-4 text-[13px] text-text">
+              <Check className="mt-0.5 size-5 shrink-0 text-gut" />
+              <div>
+                <div className="font-semibold">Verbunden</div>
+                <p className="mt-0.5 text-text-2">{stand.meldung}</p>
+                {stand.token.letzte4 && <p className="mt-1 text-[12.5px] text-text-3">Token ••••{stand.token.letzte4}, verschlüsselt im App-Verzeichnis.</p>}
+              </div>
+            </div>
+          ) : stand && !laeuft ? (
+            <div className="flex items-start gap-3 rounded-xl border border-schlecht/30 bg-schlecht-flaeche p-4 text-[13px] text-text">
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-schlecht" />
+              <div>
+                <div className="font-semibold">Anmeldung nicht abgeschlossen</div>
+                <p className="mt-0.5 text-text-2">{stand.meldung}</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <Schritt nummer={1} titel="Anmeldelink öffnen">
+                {!stand?.link ? (
+                  <p className="flex items-center gap-2 text-[12.5px] text-text-3">
+                    <RefreshCw className="size-3.5 animate-spin" /> {stand?.meldung ?? "Anmeldelink wird im Container erzeugt …"}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Eingabe readOnly value={stand.link} aria-label="Anmeldelink" onFocus={(e) => e.target.select()} className="font-mono text-[11.5px]" />
+                      <Knopf onClick={() => void kopieren()} aria-label="Link kopieren">
+                        {kopiert ? <Check className="size-4 text-gut" /> : <Copy className="size-4" />}
+                      </Knopf>
+                      <a href={stand.link} target="_blank" rel="noreferrer noopener" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-text px-4 text-sm font-medium text-bg hover:opacity-90">
+                        Öffnen <ExternalLink className="size-4" />
+                      </a>
+                    </div>
+                    <p className="text-[12px] text-text-3">Auf jedem Gerät möglich, z. B. am Handy. Mit dem Konto anmelden, das das Claude-Abo hat, und den Zugriff erlauben.</p>
+                  </>
+                )}
+              </Schritt>
+              <Schritt nummer={2} titel="Code von der Anmeldeseite einfügen" aktiv={phase === "warte_auf_code" || phase === "pruefe_code"}>
+                <form
+                  className="flex flex-col gap-2 sm:flex-row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    senden.mutate();
+                  }}
+                >
+                  <Eingabe
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    aria-label="Anmeldecode"
+                    placeholder="Code von platform.claude.com"
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={phase !== "warte_auf_code"}
+                    className="font-mono text-[12.5px]"
+                  />
+                  <Knopf type="submit" variante="primaer" laedt={senden.isPending || phase === "pruefe_code"} disabled={phase !== "warte_auf_code" || code.trim().length < 8}>
+                    Verbinden
+                  </Knopf>
+                </form>
+                {phase === "pruefe_code" && <p className="text-[12.5px] text-text-3">Code wird geprüft und das Token gespeichert …</p>}
+                <p className="text-[12px] text-text-3">Der Link ist 10 Minuten gültig. Der Code wird nur an den wartenden Anmeldeprozess im Container weitergereicht und nicht gespeichert.</p>
+              </Schritt>
+            </>
+          )}
+          {fehler && (
+            <p role="alert" className="flex items-start gap-1.5 text-[12.5px] text-schlecht">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {fehler}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            {stand && !laeuft && stand.status !== "ok" && (
+              <Knopf onClick={() => starten.mutate()} laedt={starten.isPending}>
+                <RefreshCw className="size-4" /> Neu starten
+              </Knopf>
+            )}
+            <Knopf variante={stand?.status === "ok" ? "primaer" : "geist"} onClick={() => schliessen(false)}>
+              {stand?.status === "ok" ? "Fertig" : "Abbrechen"}
+            </Knopf>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
 function VoreinstellungFeld({ id, titel, wert, setWert, d }: { id: string; titel: string; wert: Voreinstellung; setWert: (v: Voreinstellung) => void; d: EinrichtungDaten }) {
   const o = d.optionen.claude;
   const istAlias = o.modelle.some((m) => m.wert === wert.modell);
@@ -353,18 +547,23 @@ function ClaudeBereich({ d }: { d: EinrichtungDaten }) {
       untertitel={`Anmeldung über das eigene Claude-Pro-Abo und Modellwahl für die Sessions (Claude Code ${o.cli_version} im Container).`}
       status={token.gesetzt ? <Abzeichen ton="gut">verbunden</Abzeichen> : <Abzeichen ton="warnung">Token fehlt</Abzeichen>}
     >
-      <GeheimnisFeld
-        name="claude_token"
-        label="Claude-Token"
-        info={token}
-        platzhalter="sk-ant-oat01-…"
-        hinweis={
-          <>
-            Auf dem eigenen Rechner mit installiertem Claude Code <Mono className="rounded bg-flaeche-3 px-1">claude setup-token</Mono> ausführen, im Browser mit dem Pro-Konto anmelden und das
-            ausgegebene Token hier einfügen (ein Jahr gültig). Ist im claude.ai-Konto eine kostenpflichtige Zusatznutzung aktiv, dort abschalten – die App kann das nicht prüfen.
-          </>
-        }
-      />
+      <ClaudeAnmeldung verbunden={token.gesetzt} />
+      <details className="group rounded-xl border border-rand bg-flaeche-2/40 px-4 py-3">
+        <summary className="cursor-pointer text-[13px] font-medium text-text-2 select-none group-open:mb-3">Oder Token manuell eintragen</summary>
+        <GeheimnisFeld
+          name="claude_token"
+          label="Claude-Token"
+          info={token}
+          platzhalter="sk-ant-oat01-…"
+          hinweis={
+            <>
+              Auf einem eigenen Rechner mit installiertem Claude Code <Mono className="rounded bg-flaeche-3 px-1">claude setup-token</Mono> ausführen, im Browser mit dem Pro-Konto anmelden
+              und das ausgegebene Token hier einfügen (ein Jahr gültig).
+            </>
+          }
+        />
+      </details>
+      <p className="text-[12.5px] text-text-3">Ist im claude.ai-Konto eine kostenpflichtige Zusatznutzung aktiv, dort abschalten – die App kann das nicht prüfen.</p>
       <div className="flex flex-wrap items-center gap-3">
         <Knopf onClick={() => test.mutate()} laedt={test.isPending} disabled={!token.gesetzt}>
           <PlugZap className="size-4" /> Verbindung testen

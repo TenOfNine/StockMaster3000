@@ -224,6 +224,11 @@ News"; innerhalb von regeln.md und config/profile.json, ohne Limits, Kosten oder
 24. Modell und Aufwand: Optionen in config/claude.json statt im Frontend; Unverträglichkeiten werden vor
     dem Speichern angezeigt, und lehnt die CLI eine Kombination ab, bricht der Lauf mit deren Meldung ab
     (kein stilles Zurückfallen auf Standardwerte).
+25. Claude-Anmeldung aus der App (2026-10-07, Wunsch der Auftraggeber): Der worker führt
+    `claude setup-token` im Container aus; Link und Code laufen über die Einrichtung, das Token wird nie
+    angezeigt. Der Ablauf hängt an der interaktiven Ausgabe der CLI (keine stabile Schnittstelle) und ist
+    gegen Claude Code 2.1.292 geprüft (Link, Eingabe, Ablehnung eines ungültigen Codes); den Erfolgsfall
+    deckt ein Test mit einer Attrappe ab. Das manuelle Eintragen bleibt als Ausweg.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
