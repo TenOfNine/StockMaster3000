@@ -83,8 +83,30 @@ def _schlagwort_treffer(text: str, schlagworte: dict[str, list[str]]) -> list[st
     return treffer
 
 
+def titel_schluessel(titel: str) -> str:
+    """Normalisierter Titel zum Erkennen von Dubletten (gleiche Meldung aus mehreren Feeds oder Länderausgaben)."""
+    return re.sub(r"[\W_]+", " ", titel.casefold()).strip()
+
+
+def _passt(text: str, worte: list[str]) -> bool:
+    """Eines der Wörter kommt als ganzes Wort vor (Groß-/Kleinschreibung egal; "Gold" trifft nicht "Goldman")."""
+    return any(re.search(rf"(?<!\w){re.escape(wort)}(?!\w)", text, re.I) for wort in worte)
+
+
+def filtern(meldung: dict, feed: dict) -> bool:
+    """Wendet titel_enthaelt (mindestens ein Wort) und titel_ohne (keines) des Feeds an."""
+    titel = meldung["titel"]
+    if feed.get("titel_enthaelt") and not _passt(titel, feed["titel_enthaelt"]):
+        return False
+    return not (feed.get("titel_ohne") and _passt(titel, feed["titel_ohne"]))
+
+
 def parsen(daten: bytes, maximal: int = 300) -> list[dict]:
-    """Feed-Inhalt in Meldungen (ohne Speicherung). Links nur http(s)."""
+    """Feed-Inhalt in Meldungen (ohne Speicherung). Links nur http(s).
+
+    Bei Sammeldiensten wie Google News steht der eigentliche Herausgeber im Feld "source"; er wird als
+    herausgeber (und herausgeber_url) übernommen und aus dem Titel entfernt ("Titel - Herausgeber").
+    """
     import feedparser
 
     feed = feedparser.parse(daten)
@@ -97,10 +119,16 @@ def parsen(daten: bytes, maximal: int = 300) -> list[dict]:
         if urlparse(link).scheme not in ("http", "https"):
             continue
         titel = _kurztext(eintrag.get("title", ""), 300)
+        quelle = eintrag.get("source") or {}
+        herausgeber = _kurztext(quelle.get("title", ""), 80) or None
+        herausgeber_url = quelle.get("href") if urlparse(quelle.get("href") or "").scheme in ("http", "https") else None
+        if herausgeber and titel.endswith(f" - {herausgeber}"):
+            titel = titel[: -len(herausgeber) - 3].rstrip()
         if not titel:
             continue
         meldungen.append({"id": _id(eintrag), "zeit": _zeit(eintrag), "titel": titel, "link": link,
-                          "kurztext": _kurztext(eintrag.get("summary", ""), maximal)})
+                          "kurztext": _kurztext(eintrag.get("summary", ""), maximal),
+                          "herausgeber": herausgeber, "herausgeber_url": herausgeber_url})
     return meldungen
 
 
@@ -139,11 +167,14 @@ def gespeicherte(tage: int | None = None) -> list[dict]:
 
 
 def _bekannte_ids() -> set[str]:
+    """IDs und Titelschlüssel der letzten Monate (ältere Einträge ohne Herausgeber eingeschlossen)."""
     ids = set()
     for datei in _speicher_dateien()[-MONATE_FUER_DUPLIKATE:]:
         for zeile in datei.read_text(encoding="utf-8").splitlines():
             if zeile.strip():
-                ids.add(json.loads(zeile)["id"])
+                eintrag = json.loads(zeile)
+                ids.add(eintrag["id"])
+                ids.add("T:" + titel_schluessel(eintrag["titel"]))
     return ids
 
 
@@ -173,19 +204,27 @@ def abrufen(konfig: dict | None = None) -> dict:
             status[feed["id"]] = {"name": feed.get("name"), "ok": False,
                                   "fehler": f"{type(exc).__name__}: {str(exc)[:160]}", "anzahl": 0}
             continue
-        zaehler = 0
+        zaehler = gefiltert = dubletten = 0
         for meldung in meldungen:
             if meldung["id"] in bekannt:
                 continue
-            bekannt.add(meldung["id"])
+            if not filtern(meldung, feed):
+                gefiltert += 1
+                continue
+            titel_key = "T:" + titel_schluessel(meldung["titel"])
+            if titel_key in bekannt:
+                dubletten += 1
+                continue
+            bekannt.update((meldung["id"], titel_key))
             ticker = list(dict.fromkeys([*feed.get("ticker", []),
                                          *_schlagwort_treffer(meldung["titel"], schlagworte)]))
             neu.append({"id": meldung["id"], "abgerufen": g.iso(abruf), "zeit": meldung["zeit"],
                         "quelle": feed["id"], "quelle_name": feed.get("name", feed["id"]), "titel": meldung["titel"],
-                        "kurztext": meldung["kurztext"], "link": meldung["link"], "ticker": ticker})
+                        "kurztext": meldung["kurztext"], "link": meldung["link"], "ticker": ticker,
+                        "herausgeber": meldung["herausgeber"], "herausgeber_url": meldung["herausgeber_url"]})
             zaehler += 1
         status[feed["id"]] = {"name": feed.get("name"), "ok": True, "fehler": None, "anzahl": len(meldungen),
-                              "neu": zaehler}
+                              "neu": zaehler, "gefiltert": gefiltert, "dubletten": dubletten}
     if neu:
         g.text_anhaengen(g.pfad("news", f"{abruf:%Y-%m}.jsonl"),
                          "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in neu))
@@ -225,7 +264,8 @@ def main(argv=None) -> int:
             for m in [] if args.json else meldungen:
                 zeit = (m.get("zeit") or m["abgerufen"])[:16].replace("T", " ")
                 ticker = f" [{', '.join(m['ticker'])}]" if m["ticker"] else ""
-                print(f"{m['id']} | {zeit} | {m['quelle_name']}{ticker} | {m['titel']} | {m['link']}")
+                von = m.get("herausgeber") or m["quelle_name"]
+                print(f"{m['id']} | {zeit} | {von}{ticker} | {m['titel']} | {m['link']}")
         else:
             agent = standard_konfig()["user_agent"]
             meldungen = parsen(HOLEN(args.url, agent))

@@ -1,6 +1,6 @@
 {
   "_quelle": "Standard-Feeds für tools/news.py. Änderungen aus der Einrichtungsseite (Feeds an/aus, eigene Feeds, Intervall) liegen in der App-Konfiguration und überschreiben diese Datei nicht.",
-  "_hinweis": "Gespeichert werden nur Titel, Kurztext und Link mit Quelle und Datum (news/ im Datenverzeichnis). News sind datierte Quellen, keine Kurse: Kurse kommen nur aus tools/kurse.py.",
+  "_hinweis": "Gespeichert werden nur Titel, Kurztext und Link mit Quelle und Datum (news/ im Datenverzeichnis). News sind datierte Quellen, keine Kurse: Kurse kommen nur aus tools/kurse.py. Je Feed filtern titel_enthaelt (mindestens ein Wort als ganzes Wort im Titel) und titel_ohne (keines) das Rauschen aus; gleiche Titel aus mehreren Feeds werden nur einmal gespeichert. Bei Google News steht der Herausgeber im Feld herausgeber (der Link ist dort eine Weiterleitung).",
   "intervall_minuten": 15,
   "kurztext_max_zeichen": 300,
   "user_agent": "StockMaster3000/1.0 (privates Boersen-Planspiel)",
@@ -15,36 +15,110 @@
     {
       "id": "google-dax",
       "name": "Google News: DAX",
-      "url": "https://news.google.com/rss/search?q=DAX%20B%C3%B6rse&hl=de&gl=DE&ceid=DE:de",
-      "ticker": ["^GDAXI"],
+      "url": "https://news.google.com/rss/search?q=DAX%20B%C3%B6rse%20when%3A2d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "^GDAXI"
+      ],
+      "titel_enthaelt": [
+        "DAX"
+      ],
       "aktiv": true
     },
     {
       "id": "google-msci-world",
       "name": "Google News: MSCI World",
-      "url": "https://news.google.com/rss/search?q=%22MSCI%20World%22&hl=de&gl=DE&ceid=DE:de",
-      "ticker": ["EUNL.DE"],
+      "url": "https://news.google.com/rss/search?q=intitle%3A%22MSCI%20World%22%20when%3A7d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "EUNL.DE"
+      ],
+      "titel_enthaelt": [
+        "MSCI World"
+      ],
       "aktiv": true
     },
     {
       "id": "google-wallstreet",
       "name": "Google News: Wall Street",
-      "url": "https://news.google.com/rss/search?q=Wall%20Street%20S%26P%20500%20Nasdaq&hl=de&gl=DE&ceid=DE:de",
-      "ticker": ["^GSPC", "^NDX"],
+      "url": "https://news.google.com/rss/search?q=Wall%20Street%20when%3A2d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "^GSPC",
+        "^NDX"
+      ],
+      "titel_enthaelt": [
+        "Wall Street",
+        "S&P 500",
+        "S&P",
+        "Nasdaq",
+        "Dow Jones"
+      ],
       "aktiv": true
     },
     {
-      "id": "google-rohstoffe",
-      "name": "Google News: Gold und Öl",
-      "url": "https://news.google.com/rss/search?q=Goldpreis%20OR%20%C3%96lpreis%20Brent&hl=de&gl=DE&ceid=DE:de",
-      "ticker": ["GC=F", "BZ=F"],
+      "id": "google-gold",
+      "name": "Google News: Goldpreis",
+      "url": "https://news.google.com/rss/search?q=Goldpreis%20OR%20%22Gold%20price%22%20when%3A2d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "GC=F"
+      ],
+      "titel_enthaelt": [
+        "Gold",
+        "Goldpreis",
+        "Goldpreise",
+        "Goldkurs",
+        "Feinunze",
+        "Unze"
+      ],
+      "titel_ohne": [
+        "Announces",
+        "Drilling",
+        "Drill",
+        "Mining",
+        "Minen",
+        "Resources",
+        "Exploration",
+        "Mineral",
+        "Pressemitteilung",
+        "Press Release",
+        "EQS",
+        "g/t"
+      ],
+      "aktiv": true
+    },
+    {
+      "id": "google-oel",
+      "name": "Google News: Ölpreis und Brent",
+      "url": "https://news.google.com/rss/search?q=%C3%96lpreis%20OR%20Brent%20when%3A2d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "BZ=F"
+      ],
+      "titel_enthaelt": [
+        "Ölpreis",
+        "Ölpreise",
+        "Brent",
+        "Rohöl",
+        "Öl",
+        "Ölmarkt",
+        "Opec"
+      ],
       "aktiv": true
     },
     {
       "id": "google-geldpolitik",
       "name": "Google News: Geldpolitik EZB und Fed",
-      "url": "https://news.google.com/rss/search?q=Leitzins%20EZB%20OR%20Fed&hl=de&gl=DE&ceid=DE:de",
-      "ticker": ["EURUSD=X"],
+      "url": "https://news.google.com/rss/search?q=Leitzins%20EZB%20OR%20Fed%20when%3A3d&hl=de&gl=DE&ceid=DE:de",
+      "ticker": [
+        "EURUSD=X"
+      ],
+      "titel_enthaelt": [
+        "EZB",
+        "Fed",
+        "Leitzins",
+        "Zinsen",
+        "Zinsentscheid",
+        "Notenbank",
+        "Lagarde",
+        "Powell"
+      ],
       "aktiv": true
     },
     {
@@ -74,13 +148,35 @@
     }
   ],
   "schlagworte": {
-    "^GDAXI": ["DAX"],
-    "^STOXX50E": ["Euro Stoxx", "EuroStoxx"],
-    "^GSPC": ["S&P 500", "S&P500"],
-    "^NDX": ["Nasdaq"],
-    "GC=F": ["Gold", "Goldpreis"],
-    "BZ=F": ["Brent", "Ölpreis"],
-    "EURUSD=X": ["EUR/USD", "Euro-Dollar", "Devisen"],
-    "EUNL.DE": ["MSCI World"]
+    "^GDAXI": [
+      "DAX"
+    ],
+    "^STOXX50E": [
+      "Euro Stoxx",
+      "EuroStoxx"
+    ],
+    "^GSPC": [
+      "S&P 500",
+      "S&P500"
+    ],
+    "^NDX": [
+      "Nasdaq"
+    ],
+    "GC=F": [
+      "Gold",
+      "Goldpreis"
+    ],
+    "BZ=F": [
+      "Brent",
+      "Ölpreis"
+    ],
+    "EURUSD=X": [
+      "EUR/USD",
+      "Euro-Dollar",
+      "Devisen"
+    ],
+    "EUNL.DE": [
+      "MSCI World"
+    ]
   }
 }

@@ -460,6 +460,15 @@ def pruefe_sperre() -> list[Befund]:
     return []
 
 
+def pruefe_richtlinien() -> list[Befund]:
+    """Nach dem Spielstart braucht jedes Portfolio eine ausformulierte Anlagerichtlinie (regeln.md 11)."""
+    if not g.spiel_lesen().get("startdatum"):
+        return []
+    return [warnung("Anlagerichtlinie", f"strategie/{profil}.md ist noch die Vorlage aus tools/init.py; vor der ersten "
+                                        "Trading-Session ausformulieren (AP12 Punkt 2).")
+            for profil in g.vorhandene_profile() if not g.richtlinie_ausformuliert(profil)]
+
+
 def pruefe_kalender() -> list[Befund]:
     heute = g.heute()
     jahre = [heute.year] + ([heute.year + 1] if heute.month >= 11 else [])
@@ -474,7 +483,7 @@ def pruefe_kalender() -> list[Befund]:
 
 
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
-    befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote()
+    befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote() + pruefe_richtlinien()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
     bloecke = g.journal_bloecke()
     befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)

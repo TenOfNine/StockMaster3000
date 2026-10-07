@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Session-Sperre (regeln.md Abschnitt 12): nie mehr als eine Session gleichzeitig.
 
-`start --person <kennung>` legt session.lock im Datenverzeichnis an und
-committet sie im lokalen Spielstand-Git (ohne Remote, es wird nie gepusht).
-`ende` entfernt die Sperre und committet das. Eine fremde Sperre jünger als
+`start --person <kennung> [--art testsession]` legt session.lock im Datenverzeichnis
+an und committet sie im lokalen Spielstand-Git (ohne Remote, es wird nie gepusht).
+Eine Testsession (AP12) schreibt weder Journal noch Orders; für sie entfällt die
+Warnung "kein Session-Eintrag". `ende` entfernt die Sperre und committet das. Eine fremde Sperre jünger als
 6 Stunden bricht ab; ältere gelten als verwaist und werden übernommen.
 """
 
@@ -47,8 +48,15 @@ def person_pruefen(name: str) -> str:
     return person
 
 
-def starten(name: str, git: bool = True) -> list[str]:
+ARTEN = ("trading", "testsession", "richtlinien", "review")
+# Diese Arten schreiben keine Orders und keine Session-Einträge: keine Warnung zum fehlenden Session-Eintrag.
+OHNE_SESSION_EINTRAG = ("testsession", "richtlinien", "review")
+
+
+def starten(name: str, git: bool = True, art: str = "trading") -> list[str]:
     person = person_pruefen(name)
+    if art not in ARTEN:
+        raise Fehler(f"Unbekannte Art '{art}'. Erlaubt: {', '.join(ARTEN)}.")
     meldungen = []
     sperre = g.sperre_lesen()
     if sperre is not None:
@@ -60,7 +68,7 @@ def starten(name: str, git: bool = True) -> list[str]:
                          f"(Sperre noch nicht verwaist). Abbruch: bitte mit {sperre['person']} klären.")
         meldungen.append(f"WARNUNG: verwaiste Sperre von {sperre['person']} seit {sperre['start']} "
                          "wird übernommen.")
-    g.json_schreiben(g.sperre_pfad(), {"person": person, "start": g.iso(g.jetzt())})
+    g.json_schreiben(g.sperre_pfad(), {"person": person, "start": g.iso(g.jetzt()), "art": art})
     if git:
         nachricht = f"session: Start {person}"
         try:
@@ -71,7 +79,9 @@ def starten(name: str, git: bool = True) -> list[str]:
             g.sperre_pfad().unlink(missing_ok=True)
             raise
         meldungen.append("Sperre im lokalen Spielstand-Git committet.")
-    meldungen.insert(0, f"Session von {person} gestartet ({g.iso(g.jetzt())}).")
+    bezeichnung = {"testsession": "Testsession", "richtlinien": "Richtlinien-Session",
+                   "review": "Review-Session"}.get(art, "Session")
+    meldungen.insert(0, f"{bezeichnung} von {person} gestartet ({g.iso(g.jetzt())}).")
     return meldungen + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
 
@@ -79,7 +89,7 @@ def beenden(git: bool = True) -> list[str]:
     sperre = g.sperre_lesen()
     if sperre is None:
         return ["Keine Sperre vorhanden."]
-    hinweise = session_eintrag_hinweis(sperre)
+    hinweise = [] if sperre.get("art") in OHNE_SESSION_EINTRAG else session_eintrag_hinweis(sperre)
     if git and (g.root() / ".git").exists() and _git("ls-files", "--error-unmatch", SPERRDATEI).returncode == 0:
         _git_pflicht("rm", "-q", SPERRDATEI)
         _git_pflicht("commit", "-q", "-m", f"session: Ende {sperre['person']}", "--", SPERRDATEI)
@@ -107,7 +117,9 @@ def status() -> list[str]:
     if sperre is None:
         return [start, "Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""
-    return [start, f"Session von {sperre['person']} seit {sperre['start']}{zusatz}."] + \
+    art = {"testsession": " (Testsession)", "richtlinien": " (Richtlinien-Session)",
+           "review": " (Review-Session)"}.get(sperre.get("art"), "")
+    return [start, f"Session von {sperre['person']} seit {sperre['start']}{zusatz}{art}."] + \
         [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
 
@@ -116,6 +128,10 @@ def main(argv=None) -> int:
     unter = parser.add_subparsers(dest="befehl", required=True)
     p = unter.add_parser("start", help="Session starten (Sperre anlegen und lokal committen)")
     p.add_argument("--person", required=True, help="Kennung des Auftraggebers aus config/projekt.json")
+    p.add_argument("--art", choices=ARTEN, default="trading",
+                   help="testsession: Probelauf ohne Orders und Journal (AP12); richtlinien: Anlagerichtlinien "
+                        "ausformulieren (AP12 Punkt 2); review: nur Reviews und Bericht; alle ohne Warnung "
+                        "zum Session-Eintrag")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei anlegen (für Tests)")
     p = unter.add_parser("ende", help="Session beenden (Sperre entfernen und committen)")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei entfernen (für Tests)")
@@ -123,7 +139,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.befehl == "start":
-            meldungen = starten(args.person, git=not args.ohne_git)
+            meldungen = starten(args.person, git=not args.ohne_git, art=args.art)
         elif args.befehl == "ende":
             meldungen = beenden(git=not args.ohne_git)
         else:

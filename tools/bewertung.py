@@ -547,12 +547,17 @@ def kennzahlen(profil: str, benchmark: list[dict]) -> dict:
     }
 
 
+def _de(text) -> str:
+    """Dezimalkomma für den Bericht (ranking.md ist für Menschen; Daten und Dateien bleiben mit Punkt)."""
+    return str(text).replace(".", ",")
+
+
 def _p(wert) -> str:
-    return "–" if wert is None else f"{D(wert) * 100:+.2f} %".replace("+-", "-")
+    return "–" if wert is None else _de(f"{D(wert) * 100:+.2f} %".replace("+-", "-"))
 
 
 def _q(wert) -> str:
-    return "–" if wert is None else f"{D(wert) * 100:.1f} %"
+    return "–" if wert is None else _de(f"{D(wert) * 100:.1f} %")
 
 
 def ranking_text(alle: dict, erstellt: datetime) -> str:
@@ -570,19 +575,19 @@ def ranking_text(alle: dict, erstellt: datetime) -> str:
     def reihe(name, funktion):
         zeilen.append(f"| {name} | " + " | ".join(funktion(alle[p]) for p in profile) + " |")
 
-    reihe("Portfoliowert", lambda k: f"{g.geld(k['wert'])} EUR")
+    reihe("Portfoliowert", lambda k: _de(f"{g.geld(k['wert'])} EUR"))
     reihe("Rendite", lambda k: _p(k["rendite"]))
     reihe("Benchmark-Rendite", lambda k: _p(k["bench_rendite"]))
     reihe("Rendite gegen Benchmark", lambda k: _p(k["gegen_bench"]))
     reihe("Max. Drawdown", lambda k: _p(k["max_dd"]))
-    reihe("Sharpe Ratio", lambda k: f"{k['sharpe']:.2f}" if k["sharpe"] is not None and k["handelstage"] >= k["min_tage"]
+    reihe("Sharpe Ratio", lambda k: _de(f"{k['sharpe']:.2f}") if k["sharpe"] is not None and k["handelstage"] >= k["min_tage"]
           else ("zu wenig Daten" + f" ({k['handelstage']}/{k['min_tage']} Handelstage)"
                 if k["handelstage"] < k["min_tage"] else "–"))
     reihe("Abgeschlossene Trades", lambda k: str(k["geschlossen"]))
     reihe("Trefferquote", lambda k: _q(k["trefferquote"]))
-    reihe("Payoff-Ratio", lambda k: "–" if k["payoff"] is None else f"{k['payoff']:.2f}")
+    reihe("Payoff-Ratio", lambda k: "–" if k["payoff"] is None else _de(f"{k['payoff']:.2f}"))
     reihe("Kostenquote (in % des Startkapitals)", lambda k: _q(k["kostenquote"]))
-    reihe("Exposure", lambda k: f"{k['exposure']:.2f}x")
+    reihe("Exposure", lambda k: _de(f"{k['exposure']:.2f}x"))
     reihe("Cashquote", lambda k: _q(k["cashquote"]))
     reihe("Drawdown-Stufe", lambda k: str(k["stufe"]))
     reihe("Status", lambda k: k["status"])
@@ -594,8 +599,8 @@ def ranking_text(alle: dict, erstellt: datetime) -> str:
             zeilen += ["| Position | Typ | Instrument | Stück | Einstand EUR | Stop | Kursziel | eröffnet |",
                        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |"]
             for p in portfolio["positionen"]:
-                zeilen.append(f"| {p['id']} | {p['typ']} {p['richtung']} | {p['ticker']} | {p['stueck']} | "
-                              f"{g.geld(p['einstand'])} | {p['stop'] or '–'} | {p['kursziel'] or '–'} | "
+                zeilen.append(f"| {p['id']} | {p['typ']} {p['richtung']} | {p['ticker']} | {_de(p['stueck'])} | "
+                              f"{_de(g.geld(p['einstand']))} | {_de(p['stop'] or '–')} | {_de(p['kursziel'] or '–')} | "
                               f"{p['eroeffnet'][:16]} |")
         else:
             zeilen.append("Keine offenen Positionen.")
@@ -603,12 +608,12 @@ def ranking_text(alle: dict, erstellt: datetime) -> str:
             zeilen += ["", "Offene Orders:", ""]
             for o in portfolio["offene_orders"]:
                 zeilen.append(f"- {o['id']}: {o['aktion']} {o['art']} {o.get('ticker') or o.get('basiswert')}"
-                              + (f", Limit {o['limit']}" if o.get("limit") else "")
-                              + (f", Einsatz {o['einsatz']} EUR" if o.get("einsatz") else "")
+                              + (f", Limit {_de(o['limit'])}" if o.get("limit") else "")
+                              + (f", Einsatz {_de(o['einsatz'])} EUR" if o.get("einsatz") else "")
                               + f" (erfasst {o['erfasst'][:16]}, {o['journal_id']})")
         zeilen.append("")
     zeilen += ["Benchmarks: iShares Core MSCI World (EUNL.DE) und Cash (2 % p. a.), Aufteilung je Profil "
-               "laut regeln.md Abschnitt 7, ohne Rebalancing und Kosten.", ""]
+               "laut regeln.md Abschnitt 7, ohne Rebalancing und Kosten. Zahlen mit Dezimalkomma.", ""]
     return "\n".join(zeilen)
 
 

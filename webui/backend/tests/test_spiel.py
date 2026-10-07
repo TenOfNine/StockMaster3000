@@ -17,7 +17,8 @@ def test_ueberblick_stimmt_mit_ranking_ueberein(nutzer, demo_repo):
     assert daten["gestartet"] is True and daten["repo"]["demo"] is True
     for index, profil in enumerate(("defensiv", "ausgewogen", "aggressiv")):
         k = daten["profile"][profil]
-        assert f"{k['wert']:.2f} EUR" == ranking_wert(demo_repo, index, "Portfoliowert")
+        # ranking.md ist für Menschen und nutzt das Dezimalkomma
+        assert f"{k['wert']:.2f} EUR".replace(".", ",") == ranking_wert(demo_repo, index, "Portfoliowert")
         assert ranking_wert(demo_repo, index, "Drawdown-Stufe") == str(k["stufe"])
         assert ranking_wert(demo_repo, index, "Abgeschlossene Trades") == str(k["geschlossen"])
     assert daten["letzte_sessions"][0]["art"] == "S"

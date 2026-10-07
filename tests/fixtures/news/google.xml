@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Gold - Google News (Testfeed)</title>
+    <link>https://news.google.com/</link>
+    <item>
+      <title>Goldpreis steigt auf Rekordhoch - MarketScreener</title>
+      <link>https://news.google.com/rss/articles/CBMi-aaa?oc=5</link>
+      <guid isPermaLink="false">CBMi-aaa</guid>
+      <pubDate>Mon, 12 Oct 2026 12:00:00 GMT</pubDate>
+      <description>&lt;a href="https://news.google.com/rss/articles/CBMi-aaa"&gt;Goldpreis steigt&lt;/a&gt;</description>
+      <source url="https://www.marketscreener.com">MarketScreener</source>
+    </item>
+    <item>
+      <title>Goldpreis steigt auf Rekordhoch - MarketScreener Schweiz</title>
+      <link>https://news.google.com/rss/articles/CBMi-bbb?oc=5</link>
+      <guid isPermaLink="false">CBMi-bbb</guid>
+      <pubDate>Mon, 12 Oct 2026 12:05:00 GMT</pubDate>
+      <description>Gleiche Meldung, andere Länderausgabe.</description>
+      <source url="https://ch.marketscreener.com">MarketScreener Schweiz</source>
+    </item>
+    <item>
+      <title>Goldman Sachs hebt Prognose an - Reuters</title>
+      <link>https://news.google.com/rss/articles/CBMi-ccc?oc=5</link>
+      <guid isPermaLink="false">CBMi-ccc</guid>
+      <pubDate>Mon, 12 Oct 2026 11:00:00 GMT</pubDate>
+      <source url="https://www.reuters.com">Reuters</source>
+    </item>
+    <item>
+      <title>ABC Resources Announces Drilling Results at Gold Project - GlobeNewswire</title>
+      <link>https://news.google.com/rss/articles/CBMi-ddd?oc=5</link>
+      <guid isPermaLink="false">CBMi-ddd</guid>
+      <pubDate>Mon, 12 Oct 2026 10:00:00 GMT</pubDate>
+      <source url="https://www.globenewswire.com">GlobeNewswire</source>
+    </item>
+    <item>
+      <title>Gold fällt nach starken US-Daten - Handelsblatt</title>
+      <link>https://news.google.com/rss/articles/CBMi-eee?oc=5</link>
+      <guid isPermaLink="false">CBMi-eee</guid>
+      <pubDate>Mon, 12 Oct 2026 09:00:00 GMT</pubDate>
+      <source url="https://www.handelsblatt.com">Handelsblatt</source>
+    </item>
+  </channel>
+</rss>

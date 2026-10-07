@@ -317,6 +317,25 @@ def gebuehr() -> Decimal:
 # Portfolios und Logbücher
 
 
+# Die Vorlage aus init.py trägt diese Zeile; Claude ersetzt sie beim Ausformulieren (AP12 Punkt 2).
+RICHTLINIE_VORLAGE_MARKE = "Vorlage aus tools/init.py"
+
+
+def richtlinie_pfad(profil: str) -> Path:
+    return pfad("strategie", f"{profil}.md")
+
+
+def richtlinie_ausformuliert(profil: str) -> bool:
+    """Anlagerichtlinie (regeln.md 11) vorhanden und nicht mehr die leere Vorlage."""
+    datei = richtlinie_pfad(profil)
+    return datei.exists() and RICHTLINIE_VORLAGE_MARKE not in datei.read_text(encoding="utf-8")
+
+
+def richtlinien_offen() -> list[str]:
+    """Profile ohne ausformulierte Anlagerichtlinie."""
+    return [p for p in PROFILE if not richtlinie_ausformuliert(p)]
+
+
 def portfolio_pfad(profil: str) -> Path:
     return pfad("portfolios", f"{profil}.json")
 
