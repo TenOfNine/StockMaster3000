@@ -24,7 +24,7 @@ def lade(name):
 
 
 def test_alle_config_dateien_lesbar():
-    for name in ("profile", "universum", "kosten", "projekt"):
+    for name in ("profile", "universum", "kosten", "projekt", "kursquellen", "news"):
         assert isinstance(lade(name), dict)
 
 
