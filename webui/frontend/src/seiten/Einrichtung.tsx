@@ -875,7 +875,6 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
 
 function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
   const s = d.spielstart;
-  const [startdatum, setStartdatum] = useState(s.vorschlag_startdatum);
   const [freigabe, setFreigabe] = useState(s.auftraggeber[0] ?? "");
   const [bestaetigt, setBestaetigt] = useState(false);
   const [dialog, setDialog] = useState(false);
@@ -890,7 +889,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
     },
   );
   const start = useAktion(
-    () => api<{ meldungen: string[] }>("/api/einrichtung/spielstart", { daten: { startdatum, freigabe_durch: freigabe, freigabe_ap12_bestaetigt: bestaetigt, passwort } }),
+    () => api<{ meldungen: string[] }>("/api/einrichtung/spielstart", { daten: { freigabe_durch: freigabe, freigabe_ap12_bestaetigt: bestaetigt, passwort } }),
     (e) => {
       setDialog(false);
       setPasswort("");
@@ -902,7 +901,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
       id="spielstart"
       titel="Spielstart"
       icon={<Rocket className="size-4" />}
-      untertitel="Legt die drei Portfolios mit je 1.000 EUR an (tools/init.py). Es gibt kein Enddatum; das Startdatum ist heute oder später und lässt sich, solange nichts gebucht wurde, vorziehen – nie rückwirkend. Voraussetzung ist die Freigabe nach AP12 durch einen Auftraggeber (regeln.md Abschnitt 2)."
+      untertitel="Legt die drei Portfolios mit je 1.000 EUR an (tools/init.py). Es gibt weder ein festes Start- noch ein Enddatum: Das Spiel beginnt beim Start (heute). Ein früher gesetztes, noch unberührtes Startdatum lässt sich auf heute vorziehen – nie rückwirkend. Voraussetzung ist die Freigabe nach AP12 durch einen Auftraggeber (regeln.md Abschnitt 2)."
       status={s.gestartet ? <Abzeichen ton="gut">gestartet {s.spiel.startdatum}</Abzeichen> : <Abzeichen ton="warnung">nicht gestartet</Abzeichen>}
     >
       <ul className="space-y-1.5">
@@ -940,25 +939,21 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
       )}
       {!s.gestartet && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Feld id="s-datum" label="Startdatum" hinweis="Vorschlag: heute bzw. der nächste Xetra-Handelstag.">
-              <Eingabe id="s-datum" type="date" value={startdatum} onChange={(e) => setStartdatum(e.target.value)} />
-            </Feld>
-            <Feld id="s-freigabe" label="Freigabe nach AP12 durch">
-              <Auswahl id="s-freigabe" wert={freigabe} setWert={setFreigabe} optionen={s.auftraggeber.map((a) => ({ wert: a, name: a }))} />
-            </Feld>
-          </div>
+          <Feld id="s-freigabe" label="Freigabe nach AP12 durch">
+            <Auswahl id="s-freigabe" wert={freigabe} setWert={setFreigabe} optionen={s.auftraggeber.map((a) => ({ wert: a, name: a }))} />
+          </Feld>
+          <p className="text-[12.5px] text-text-3">Das Spiel beginnt in dem Moment, in dem Sie es starten (Starttag: heute). Es gibt kein festes Start- oder Enddatum.</p>
           <label className="flex items-start gap-2.5 text-[13px] text-text">
             <input type="checkbox" className="mt-0.5 size-4 accent-[var(--akzent)]" checked={bestaetigt} onChange={(e) => setBestaetigt(e.target.checked)} />
             Der genannte Auftraggeber hat die Freigabe nach AP12 erteilt (Testsession, Anlagerichtlinien, Auslegungsfragen).
           </label>
-          <Knopf variante="primaer" onClick={() => setDialog(true)} disabled={!s.bereit || !bestaetigt || !startdatum}>
-            <Rocket className="size-4" /> Spiel starten …
+          <Knopf variante="primaer" onClick={() => setDialog(true)} disabled={!s.bereit || !bestaetigt}>
+            <Rocket className="size-4" /> Spiel jetzt starten …
           </Knopf>
         </>
       )}
       <Rueckmeldung meldung={start.meldung} />
-      <Dialog offen={dialog} setOffen={setDialog} titel="Spiel wirklich starten?" beschreibung={`Startdatum ${startdatum}, Freigabe durch ${freigabe}. Das lässt sich nicht rückgängig machen.`}>
+      <Dialog offen={dialog} setOffen={setDialog} titel="Spiel jetzt starten?" beschreibung={`Das Spiel beginnt heute, Freigabe durch ${freigabe}. Das lässt sich nicht rückgängig machen.`}>
         <form
           onSubmit={(e) => {
             e.preventDefault();

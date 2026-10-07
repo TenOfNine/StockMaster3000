@@ -81,8 +81,10 @@ def prompt(art: str, auftrag) -> str:
     )
     if art == "trading":
         return ("Führe eine Trading-Session nach CLAUDE.md (Trading-Modus) durch. " + gemeinsam +
-                " Prüfe zuerst `python tools/richtlinien.py status`: Sind Anlagerichtlinien offen, handle nicht und "
-                "melde das. Liegt das Startdatum (`python tools/session.py status`) in der Zukunft, lehnen die "
+                " Prüfe zuerst `python tools/richtlinien.py status`: Ist eine Anlagerichtlinie noch die Vorlage, "
+                "übernimm mit `python tools/richtlinien.py standard` die Standard-Richtlinie, lies sie und handle "
+                "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Ist das Spiel nicht "
+                "gestartet oder liegt das Startdatum (`python tools/session.py status`) in der Zukunft, lehnen die "
                 "Werkzeuge Orders ab: Dann nur Marktüberblick und Session-Eintrag, keine Order versuchen. "
                 "Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
                 "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle.")

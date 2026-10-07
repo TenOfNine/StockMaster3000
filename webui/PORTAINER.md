@@ -86,11 +86,11 @@ Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt
 4. **Sessions & Zeitplan:** Zeiten, z. B. werktags 09:35 und 21:30. Die Automatik lässt sich auch direkt auf
    der Seite „Claude-Läufe“ starten und stoppen; manuelle Läufe gehen jederzeit („Lauf starten“,
    „Lauf stoppen“).
-5. **Anlagerichtlinien:** Claude-Läufe → *Lauf starten* → „Anlagerichtlinien ausformulieren (AP12)“. Der
-   Lauf schreibt strategie/<profil>.md aus; Ein Trading-Lauf handelt erst danach
-   (und gebucht wird erst ab dem Startdatum). Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
-6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung. Vorschlag ist heute; ein noch
-   unberührtes Startdatum lässt sich später auf heute vorziehen. Ein Enddatum gibt es nicht.
+5. **Anlagerichtlinien:** Die Standard-Richtlinien (config/richtlinien) gelten automatisch ab Spielstart; wer
+   sie anpassen will, startet unter Claude-Läufe den Lauf „Anlagerichtlinien ausformulieren (AP12)“. Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
+6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung; das Spiel beginnt in diesem Moment
+   (Starttag heute). Es gibt weder ein festes Start- noch ein Enddatum; ein früher gesetztes, noch
+   unberührtes Startdatum lässt sich auf heute vorziehen.
 7. **Sicherung** und 8. **Systemstatus** (Ampel je Bereich).
 
 ## Update einer bestehenden Installation (Migration)

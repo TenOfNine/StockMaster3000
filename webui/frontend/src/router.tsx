@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, type ErrorComponentProps, Link, Outlet } from "@tanstack/react-router";
 import { Compass, Loader2 } from "lucide-react";
 
 import { AppRahmen } from "./components/layout/AppRahmen";
@@ -49,6 +49,28 @@ function NichtGefunden() {
   );
 }
 
+function Fehlerseite({ error }: ErrorComponentProps) {
+  return (
+    <Karte className="mt-6">
+      <Leer
+        icon={<Compass className="size-5" />}
+        titel="Diese Seite konnte nicht angezeigt werden"
+        text={`Technische Meldung: ${(error as Error | undefined)?.message || "unbekannt"}`}
+        aktion={
+          <div className="flex items-center gap-4 text-[13px] font-medium">
+            <button type="button" onClick={() => window.location.reload()} className="text-akzent hover:underline">
+              Seite neu laden
+            </button>
+            <Link to="/" className="text-akzent hover:underline">
+              Zum Cockpit
+            </Link>
+          </div>
+        }
+      />
+    </Karte>
+  );
+}
+
 const wurzel = createRootRoute({ component: Wurzel });
 const app = createRoute({ getParentRoute: () => wurzel, id: "app", component: AppRahmen, notFoundComponent: NichtGefunden });
 
@@ -80,5 +102,6 @@ export const router = createRouter({
   routeTree: wurzel.addChildren([app.addChildren(seiten)]),
   defaultPreload: "intent",
   defaultNotFoundComponent: NichtGefunden,
+  defaultErrorComponent: Fehlerseite,
   scrollRestoration: true,
 });

@@ -34,9 +34,20 @@ def test_ohne_abgeschlossene_arbeitspakete_abgelehnt(projekt, framework, uhr, ca
     assert "offen: AP10" in capsys.readouterr().err
 
 
-def test_wochenende_abgelehnt(projekt, framework, uhr):
+def test_start_ohne_datum_ist_heute_auch_am_wochenende(projekt, framework, uhr):
     aps_abhaken(framework)
-    assert init.main(["--startdatum", "2026-10-17", *FREIGABE]) == 1
+    uhr.stellen("2026-10-17T10:00:00")  # Samstag: kein fester Starttermin, kein Handelstag nötig
+    assert init.main([*FREIGABE]) == 0
+    assert g.spiel_lesen()["startdatum"] == "2026-10-17"
+    assert g.portfolio_laden("defensiv")["verarbeitet_bis"] == "2026-10-16"
+    assert [str(b) for b in pruefe.alle_pruefungen() if b.stufe == "FEHLER"] == []
+
+
+def test_start_in_der_vergangenheit_ist_backdating(projekt, framework, uhr, capsys):
+    aps_abhaken(framework)
+    uhr.stellen("2026-10-17T10:00:00")
+    assert init.main(["--startdatum", "2026-10-16", *FREIGABE]) == 1
+    assert "Kein Backdating" in capsys.readouterr().err
 
 
 def test_freigabe_nur_durch_auftraggeber(projekt, framework, uhr, capsys):
@@ -53,6 +64,8 @@ def test_initialisierung(projekt, framework, uhr):
     (projekt / "strategie" / "aggressiv.md").write_text("# schon ausformuliert\n")
     assert init.main(["--startdatum", "2026-10-12", *FREIGABE]) == 0
     assert g.vorhandene_profile() == list(g.PROFILE)
+    assert g.richtlinien_offen() == []  # Standard-Anlagerichtlinien gelten ab Spielstart
+    assert (projekt / "strategie" / "aggressiv.md").read_text() == "# schon ausformuliert\n"
     for profil in g.PROFILE:
         p = g.portfolio_laden(profil)
         assert p["cash"] == "1000.00" and p["startdatum"] == "2026-10-12" and p["verarbeitet_bis"] == "2026-10-11"
@@ -93,14 +106,18 @@ def test_startdatum_vorziehen_auf_heute(projekt, framework, uhr, capsys):
     assert [str(b) for b in pruefe.alle_pruefungen() if b.stufe == "FEHLER"] == []
 
 
-def test_vorziehen_nie_rueckwirkend_oder_auf_wochenende(projekt, framework, uhr, capsys):
+def test_vorziehen_nie_rueckwirkend(projekt, framework, uhr, capsys):
     _gestartet(projekt, framework, uhr)
     assert init.main(["--startdatum", "2026-10-09", "--vorziehen"]) == 1
     assert "Kein Backdating" in capsys.readouterr().err
-    uhr.stellen("2026-10-10T10:00:00")  # Samstag
-    assert init.main(["--startdatum", "2026-10-10", "--vorziehen"]) == 1
-    assert "kein Xetra-Handelstag" in capsys.readouterr().err
     assert g.spiel_lesen()["startdatum"] == "2026-10-14"
+
+
+def test_vorziehen_ohne_datum_heißt_heute_auch_am_wochenende(projekt, framework, uhr):
+    _gestartet(projekt, framework, uhr)
+    uhr.stellen("2026-10-10T10:00:00")  # Samstag
+    assert init.main(["--vorziehen"]) == 0
+    assert g.spiel_lesen()["startdatum"] == "2026-10-10"
 
 
 def test_vorziehen_nur_nach_vorne_und_nur_wenn_unberuehrt(projekt, framework, uhr, capsys):

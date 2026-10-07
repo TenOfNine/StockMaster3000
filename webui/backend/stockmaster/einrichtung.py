@@ -124,9 +124,9 @@ def pflichtschritte() -> list[dict]:
         except Exception:  # noqa: BLE001
             ohne = []
         if ohne:
-            offen.append({"schritt": "richtlinien", "titel": "Anlagerichtlinien ausformulieren",
-                          "text": f"Für {', '.join(ohne)} gibt es nur die Vorlage; vor der ersten Trading-Session "
-                                  "den Lauf „Anlagerichtlinien ausformulieren“ starten.",
+            offen.append({"schritt": "richtlinien", "titel": "Anlagerichtlinien werden übernommen",
+                          "text": f"Für {', '.join(ohne)} übernimmt der Hintergrunddienst gleich die "
+                                  "Standard-Anlagerichtlinie (config/richtlinien); sie lässt sich später per Lauf anpassen.",
                           "link": "/laeufe"})
     return offen
 
@@ -217,16 +217,6 @@ def systemstatus() -> list[dict]:
 # Spielstart
 
 
-def naechster_handelstag(ab: date) -> date:
-    kurse = _werkzeuge()["kurse"]
-    tag = ab
-    for _ in range(14):
-        if kurse.ist_handelstag("EUNL.DE", tag):
-            return tag
-        tag += timedelta(days=1)
-    return ab
-
-
 def spielstart_checkliste(db) -> dict:
     w = _werkzeuge()
     g = w["gemeinsam"]
@@ -251,10 +241,10 @@ def spielstart_checkliste(db) -> dict:
     punkte.append({"id": "keine_session", "pflicht": True, "ok": sperre is None and auftraege.offener_lauf(db) is None,
                    "text": "Keine Session aktiv." if sperre is None else f"Session von {sperre['person']} läuft."})
     offen_richtlinien = g.richtlinien_offen()
-    punkte.append({"id": "richtlinien", "pflicht": False, "ok": not offen_richtlinien,
+    punkte.append({"id": "richtlinien", "pflicht": False, "ok": True,
                    "text": "Anlagerichtlinien aller Profile ausformuliert (AP12 Punkt 2)." if not offen_richtlinien
-                   else f"Empfohlen vor der Freigabe: Anlagerichtlinien ausformulieren ({', '.join(offen_richtlinien)}); "
-                        "Trading-Sessions starten erst, wenn sie vorliegen."})
+                   else "Die Standard-Anlagerichtlinien (config/richtlinien) gelten automatisch ab Spielstart; "
+                        "wer sie vorher individuell anpassen will, startet den Lauf „Anlagerichtlinien“."})
     test = appdaten.laden()["claude"].get("letzter_test") or {}
     punkte.append({"id": "claude", "pflicht": False, "ok": bool(test.get("ok")),
                    "text": "Claude-Verbindung erfolgreich getestet." if test.get("ok")
@@ -270,7 +260,7 @@ def spielstart_checkliste(db) -> dict:
     heute = datetime.now(TZ).date()
     return {"punkte": punkte, "bereit": all(p["ok"] for p in punkte if p["pflicht"]),
             "gestartet": bool(spiel.get("startdatum")), "spiel": spiel,
-            "vorschlag_startdatum": naechster_handelstag(heute).isoformat(),
+            "vorschlag_startdatum": heute.isoformat(),
             "vorziehen": _vorziehen_stand(heute, spiel),
             "auftraggeber": g.projekt()["auftraggeber"]}
 
@@ -279,7 +269,7 @@ def _vorziehen_stand(heute: date, spiel: dict) -> dict:
     """Ob und worauf das noch unberührte Startdatum vorgezogen werden kann (tools/init.py prüft verbindlich)."""
     if not spiel.get("startdatum"):
         return {"moeglich": False, "grund": "Das Spiel ist noch nicht gestartet.", "ziel": None}
-    ziel = naechster_handelstag(heute)
+    ziel = heute
     if ziel.isoformat() >= spiel["startdatum"]:
         return {"moeglich": False, "grund": "Das Startdatum liegt nicht in der Zukunft.", "ziel": None}
     import init as init_werkzeug  # noqa: PLC0415
@@ -694,7 +684,8 @@ def automatik_schalten(daten: AutomatikDaten, request: Request, db: DB, admin: A
 
 
 class SpielstartDaten(Streng):
-    startdatum: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    # Ohne Angabe beginnt das Spiel heute: kein vorab festgelegter Starttermin (regeln.md Abschnitt 2).
+    startdatum: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     freigabe_durch: str = Field(max_length=40)
     freigabe_ap12_bestaetigt: bool
     passwort: str = Field(min_length=1, max_length=200)
@@ -715,21 +706,21 @@ def spielstart(daten: SpielstartDaten, request: Request, db: DB, admin: Admin2FA
     umgebung = {**os.environ, "STOCKMASTER_DATA_DIR": str(e.daten_pfad),
                 "STOCKMASTER_FRAMEWORK_DIR": str(e.framework_pfad), "PYTHONDONTWRITEBYTECODE": "1"}
     werkzeug = e.framework_pfad / "tools"
-    ergebnis = subprocess.run([sys.executable, str(werkzeug / "init.py"), "--startdatum", daten.startdatum,
-                               "--freigabe", daten.freigabe_durch], capture_output=True, text=True, env=umgebung,
-                              timeout=120, cwd=e.daten_pfad)
+    datum = ["--startdatum", daten.startdatum] if daten.startdatum else []
+    ergebnis = subprocess.run([sys.executable, str(werkzeug / "init.py"), *datum, "--freigabe", daten.freigabe_durch],
+                              capture_output=True, text=True, env=umgebung, timeout=120, cwd=e.daten_pfad)
     if ergebnis.returncode != 0:
         raise HTTPException(422, (ergebnis.stderr or ergebnis.stdout).strip().removeprefix("Fehler: ")[:500])
     commit = subprocess.run([sys.executable, str(werkzeug / "datenverzeichnis.py"), "commit", "-m",
-                             f"aufbau: Spielstart {daten.startdatum} (Freigabe AP12: {daten.freigabe_durch})"],
+                             f"aufbau: Spielstart (Freigabe AP12: {daten.freigabe_durch})"],
                             capture_output=True, text=True, env=umgebung, timeout=60, cwd=e.daten_pfad)
-    audit(db, admin.id, "spielstart", request, ziel=daten.startdatum, meta={"freigabe": daten.freigabe_durch})
+    audit(db, admin.id, "spielstart", request, ziel=daten.startdatum or "heute", meta={"freigabe": daten.freigabe_durch})
     db.commit()
     return {"ok": True, "meldungen": ergebnis.stdout.strip().splitlines(), "commit": commit.stdout.strip()}
 
 
 class VorziehenDaten(Streng):
-    startdatum: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    startdatum: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     passwort: str = Field(min_length=1, max_length=200)
 
 
@@ -745,13 +736,14 @@ def spielstart_vorziehen(daten: VorziehenDaten, request: Request, db: DB, admin:
     umgebung = {**os.environ, "STOCKMASTER_DATA_DIR": str(e.daten_pfad),
                 "STOCKMASTER_FRAMEWORK_DIR": str(e.framework_pfad), "PYTHONDONTWRITEBYTECODE": "1"}
     werkzeug = e.framework_pfad / "tools"
-    ergebnis = subprocess.run([sys.executable, str(werkzeug / "init.py"), "--startdatum", daten.startdatum, "--vorziehen"],
+    datum = ["--startdatum", daten.startdatum] if daten.startdatum else []
+    ergebnis = subprocess.run([sys.executable, str(werkzeug / "init.py"), *datum, "--vorziehen"],
                               capture_output=True, text=True, env=umgebung, timeout=120, cwd=e.daten_pfad)
     if ergebnis.returncode != 0:
         raise HTTPException(422, (ergebnis.stderr or ergebnis.stdout).strip().removeprefix("Fehler: ")[:500])
     commit = subprocess.run([sys.executable, str(werkzeug / "datenverzeichnis.py"), "commit", "-m",
-                             f"aufbau: Startdatum auf {daten.startdatum} vorgezogen"],
+                             "aufbau: Startdatum vorgezogen"],
                             capture_output=True, text=True, env=umgebung, timeout=60, cwd=e.daten_pfad)
-    audit(db, admin.id, "spielstart_vorgezogen", request, ziel=daten.startdatum)
+    audit(db, admin.id, "spielstart_vorgezogen", request, ziel=daten.startdatum or "heute")
     db.commit()
     return {"ok": True, "meldungen": ergebnis.stdout.strip().splitlines(), "commit": commit.stdout.strip()}

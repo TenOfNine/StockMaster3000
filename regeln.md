@@ -1,4 +1,4 @@
-# Spielregeln v1.2
+# Spielregeln v1.3
 
 Verbindlich für alle Sessions. Änderungen nur durch die Auftraggeber
 (config/projekt.json) gemeinsam, per Commit mit Datum, ohne rückwirkende
@@ -21,9 +21,16 @@ Abschnitt 7 übereinstimmen.
 ## 2. Kapital und Zins
 
 - Startkapital: 1.000 EUR je Portfolio (defensiv, ausgewogen, aggressiv).
-- Startdatum: erst nach der Freigabe von AP12 durch die Auftraggeber,
-  frühestens der erste Handelstag danach; gesetzt mit tools/init.py und
-  vermerkt in STATUS.md. Kein festes Enddatum.
+- Spielbeginn: Das Spiel beginnt in dem Moment, in dem es nach der
+  Freigabe von AP12 durch die Auftraggeber gestartet wird (tools/init.py,
+  in der App Einrichtung → Spielstart). Der Starttag ist der heutige
+  Kalendertag; ein vorab festgelegtes Start- oder Enddatum gibt es nicht.
+  Das gespeicherte Startdatum (spiel.json) ist nur der Bezugspunkt der
+  Auswertung. Feste Termine gibt es ausschließlich im Zeitplan geplanter
+  Claude-Läufe (Einrichtung → Zeitplan); sie wirken nicht auf Bewertung,
+  Benchmark, Reviews oder Limits. Ein noch unberührtes Startdatum
+  (keine Buchung, Order, Position, Nachbuchung oder Bewertung) darf auf
+  heute vorgezogen werden, nie in die Vergangenheit.
 - Ein Arbeitsbereich ist eine eigenständige Spielinstanz mit eigenem
   Repository, eigenen drei Portfolios und eigenen Auftraggebern. Diese
   Regeln gelten je Arbeitsbereich; Arbeitsbereiche sind strikt getrennt.
@@ -178,7 +185,8 @@ Auftraggeber; die Historie bleibt erhalten.
 
 - ETF: iShares Core MSCI World UCITS ETF (EUNL.DE, IE00B4L5Y983).
 - Cash-Anteil verzinst mit 2 % p. a. wie in Abschnitt 2.
-- Einmalige Aufteilung zum Startdatum, ohne Rebalancing und ohne Kosten.
+- Einmalige Aufteilung zum ersten Schlusskurs ab dem Starttag, ohne
+  Rebalancing und ohne Kosten.
 
 ## 10. Dokumentationspflichten
 
@@ -204,9 +212,11 @@ Auftraggeber; die Historie bleibt erhalten.
 - Je Portfolio eine Anlagerichtlinie in strategie/<portfolio>.md: Ziel,
   Risikobudget, Horizont, erlaubte Instrumente, Benchmark, aktuelle
   Strategie. Änderungen mit Datum, Anlass und Prüfkriterium.
-- Wochenreview: in der ersten Session einer neuen Kalenderwoche für die
-  Vorwoche, in reviews/.
-- Monatsvergleich der drei Profile, Meta-Review jedes Quartal.
+- Reviews richten sich nach der Spielzeit, nicht nach dem Kalender. Ab
+  dem Starttag zählen Zeiträume zu je 7 Tagen. Wochenreview: in der
+  ersten Session nach Ablauf eines 7-Tage-Zeitraums, in reviews/.
+  Monatsvergleich der drei Profile nach je 4 Wochen (28 Tage),
+  Meta-Review nach je 13 Wochen (91 Tage).
 - Erkenntnisse in lessons.md. Eine Erkenntnis aus einem einzelnen Trade
   bleibt Hypothese.
 
@@ -219,9 +229,11 @@ Auftraggeber; die Historie bleibt erhalten.
   nach 6 Stunden als verwaist gilt.
 - Claude entscheidet autonom innerhalb dieser Regeln. Ideen der
   Auftraggeber prüft Claude kritisch und begründet seine Entscheidung.
-- Claude ändert diese Regeln nie und umgeht keine Prüfung. Bei
-  Unklarheiten fragt Claude nach und vermerkt die Entscheidung in
-  STATUS.md.
+- Claude ändert diese Regeln nur im ausdrücklichen Auftrag der
+  Auftraggeber und umgeht keine Prüfung. Bei Unklarheiten entscheidet
+  Claude nach bestem Wissen im Sinne von Kapitalerhalt und
+  Nachvollziehbarkeit und vermerkt Frage und Entscheidung in STATUS.md;
+  die Auftraggeber können jede Entscheidung später ändern.
 
 ## 13. Bekannte Vereinfachungen
 
@@ -240,3 +252,9 @@ Auftraggeber; die Historie bleibt erhalten.
   Arbeitsbereich; Session-Start durch Mitglieder mit Vollzugriff;
   Session-Eintrag und Datenschutz in der Dokumentation. Einmalig von
   Claude im Auftrag der Auftraggeber geändert (STATUS.md, Entscheidung 10).
+- v1.3 (2026-10-07): Kein fester Start- oder Endtermin des Spiels (Start
+  beim Spielstart, Starttag ist heute); feste Termine nur noch für den
+  Zeitplan geplanter Läufe; Reviews nach Spielzeit (7, 28 und 91 Tage)
+  statt nach Kalender; Claude entscheidet Unklarheiten selbst und
+  dokumentiert sie. Im Auftrag der Auftraggeber von Claude geändert
+  (STATUS.md, Entscheidung 34).

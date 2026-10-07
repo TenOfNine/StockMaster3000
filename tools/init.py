@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Initialisierung des Spiels (AUFTRAG_PHASE1.md AP11).
 
-Nur wenn AP1 bis AP10 in STATUS.md (Framework) abgehakt sind, ein Auftraggeber
-die Freigabe nach AP12 erteilt (regeln.md Abschnitt 2) und das Startdatum heute
-oder in der Zukunft liegt (kein Backdating). Legt im Datenverzeichnis die drei
-Portfolios mit je 1.000 EUR an, leere Logbücher, Anlagerichtlinien-Vorlagen in
+Nur wenn AP1 bis AP10 in STATUS.md (Framework) abgehakt sind und ein Auftraggeber
+die Freigabe nach AP12 erteilt (regeln.md Abschnitt 2). Das Spiel beginnt beim Start
+(Startdatum ohne Angabe: heute); es gibt keinen festen Starttermin und kein Enddatum, ein
+Datum vor heute ist Backdating und abgelehnt. Legt im Datenverzeichnis die drei
+Portfolios mit je 1.000 EUR an, leere Logbücher, die Standard-Anlagerichtlinien in
 strategie/ und spiel.json (Startdatum, Freigabe). Der Benchmark startet mit dem
 ersten Schlusskurs ab Startdatum (tools/bewertung.py bericht).
 """
@@ -17,7 +18,6 @@ import sys
 from datetime import date, timedelta
 
 import gemeinsam as g
-import kurse
 from gemeinsam import Fehler
 
 VORAUSSETZUNG = [f"AP{n}" for n in range(1, 11)]
@@ -80,19 +80,32 @@ def vorlage(profil: str, datum) -> str:
                   "Aufteilung zum ersten Schlusskurs ab Startdatum, ohne Rebalancing und Kosten.")
 
 
-def initialisieren(startdatum_text: str, freigabe: str) -> list[str]:
+def standard_text(profil: str, datum) -> str:
+    """Standard-Anlagerichtlinie aus config/richtlinien/<profil>.md mit den verbindlichen Limits."""
+    quelle = g.framework_pfad("config", "richtlinien", f"{profil}.md")
+    limits = g.limits_fuer(profil)
+    etf = limits["benchmark_etf_anteil"]
+    werte = {k: _prozent(v) for k, v in limits.items()}
+    werte["max_hebel"] = f"{limits['max_hebel']}x"
+    werte["max_exposure"] = f"{limits['max_exposure']}x"
+    return quelle.read_text(encoding="utf-8").format(
+        datum=datum.isoformat(), **werte,
+        benchmark=f"{_prozent(etf)} iShares Core MSCI World (EUNL.DE) / {_prozent(1 - etf)} Cash mit 2 % p. a., "
+                  "Aufteilung zum ersten Schlusskurs ab Starttag, ohne Rebalancing und Kosten.")
+
+
+def initialisieren(startdatum_text: str | None, freigabe: str) -> list[str]:
     status_pruefen()
     erlaubt = g.projekt()["auftraggeber"]
     if freigabe not in erlaubt:
         raise Fehler(f"Freigabe nach AP12 nur durch einen Auftraggeber ({', '.join(erlaubt)}), nicht '{freigabe}'.")
     if g.spiel_lesen().get("startdatum"):
         raise Fehler(f"Das Spiel ist bereits gestartet (Startdatum {g.spiel_lesen()['startdatum']}).")
-    startdatum = g.datum_lesen(startdatum_text)
+    # Kein vorab festgelegter Termin: Ohne Angabe beginnt das Spiel heute (regeln.md Abschnitt 2).
+    startdatum = g.datum_lesen(startdatum_text) if startdatum_text else g.heute()
     if startdatum < g.heute():
         raise Fehler(f"Startdatum {startdatum} liegt in der Vergangenheit (heute {g.heute()}). Kein Backdating.")
     benchmark = g.projekt()["benchmark_ticker"]
-    if not kurse.ist_handelstag(benchmark, startdatum):
-        raise Fehler(f"{startdatum} ist kein Xetra-Handelstag. Bitte einen Handelstag wählen.")
     if g.vorhandene_profile():
         raise Fehler(f"Bereits initialisiert ({', '.join(g.vorhandene_profile())}). Neustart nur mit "
                      "Zustimmung beider Auftraggeber und ohne Löschen der Historie.")
@@ -108,9 +121,9 @@ def initialisieren(startdatum_text: str, freigabe: str) -> list[str]:
         g.csv_schreiben(g.trades_pfad(profil), g.TRADE_FELDER, [])
         g.csv_schreiben(g.pfad("data", "nav", f"{profil}.csv"), g.NAV_FELDER, [])
         strategie = g.pfad("strategie", f"{profil}.md")
-        if not strategie.exists():
-            g.atomar_schreiben(strategie, vorlage(profil, g.heute()))
-            meldungen.append(f"strategie/{profil}.md als Vorlage angelegt.")
+        if not g.richtlinie_ausformuliert(profil):
+            g.atomar_schreiben(strategie, standard_text(profil, g.heute()))
+            meldungen.append(f"strategie/{profil}.md aus der Standard-Anlagerichtlinie angelegt.")
         meldungen.append(f"Portfolio {profil}: {kapital} EUR ab {startdatum}.")
     g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.PROFILE], [])
     for ordner in ("journal", "reviews", "data/kurse", "data/historie", "data/limits"):
@@ -140,8 +153,6 @@ def vorziehen_pruefen(neu: date) -> None:
         raise Fehler(f"Das neue Startdatum {neu} liegt nicht vor dem bisherigen ({alt}).")
     if neu < g.heute():
         raise Fehler(f"Startdatum {neu} liegt in der Vergangenheit (heute {g.heute()}). Kein Backdating.")
-    if not kurse.ist_handelstag(g.projekt()["benchmark_ticker"], neu):
-        raise Fehler(f"{neu} ist kein Xetra-Handelstag. Bitte einen Handelstag wählen.")
     if g.sperre_lesen() is not None and not g.sperre_verwaist(g.sperre_lesen()):
         raise Fehler("Eine Session läuft (Session-Sperre). Das Startdatum lässt sich erst danach ändern.")
     profile = g.vorhandene_profile()
@@ -162,7 +173,7 @@ def vorziehen_pruefen(neu: date) -> None:
 
 def vorziehen(neu_text: str) -> list[str]:
     """Zieht ein noch unberührtes Startdatum vor (frühestens heute, nie rückwirkend)."""
-    neu = g.datum_lesen(neu_text)
+    neu = g.datum_lesen(neu_text) if neu_text else g.heute()
     vorziehen_pruefen(neu)
     alt = g.spiel_lesen()["startdatum"]
     with g.schreibsperre():
@@ -181,7 +192,7 @@ def vorziehen(neu_text: str) -> list[str]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Spiel initialisieren: drei Portfolios mit je 1.000 EUR.")
-    parser.add_argument("--startdatum", required=True, help="erster Handelstag, JJJJ-MM-TT (heute oder später)")
+    parser.add_argument("--startdatum", help="JJJJ-MM-TT, nicht vor heute; ohne Angabe: heute (kein fester Starttermin)")
     parser.add_argument("--freigabe",
                         help="Kennung des Auftraggebers, der AP12 freigegeben hat (config/projekt.json)")
     parser.add_argument("--vorziehen", action="store_true",

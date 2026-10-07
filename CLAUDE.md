@@ -57,9 +57,10 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 - Spielstand gehört nie ins Framework-Repository; Tests und Prüfungen nutzen
   ein eigenes Datenverzeichnis (`python tools/datenverzeichnis.py einrichten`).
 - Kleine, nachvollziehbare Commits je Arbeitspaket.
-- Vor dem Startdatum werden keine Spiel-Trades gebucht. Das Startdatum ist kein
-  fester Termin: Es lässt sich, solange nichts gebucht wurde, mit
-  `python tools/init.py --startdatum <heute> --vorziehen` vorziehen (nie vor heute).
+- Vor dem Spielstart werden keine Spiel-Trades gebucht. Das Spiel hat keinen
+  festen Start- oder Endtermin: Es beginnt beim Start (`python tools/init.py
+  --freigabe <kennung>` = heute); ein noch unberührtes Startdatum lässt sich
+  mit `python tools/init.py --vorziehen` auf heute vorziehen (nie davor).
 - Wenn regeln.md für die Umsetzung nicht eindeutig ist: wähle die
   konservativere Auslegung, markiere sie im Code mit einem Kommentar
   und frage am Ende des Arbeitspakets nach.
@@ -77,13 +78,15 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 4. Lies regeln.md (Framework), strategie/*.md, lessons.md, ranking.md, das
    letzte Review und die Journal-Einträge der letzten Sessions
    (Datenverzeichnis). Sind Anlagerichtlinien noch die Vorlage
-   (`python tools/richtlinien.py status`), handelst du nicht, sondern meldest
-   das: Sie entstehen in einer eigenen Richtlinien-Session (siehe unten).
-5. Ist ein Review fällig (erste Session einer neuen Kalenderwoche,
-   Monats- oder Quartalswechsel, Drawdown-Stufe 2), erstelle es zuerst.
+   (`python tools/richtlinien.py status`), übernimmst du mit
+   `python tools/richtlinien.py standard` die Standard-Anlagerichtlinien
+   (config/richtlinien/), liest sie und handelst in ihrem Rahmen. Eigene
+   Richtlinien entstehen bei Bedarf in einer Richtlinien-Session (siehe unten).
+5. Ist ein Review fällig (erste Session nach Ablauf eines 7-, 28- oder
+   91-Tage-Zeitraums seit dem Starttag, Drawdown-Stufe 2), erstelle es zuerst.
    Welche fällig sind, nennt `python tools/termine.py` (auch
-   `session.py start/status`). Dateinamen: `reviews/JJJJ-KWnn_woche.md`,
-   `reviews/JJJJ-MM_monat.md`, `reviews/JJJJ-Qn_quartal.md`,
+   `session.py start/status`). Dateinamen mit dem letzten Tag des Zeitraums: `reviews/JJJJ-MM-TT_woche.md`,
+   `reviews/JJJJ-MM-TT_monat.md`, `reviews/JJJJ-MM-TT_quartal.md`,
    `reviews/JJJJ-MM-TT_stufe2_<profil>.md`.
 6. Marktüberblick: Kurse über `tools/kurse.py`. News zuerst aus dem
    News-Speicher (`python tools/news.py liste --tage 3`, je Wert mit
@@ -111,7 +114,8 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
     Portfolio gegen Benchmark, offene Orders, wichtige Termine.
 
 ## Richtlinien-Session (Anlagerichtlinien, AP12 Punkt 2)
-Vor der ersten Trading-Session formulierst du strategie/<profil>.md aus:
+Die Standard-Anlagerichtlinien gelten ab Spielstart. Eigene Richtlinien
+formulierst du nur auf Auftrag aus (die Standardrichtlinie ist der Ausgangspunkt):
 `python tools/session.py start --person <kennung> --art richtlinien`, je
 Profil `python tools/richtlinien.py vorlage --profil <profil>` (verbindliche
 Limits aus config/profile.json unverändert übernehmen), dann Ziel, Horizont,

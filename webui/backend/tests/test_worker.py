@@ -407,7 +407,7 @@ def test_manueller_lauf_ohne_richtlinien_mit_hinweis(admin, demo_repo):
     try:
         lesen.zuruecksetzen()
         hinweise = admin.get("/api/laeufe/vorpruefung", params={"art": "trading"}).json()["hinweise"]
-        assert any("Anlagerichtlinien fehlen (defensiv)" in h for h in hinweise)
+        assert any("Für defensiv gilt noch keine Anlagerichtlinie" in h for h in hinweise)
         assert admin.get("/api/laeufe/vorpruefung", params={"art": "review"}).json()["hinweise"] == []
         schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
         assert "richtlinien" in schritte
@@ -445,6 +445,26 @@ def test_manueller_lauf_vor_startdatum_mit_hinweis_geplanter_wird_uebersprungen(
         assert Worker().geplanten_lauf_anlegen("review", "auftraggeber-a").startswith("Lauf ")
     finally:
         (demo_repo / "spiel.json").write_text(__import__("json").dumps(alt))
+        lesen.zuruecksetzen()
+
+
+def test_worker_uebernimmt_standard_anlagerichtlinien(admin, demo_repo):
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
+
+    vorlage = demo_repo / "strategie" / "defensiv.md"
+    inhalt = vorlage.read_text()
+    vorlage.write_text("# Anlagerichtlinie Defensiv\n\nStand: Vorlage aus tools/init.py (2026-10-06).\n")
+    try:
+        lesen.zuruecksetzen()
+        assert lesen.werkzeuge()["gemeinsam"].richtlinien_offen() == ["defensiv"]
+        assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 0, tzinfo=UTC)) == \
+            "Standard-Anlagerichtlinien übernommen."
+        assert lesen.werkzeuge()["gemeinsam"].richtlinien_offen() == []
+        assert "Standard-Richtlinie" in vorlage.read_text()
+        assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 5, tzinfo=UTC)) is None  # nichts mehr zu tun
+    finally:
+        vorlage.write_text(inhalt)
         lesen.zuruecksetzen()
 
 

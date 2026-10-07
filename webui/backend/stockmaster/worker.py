@@ -126,6 +126,19 @@ class Worker:
             self._merken(news_zeit=jetzt.isoformat())
         return meldungen
 
+    def richtlinien_standard(self, jetzt: datetime) -> str | None:
+        """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt."""
+        if self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
+            return None
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum") or not g.richtlinien_offen():
+            return None
+        lauf = werkzeug("richtlinien", "standard", timeout=60)
+        if lauf.returncode != 0:
+            return "Standard-Anlagerichtlinien: " + _letzte_zeile(lauf)
+        werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen", timeout=60)
+        return "Standard-Anlagerichtlinien übernommen."
+
     def committen(self, jetzt: datetime) -> str | None:
         """Abrufe höchstens stündlich lokal committen; nie während einer Session oder eines Laufs."""
         if not self._faellig(self.zustand.get("commit_zeit"), 60, jetzt) or self.lauf_aktiv():
@@ -402,7 +415,7 @@ class Worker:
             self.herzschlag("Wartung (Wiederherstellung)")
             return ["Wartung"]
         self.auftraege_bearbeiten()
-        for schritt in (self.zeitplan, self.planen, self.committen):
+        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht
