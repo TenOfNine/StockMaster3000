@@ -277,6 +277,10 @@ Arbeitsbereich nicht änderbar):
   erlaubt im Journal nur Anhängen und blockiert Namen und E-Mail-Adressen
   aus der Benutzertabelle in allen Schreibvorgängen (Leitplanke 7).
 - Web-Suche erlaubt; Quellenpflicht bleibt.
+- Freigaben (Entscheidung 37): Was weder erlaubt noch verboten ist, legt die CLI per `control_request` einem
+  Administrator in der Web-UI vor (Wartezeit 3 Minuten, danach abgelehnt, auch bei Läufen nach Zeitplan).
+  Verbote entscheiden vorher und sind nie freigebbar; Shell-Befehle sind nur freigebbar, wenn sie erkennbar
+  nur lesen. Der Spielstand bleibt schreibgeschützt.
 
 ### 4.7 Erreichbarkeit (Entscheidung 6)
 

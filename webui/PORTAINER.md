@@ -166,6 +166,8 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
 | Anmeldung: „Claude Code hat keinen Anmeldelink ausgegeben“ | Das Ausgabeformat der CLI hat sich geändert; Token manuell erzeugen und eintragen, Fehler melden. |
 | Startdialog zeigt „Anlagerichtlinien fehlen“ oder „Das Startdatum ist …“ | Nur ein Hinweis, der Lauf startet trotzdem. Er kann dann nicht handeln: erst den Lauf „Anlagerichtlinien ausformulieren“ ausführen bzw. in der Einrichtung das Startdatum auf heute vorziehen (regeln.md 2 und 11). Geplante Trading-Läufe werden in diesem Fall mit Grund übersprungen. |
+| Im Log: „Freigabe abgelehnt: Keine Entscheidung innerhalb von 3 Minuten“ | Niemand hat die Anfrage unter „Claude-Läufe“ entschieden (der Hinweis „n Freigaben offen“ steht in der Kopfzeile). Der Lauf geht ohne diesen Befehl weiter; Claude soll ihn nicht wiederholen. Die Wartezeit stellt `SM_FREIGABE_WARTEZEIT_SEKUNDEN` ein. |
+| Im Log: „Nicht freigebbar: …“ | Der Befehl liest nicht nur (z. B. Umleitung in eine Datei, Befehlsersetzung, fremder Pfad) und wird nie zur Entscheidung vorgelegt. Claude muss ihn anders formulieren; der Spielstand bleibt schreibgeschützt. |
 | Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |
 | Browser: 421 oder `ERR_SSL_PROTOCOL_ERROR` | Name bzw. IP ist dem Proxy unbekannt: `SM_HOSTNAME` verwenden oder in `SM_ZUSAETZLICHE_HOSTS` eintragen. |
 | „Zugriff nur aus dem Heimnetz“ | Anfrage nicht aus privatem Adressbereich: Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |
