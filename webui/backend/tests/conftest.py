@@ -1,4 +1,4 @@
-"""Test-Fixtures: Demo-Repository (einmal je Lauf), frische Datenbank je Test."""
+"""Test-Fixtures: Demo-Datenverzeichnis (einmal je Lauf), frische Datenbank und App-Verzeichnis je Test."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ NUTZER_PW = "Nutzer-Passwort-2026!"
 
 @pytest.fixture(scope="session")
 def demo_repo(tmp_path_factory) -> Path:
-    ziel = tmp_path_factory.mktemp("demo") / "repo"
+    ziel = tmp_path_factory.mktemp("demo") / "daten"
     subprocess.run([sys.executable, str(WURZEL / "webui" / "demo" / "demo_daten.py"), "--ziel", str(ziel),
                     "--tage", "75", "--ende", "2026-09-30", "--seed", "3"], check=True, capture_output=True)
     return ziel
@@ -29,7 +29,10 @@ def demo_repo(tmp_path_factory) -> Path:
 
 @pytest.fixture
 def app(demo_repo, tmp_path, monkeypatch):
-    monkeypatch.setenv("SM_REPO_PFAD", str(demo_repo))
+    monkeypatch.setenv("STOCKMASTER_DATA_DIR", str(demo_repo))
+    monkeypatch.setenv("STOCKMASTER_FRAMEWORK_DIR", str(WURZEL))
+    monkeypatch.setenv("STOCKMASTER_APP_DIR", str(tmp_path / "app"))
+    monkeypatch.setenv("SM_AUFTRAG_WARTEN_SEKUNDEN", "0")
     monkeypatch.setenv("SM_DATENBANK_URL", f"sqlite:///{tmp_path / 'test.db'}")
     monkeypatch.setenv("SM_COOKIE_SICHER", "false")
     monkeypatch.setenv("SM_SCHLUESSEL", SCHLUESSEL)

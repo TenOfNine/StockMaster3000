@@ -1,0 +1,35 @@
+{
+  "_quelle": "Optionen der im Image installierten Claude Code CLI, geprüft mit `claude --help` (Version 2.1.292, 2026-10-07): --model nimmt einen Alias für das jeweils neueste Modell oder eine volle Modell-ID; --effort kennt low, medium, high, xhigh, max. Bei einem Versionswechsel der CLI diese Datei mit `claude --help` abgleichen.",
+  "_hinweis": "Modell und Aufwand werden beim Sessionstart als --model und --effort übergeben. Lehnt die CLI eine Kombination ab, bricht der Lauf mit der Meldung der CLI ab; es wird nie still auf Standardwerte gewechselt.",
+  "cli_version": "2.1.292",
+  "modell_flag": "--model",
+  "aufwand_flag": "--effort",
+  "modelle": [
+    {"wert": "opus", "name": "Opus (neuestes)", "hinweis": "Stärkstes Modell; verbraucht das Abo-Kontingent am schnellsten."},
+    {"wert": "sonnet", "name": "Sonnet (neuestes)", "hinweis": "Ausgewogen zwischen Qualität und Kontingent."},
+    {"wert": "haiku", "name": "Haiku (neuestes)", "hinweis": "Schnell und sparsam; für Recherche-Sessions meist zu knapp."},
+    {"wert": "fable", "name": "Fable (neuestes)", "hinweis": "Alias laut claude --help; ob das Abo ihn anbietet, zeigt „Verbindung testen“."}
+  ],
+  "eigene_modell_id_muster": "^[a-z0-9][a-z0-9.\\-]{2,79}(\\[1m\\])?$",
+  "aufwand": [
+    {"wert": "", "name": "Standard der CLI"},
+    {"wert": "low", "name": "niedrig (low)"},
+    {"wert": "medium", "name": "mittel (medium)"},
+    {"wert": "high", "name": "hoch (high)"},
+    {"wert": "xhigh", "name": "sehr hoch (xhigh)"},
+    {"wert": "max", "name": "maximal (max)"}
+  ],
+  "unvertraeglich": [
+    {"modell": "haiku", "aufwand": ["xhigh", "max"], "grund": "Die höchsten Aufwandsstufen sind den großen Modellen vorbehalten."}
+  ],
+  "zwecke": {
+    "trading": "Trading-Session",
+    "review": "Review/Bericht"
+  },
+  "laufarten": {
+    "trading": {"name": "Trading-Session", "zweck": "trading"},
+    "review": {"name": "Reviews und Bericht (ohne Orders)", "zweck": "review"},
+    "testsession": {"name": "Testsession ohne Trades (AP12)", "zweck": "trading"}
+  },
+  "zeitlimit_minuten": 90
+}
