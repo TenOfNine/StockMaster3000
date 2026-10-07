@@ -18,7 +18,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger("stockmaster")
 
-FRAMEWORK_STANDARD = Path(__file__).resolve().parents[3]
+# Standard für die Entwicklung im Repository (webui/backend/stockmaster -> Wurzel); im Image setzt
+# STOCKMASTER_FRAMEWORK_DIR den Pfad (/app/framework).
+_HIER = Path(__file__).resolve()
+FRAMEWORK_STANDARD = _HIER.parents[3] if len(_HIER.parents) > 3 else Path("/app/framework")
 PRIVATE_NETZE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7", "::1/128"]
 SCHLUESSEL_HINWEIS = "Neu erzeugen mit: openssl rand -base64 32 (44 Zeichen, endet auf '=')."
 

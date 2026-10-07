@@ -1,9 +1,9 @@
 # StockMaster 3000 – Stack für Portainer (Stacks → Add stack → Web editor oder Repository).
-# Keine lokalen Dateien nötig: Images kommen aus der Registry, Geheimnisse aus den
-# Umgebungsvariablen des Stacks. Anleitung: webui/PORTAINER.md
+# Keine lokalen Dateien und keine Geheimnisse im Stack: Images kommen aus der Registry, Spielstand,
+# App-Konfiguration (mit verschlüsselten Secrets) und Datenbank leben in Volumes. Claude-Token,
+# Kurs-API-Keys, News und Zeitplan pflegt ein Admin in der App (Einrichtung). Anleitung: webui/PORTAINER.md
 #
-# Pflicht-Variablen (Portainer: "Environment variables"): SM_HOSTNAME, SPIEL_REPO,
-# POSTGRES_ADMIN_PASSWORD, POSTGRES_APP_PASSWORD, SM_SCHLUESSEL – siehe webui/deploy/portainer/stack.env.example
+# Pflicht-Variable: SM_HOSTNAME. Alles andere ist optional (siehe webui/deploy/portainer/stack.env.example).
 name: stockmaster
 
 x-haertung: &haertung
@@ -13,6 +13,22 @@ x-haertung: &haertung
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
+
+x-app-umgebung: &app-umgebung
+  TZ: "${TZ:-Europe/Berlin}"
+  SM_DATENBANK_HOST: db
+  SM_DATENBANK_PASSWORT_DATEI: /geheim/db_app_passwort
+  SM_COOKIE_SICHER: "true"
+  # Nur für die einmalige Übernahme aus älteren Installationen; danach entfernen (siehe Einrichtung).
+  SM_SCHLUESSEL: "${SM_SCHLUESSEL:-}"
+  CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  FINNHUB_API_KEY: "${FINNHUB_API_KEY:-}"
+  TWELVEDATA_API_KEY: "${TWELVEDATA_API_KEY:-}"
+
+x-app-volumes: &app-volumes
+  - daten:/data
+  - app_daten:/data-app
+  - geheim:/geheim:ro
 
 services:
   proxy:
@@ -48,22 +64,39 @@ services:
     image: "${SM_IMAGE_PREFIX:-ghcr.io/tenofnine/stockmaster3000}-api:${SM_IMAGE_TAG:-latest}"
     # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
     pull_policy: always
-    environment:
-      SM_DATENBANK_HOST: db
-      SM_DATENBANK_PASSWORT: "${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD fehlt}"
-      SM_SCHLUESSEL: "${SM_SCHLUESSEL:?SM_SCHLUESSEL fehlt (openssl rand -base64 32)}"
-      SM_REPO_PFAD: /repo
-      SM_COOKIE_SICHER: "true"
-    volumes:
-      # Absoluter Host-Pfad des Spiel-Repositorys (nur lesend).
-      - "${SPIEL_REPO:?SPIEL_REPO fehlt (absoluter Pfad auf dem Docker-Host)}:/repo:ro"
+    environment: *app-umgebung
+    volumes: *app-volumes
     read_only: true
-    tmpfs: [/tmp]
+    tmpfs: ["/tmp:size=256m"]
+    # Kein Internet: nur Proxy und Datenbank. Abrufe und Claude-Läufe erledigt der worker.
     networks: [app, data]
     depends_on:
       db: { condition: service_healthy }
     deploy:
-      resources: { limits: { cpus: "1.0", memory: 512M } }
+      resources: { limits: { cpus: "1.0", memory: 768M } }
+
+  worker:
+    <<: *haertung
+    image: "${SM_IMAGE_PREFIX:-ghcr.io/tenofnine/stockmaster3000}-api:${SM_IMAGE_TAG:-latest}"
+    # Bei jedem Deploy neu ziehen: sonst bleibt ein altes "latest" im Cache und Updates kommen nie an.
+    pull_policy: always
+    command: ["python", "-m", "stockmaster", "worker"]
+    environment: *app-umgebung
+    volumes: *app-volumes
+    read_only: true
+    # Claude Code braucht Platz für HOME und Konfiguration je Lauf (wird danach gelöscht).
+    tmpfs: ["/tmp:size=1g"]
+    networks: [data, aus]
+    depends_on:
+      api: { condition: service_healthy }   # API legt Datenverzeichnis und Master-Schlüssel an
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; p='/data-app/zustand/worker.json'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 180 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources: { limits: { cpus: "2.0", memory: 2G } }
 
   db:
     <<: *haertung
@@ -74,16 +107,17 @@ services:
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD fehlt}"
-      POSTGRES_APP_PASSWORD: "${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD fehlt}"
+      # Nur für die einmalige Übernahme aus älteren Installationen; sonst erzeugt der Container die Passwörter.
+      POSTGRES_PASSWORD: "${POSTGRES_ADMIN_PASSWORD:-}"
+      POSTGRES_APP_PASSWORD: "${POSTGRES_APP_PASSWORD:-}"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - geheim:/geheim
     networks: [data]
     healthcheck:
-      # Gesund erst, wenn sich die Anwendungsrolle mit dem aktuellen Passwort anmelden kann. Das
-      # deckt zwei Fälle ab: den temporären Init-Server (nur Unix-Socket) und den Passwortabgleich
-      # des DB-Images (db-abgleich.sh) bei vorhandenem Volume. Die API startet erst danach.
-      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_APP_PASSWORD\" psql -h 127.0.0.1 -U stockmaster -d stockmaster -tAc 'select 1' | grep -q 1"]
+      # Gesund erst, wenn sich die Anwendungsrolle mit dem aktuellen Passwort per TCP anmelden kann
+      # (nicht schon während der Erstinitialisierung über den Unix-Socket).
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$(cat /geheim/db_app_passwort)\" psql -h 127.0.0.1 -U stockmaster -d stockmaster -tAc 'select 1' | grep -q 1"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -95,8 +129,13 @@ networks:
   edge: {}
   app: { internal: true }
   data: { internal: true }
+  # Nur der worker hat Internetzugang (Kurse, News, Claude).
+  aus: {}
 
 volumes:
+  daten: {}
+  app_daten: {}
+  geheim: {}
   pgdata: {}
   caddy_data: {}
   caddy_config: {}

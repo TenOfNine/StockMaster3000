@@ -1,5 +1,7 @@
-# StockMaster 3000 Web-UI (Stufe 1, lesend). Start: siehe webui/BETRIEB.md
-#   bash webui/deploy/einrichten.sh && docker compose up -d --build
+# StockMaster 3000 (lokaler Bau). Start: siehe webui/BETRIEB.md
+#   cp .env.example .env && docker compose up -d --build
+# Der Stack ist autark: Spielstand (/data), App-Konfiguration mit Secrets (/data-app) und Datenbank
+# liegen in Volumes; Einstellungen und Secrets pflegt ein Admin in der App (Einrichtung).
 name: stockmaster
 
 x-haertung: &haertung
@@ -9,6 +11,27 @@ x-haertung: &haertung
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
+
+x-app-bau: &app-bau
+  context: .
+  dockerfile: webui/deploy/api.Dockerfile
+  args: { REGISTRY: "${REGISTRY:-docker.io/library}" }
+
+x-app-umgebung: &app-umgebung
+  TZ: "${TZ:-Europe/Berlin}"
+  SM_DATENBANK_HOST: db
+  SM_DATENBANK_PASSWORT_DATEI: /geheim/db_app_passwort
+  SM_COOKIE_SICHER: "true"
+  # Nur für die einmalige Übernahme aus älteren Installationen; danach entfernen (siehe Einrichtung).
+  SM_SCHLUESSEL: "${SM_SCHLUESSEL:-}"
+  CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  FINNHUB_API_KEY: "${FINNHUB_API_KEY:-}"
+  TWELVEDATA_API_KEY: "${TWELVEDATA_API_KEY:-}"
+
+x-app-volumes: &app-volumes
+  - daten:/data
+  - app_daten:/data-app
+  - geheim:/geheim:ro
 
 services:
   proxy:
@@ -43,44 +66,63 @@ services:
 
   api:
     <<: *haertung
-    build:
-      context: .
-      dockerfile: webui/deploy/api.Dockerfile
-      args: { REGISTRY: "${REGISTRY:-docker.io/library}" }
+    build: *app-bau
     image: stockmaster-api:lokal
-    environment:
-      SM_DATENBANK_URL_DATEI: /run/secrets/datenbank_url
-      SM_SCHLUESSEL_DATEI: /run/secrets/sm_schluessel
-      SM_REPO_PFAD: /repo
-      SM_COOKIE_SICHER: "true"
-    secrets: [datenbank_url, sm_schluessel]
-    volumes:
-      - "${SPIEL_REPO:-.}:/repo:ro"
+    environment: *app-umgebung
+    volumes: *app-volumes
     read_only: true
-    tmpfs: [/tmp]
+    tmpfs: ["/tmp:size=256m"]
+    # Kein Internet: nur Proxy und Datenbank. Abrufe und Claude-Läufe erledigt der worker.
     networks: [app, data]
     depends_on:
       db: { condition: service_healthy }
     deploy:
-      resources: { limits: { cpus: "1.0", memory: 512M } }
+      resources: { limits: { cpus: "1.0", memory: 768M } }
+
+  worker:
+    <<: *haertung
+    build: *app-bau
+    image: stockmaster-api:lokal
+    command: ["python", "-m", "stockmaster", "worker"]
+    environment: *app-umgebung
+    volumes: *app-volumes
+    read_only: true
+    # Claude Code braucht Platz für HOME und Konfiguration je Lauf (wird danach gelöscht).
+    tmpfs: ["/tmp:size=1g"]
+    networks: [data, aus]
+    depends_on:
+      api: { condition: service_healthy }   # API legt Datenverzeichnis und Master-Schlüssel an
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; p='/data-app/zustand/worker.json'; sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 180 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources: { limits: { cpus: "2.0", memory: 2G } }
 
   db:
     <<: *haertung
-    image: "${REGISTRY:-docker.io/library}/postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
+    build:
+      context: .
+      dockerfile: webui/deploy/db.Dockerfile
+      args: { REGISTRY: "${REGISTRY:-docker.io/library}" }
+    image: stockmaster-db:lokal
     # Postgres braucht beim Start einige Rechte für Dateirechte und Benutzerwechsel.
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_passwort
-    secrets: [db_admin_passwort, db_app_passwort]
+      # Nur für die einmalige Übernahme aus älteren Installationen; sonst erzeugt der Container die Passwörter.
+      POSTGRES_PASSWORD: "${POSTGRES_ADMIN_PASSWORD:-}"
+      POSTGRES_APP_PASSWORD: "${POSTGRES_APP_PASSWORD:-}"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./webui/deploy/db-init:/docker-entrypoint-initdb.d:ro
+      - geheim:/geheim
     networks: [data]
     healthcheck:
-      # Über TCP prüfen: Während der Erstinitialisierung läuft ein temporärer Server nur über den
-      # Unix-Socket und würde sonst schon als "bereit" gelten, obwohl die API ihn nicht erreicht.
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d stockmaster"]
+      # Gesund erst, wenn sich die Anwendungsrolle mit dem aktuellen Passwort per TCP anmelden kann
+      # (nicht schon während der Erstinitialisierung über den Unix-Socket).
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$(cat /geheim/db_app_passwort)\" psql -h 127.0.0.1 -U stockmaster -d stockmaster -tAc 'select 1' | grep -q 1"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -92,14 +134,13 @@ networks:
   edge: {}
   app: { internal: true }
   data: { internal: true }
+  # Nur der worker hat Internetzugang (Kurse, News, Claude).
+  aus: {}
 
 volumes:
+  daten: {}
+  app_daten: {}
+  geheim: {}
   pgdata: {}
   caddy_data: {}
   caddy_config: {}
-
-secrets:
-  datenbank_url: { file: ./secrets/datenbank_url }
-  sm_schluessel: { file: ./secrets/sm_schluessel }
-  db_admin_passwort: { file: ./secrets/db_admin_passwort }
-  db_app_passwort: { file: ./secrets/db_app_passwort }
