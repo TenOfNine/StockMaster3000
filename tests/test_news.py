@@ -1,6 +1,10 @@
 """News über RSS mit Fixture-Feeds, ohne Netzwerk."""
 
+import http.client
 import json
+import socket
+import ssl
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -130,8 +134,10 @@ def test_filter_dubletten_und_zaehler(projekt, uhr, feeds):
     # "Goldman" trifft das Wort "Gold" nicht, die Mining-Pressemitteilung fällt durch titel_ohne,
     # dieselbe Meldung aus der Länderausgabe ist eine Dublette.
     assert sorted(titel) == ["Gold fällt nach starken US-Daten", "Goldpreis steigt auf Rekordhoch"]
-    assert stand["feeds"]["google-gold"] == {"name": "Google News: Goldpreis", "ok": True, "fehler": None, "anzahl": 5,
-                                             "neu": 2, "gefiltert": 2, "dubletten": 1}
+    assert stand["feeds"]["google-gold"] == {
+        "name": "Google News: Goldpreis", "anzeige": "Google News: Goldpreis", "url": GOLD["url"], "ok": True,
+        "fehler": None, "art": None, "hinweis": None, "seit": None, "in_folge": 0,
+        "letzter_erfolg": "2026-10-12T10:00:00+02:00", "anzahl": 5, "neu": 2, "gefiltert": 2, "dubletten": 1}
     assert all(z["ticker"] == ["GC=F"] and z["herausgeber"] for z in zeilen)
     # Zweiter Abruf (auch mit anderem Feed) speichert dieselben Meldungen nicht noch einmal.
     anderer = {**GOLD, "id": "google-gold-2"}
@@ -150,3 +156,176 @@ def test_standard_feeds_google_gezielt():
     assert {"google-gold", "google-oel", "google-msci-world"} <= set(feeds_)
     assert "intitle" in feeds_["google-msci-world"]["url"] or "intitle%3A" in feeds_["google-msci-world"]["url"]
     assert feeds_["google-gold"]["titel_ohne"] and feeds_["google-oel"]["ticker"] == ["BZ=F"]
+
+
+# --------------------------------------------------------------------------
+# Fehler im Klartext, Verlauf und Zusammenfassung
+
+
+@pytest.mark.parametrize("code, art, text", [
+    (403, "zugriff", "Zugriff verweigert (HTTP 403)"),
+    (404, "nicht_gefunden", "nicht gefunden (HTTP 404)"),
+    (429, "gedrosselt", "Zu viele Anfragen (HTTP 429)"),
+    (503, "server", "Serverfehler beim Anbieter (HTTP 503)"),
+    (418, "http", "Unerwartete Antwort (HTTP 418)"),
+])
+def test_http_fehler_im_klartext(monkeypatch, code, art, text):
+    def urlopen(anfrage, timeout):
+        raise urllib.error.HTTPError(anfrage.full_url, code, "x", {}, None)
+
+    monkeypatch.setattr(news.urllib.request, "urlopen", urlopen)
+    with pytest.raises(news.FeedFehler) as fehler:
+        news._holen("https://example.org/feed", "agent")
+    assert fehler.value.art == art and text in str(fehler.value) and fehler.value.hinweis
+
+
+@pytest.mark.parametrize("ausnahme, art, text", [
+    (urllib.error.URLError(socket.gaierror(-2, "Name or service not known")), "namensaufloesung", "nicht auflösbar"),
+    (urllib.error.URLError(TimeoutError("timed out")), "zeitueberschreitung", "Keine Antwort innerhalb von 15 Sekunden"),
+    (TimeoutError("timed out"), "zeitueberschreitung", "Keine Antwort"),
+    (urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed")), "tls", "TLS"),
+    (urllib.error.URLError(ConnectionRefusedError(111, "refused")), "verbindung", "Verbindung abgelehnt"),
+    (ConnectionResetError(104, "reset"), "verbindung", "abgebrochen"),
+    (http.client.IncompleteRead(b"abc"), "verbindung", "unvollständig"),
+    (urllib.error.URLError(OSError("Tunnel connection failed: 403 Forbidden")), "verbindung", "Tunnel connection failed"),
+])
+def test_verbindungsfehler_im_klartext(monkeypatch, ausnahme, art, text):
+    def urlopen(anfrage, timeout):
+        raise ausnahme
+
+    monkeypatch.setattr(news.urllib.request, "urlopen", urlopen)
+    with pytest.raises(news.FeedFehler) as fehler:
+        news._holen("https://example.org/feed", "agent")
+    assert fehler.value.art == art and text in str(fehler.value) and fehler.value.hinweis
+
+
+def test_zu_grosser_feed(monkeypatch):
+    class Antwort:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, maximal):
+            return b"x" * maximal
+
+    monkeypatch.setattr(news.urllib.request, "urlopen", lambda anfrage, timeout: Antwort())
+    with pytest.raises(news.FeedFehler) as fehler:
+        news._holen("https://example.org/feed", "agent")
+    assert fehler.value.art == "zu_gross" and "2 MB" in str(fehler.value)
+
+
+def test_webseite_und_leere_antwort_statt_feed():
+    with pytest.raises(news.FeedFehler, match="Webseite") as fehler:
+        news.parsen(b"\n<!DOCTYPE html><html><body>Bitte Cookies akzeptieren</body></html>")
+    assert fehler.value.art == "kein_feed" and "Schutzseite" in fehler.value.hinweis
+    with pytest.raises(news.FeedFehler, match="leere Antwort"):
+        news.parsen(b"  \n")
+    with pytest.raises(news.FeedFehler, match="weder RSS noch Atom|SAXParseException|kein RSS/Atom erkannt") as fehler:
+        news.parsen(b"<?xml version='1.0'?><wurzel/>")
+    assert fehler.value.art == "kein_feed"
+
+
+def test_meldungen_bleiben_einzeilig_und_unter_300_zeichen():
+    # Der Hintergrunddienst zeigt nur die letzte Zeile (höchstens 300 Zeichen) der Ausgabe von "news test".
+    for code in (403, 404, 429, 503, 418):
+        fehler = news._http_fehler(code)
+        assert "\n" not in f"{fehler} {fehler.hinweis}" and len(f"Fehler: {fehler} {fehler.hinweis}") < 300
+    for exc in (socket.gaierror(-2, "x"), TimeoutError(), ssl.SSLError("x"), ConnectionRefusedError(), OSError("y" * 500)):
+        fehler = news._verbindungsfehler(urllib.error.URLError(exc), 15.0)
+        assert "\n" not in f"{fehler} {fehler.hinweis}" and len(f"Fehler: {fehler} {fehler.hinweis}") < 300
+
+
+def test_fehlerverlauf_seit_wann_und_in_folge(projekt, uhr, feeds, monkeypatch):
+    normal = news.HOLEN  # Attrappe der Fixture "feeds"
+    ausfall = {"fed": False}
+
+    def holen(url, agent, timeout=15.0):
+        if ausfall["fed"] and "federalreserve" in url:
+            raise news._http_fehler(403)
+        return normal(url, agent, timeout)
+
+    monkeypatch.setattr(news, "HOLEN", holen)
+    stand = news.abrufen(konfig(TAGESSCHAU, FED))
+    assert stand["fehlerhaft"] == 0 and stand["feeds"]["fed"]["in_folge"] == 0
+    erfolg = stand["feeds"]["fed"]["letzter_erfolg"]
+    assert erfolg == "2026-10-12T10:00:00+02:00"
+
+    ausfall["fed"] = True
+    uhr.stellen("2026-10-12T10:15:00")
+    erste = news.abrufen(konfig(TAGESSCHAU, FED))["feeds"]["fed"]
+    assert (erste["ok"], erste["art"], erste["in_folge"]) == (False, "zugriff", 1)
+    assert erste["seit"] == "2026-10-12T10:15:00+02:00" and erste["letzter_erfolg"] == erfolg
+    assert erste["anzeige"] == "Federal Reserve" and erste["url"] == FED["url"] and erste["hinweis"]
+    uhr.stellen("2026-10-12T10:30:00")
+    zweite = news.abrufen(konfig(TAGESSCHAU, FED))["feeds"]["fed"]
+    assert zweite["in_folge"] == 2 and zweite["seit"] == erste["seit"] and zweite["letzter_erfolg"] == erfolg
+
+    ausfall["fed"] = False
+    uhr.stellen("2026-10-12T10:45:00")
+    wieder = news.abrufen(konfig(TAGESSCHAU, FED))["feeds"]["fed"]
+    assert wieder["ok"] and wieder["in_folge"] == 0 and wieder["seit"] is None
+    assert wieder["letzter_erfolg"] == "2026-10-12T10:45:00+02:00"
+
+
+def test_unerwarteter_fehler_stoppt_die_anderen_nicht(projekt, uhr, monkeypatch):
+    def holen(url, agent, timeout=15.0):
+        if "federalreserve" in url:
+            raise ValueError("kaputt")
+        return (FIXTURES / "tagesschau.xml").read_bytes()
+
+    monkeypatch.setattr(news, "HOLEN", holen)
+    stand = news.abrufen(konfig(TAGESSCHAU, FED))
+    assert stand["neu"] == 2 and stand["feeds"]["fed"]["art"] == "intern"
+    assert "ValueError: kaputt" in stand["feeds"]["fed"]["fehler"]
+
+
+def test_zusammenfassung_nennt_feed_und_grund(projekt, uhr, feeds):
+    kaputt = {"id": "kaputt", "name": "Kaputt", "url": "https://example.invalid/feed", "aktiv": True}
+    stand = news.abrufen(konfig(TAGESSCHAU, FED, kaputt))
+    assert news.zusammenfassung(stand) == "News: 3 neue Meldungen aus 3 Feeds, 1 mit Fehler – Kaputt: HTTP 404."
+    assert news.zusammenfassung(news.abrufen(konfig(TAGESSCHAU))) == "News: 0 neue Meldungen aus 1 Feeds."
+    viele = {"neu": 0, "anzahl_feeds": 5, "feeds": {f"f{i}": {"name": f"F{i}", "ok": False, "fehler": "HTTP 500."}
+                                                   for i in range(5)}}
+    assert news.zusammenfassung(viele) == ("News: 0 neue Meldungen aus 5 Feeds, 5 mit Fehler – F0: HTTP 500; "
+                                            "F1: HTTP 500; F2: HTTP 500; und 2 weitere.")
+
+
+def test_ticker_vorlage_im_anzeigenamen(projekt, uhr, feeds):
+    vorlage = {"id": "yahoo-ticker", "name": "Yahoo Finance", "url": "https://feeds.example/rss?s={ticker}",
+               "je_ticker": True, "aktiv": True}
+    stand = news.abrufen(konfig(vorlage))
+    assert {s["anzeige"] for s in stand["feeds"].values()} >= {"Yahoo Finance (^GDAXI)"}
+    assert all(s["name"] == "Yahoo Finance" for s in stand["feeds"].values())
+
+
+def test_abrufen_ausgabe_mit_fehlern(projekt, uhr, capsys, tmp_path, monkeypatch):
+    sec = {"id": "sec-8k", "name": "SEC 8-K", "url": "https://www.sec.gov/feed", "aktiv": True}
+    datei = tmp_path / "konfig.json"
+    datei.write_text(json.dumps(konfig(TAGESSCHAU, sec)))
+
+    def holen(url, agent, timeout=15.0):
+        if "sec.gov" in url:
+            raise news._http_fehler(403)
+        return (FIXTURES / "tagesschau.xml").read_bytes()
+
+    monkeypatch.setattr(news, "HOLEN", holen)
+    assert news.main(["abrufen", "--konfig", str(datei)]) == 0
+    uhr.stellen("2026-10-12T10:15:00")
+    assert news.main(["abrufen", "--konfig", str(datei)]) == 0
+    zeilen = capsys.readouterr().out.splitlines()
+    assert zeilen[0] == "News: 2 neue Meldungen aus 2 Feeds, 1 mit Fehler – SEC 8-K: Zugriff verweigert (HTTP 403)."
+    assert zeilen[1].startswith("  sec-8k: Zugriff verweigert (HTTP 403). Hinweis: ") and "Abrufe in Folge" not in zeilen[1]
+    assert zeilen[2].startswith("News: 0 neue Meldungen aus 2 Feeds, 1 mit Fehler")
+    assert "(2 Abrufe in Folge, seit 2026-10-12 10:00)" in zeilen[3]
+
+
+def test_feed_test_zeigt_fehler_mit_hinweis(monkeypatch, capsys):
+    def holen(url, agent, timeout=15.0):
+        raise news._http_fehler(404)
+
+    monkeypatch.setattr(news, "HOLEN", holen)
+    assert news.main(["test", "--url", "https://example.org/feed"]) == 1
+    fehler = capsys.readouterr().err.strip()
+    assert fehler.startswith("Fehler: Feed-Adresse nicht gefunden (HTTP 404). Der Feed existiert")
