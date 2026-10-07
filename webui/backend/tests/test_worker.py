@@ -19,6 +19,20 @@ ATTRAPPE = textwrap.dedent('''\
         f.write(json.dumps({{"args": args, "env": sorted(os.environ)}}) + "\\n")
     modus = open("{modus}").read().strip() if os.path.exists("{modus}") else "ok"
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if args[:1] == ["setup-token"]:
+        import time
+        ziel = "https://evil.example/oauth/authorize?x=1" if modus == "boeser_link" else (
+            "https://claude.com/cai/oauth/authorize?code=true&client_id=x&state=abc")
+        sys.stdout.write("Welcome to Claude Code\\r\\n\\x1b]8;id=1;" + ziel + "\\x07" + ziel[:40] + "\\x1b]8;;\\x07\\r\\n")
+        sys.stdout.write("\\x1b[?2004hPaste\\x1b[1Ccode\\x1b[1Chere\\x1b[1Cif\\x1b[1Cprompted>\\x1b[1C")
+        sys.stdout.flush()
+        eingabe = sys.stdin.readline().strip()
+        if eingabe == "gut-code-12345#abc":
+            print("\\r\\nYour OAuth token (valid for 1 year):\\r\\n\\r\\nsk-ant-oat01-" + "T" * 60 + "\\r\\n", flush=True)
+            sys.exit(0)
+        print("\\r\\nOAuth error: Request failed with status code 400\\r\\nPress Enter to retry.", flush=True)
+        time.sleep(30)
+        sys.exit(1)
     if "--output-format" in args and args[args.index("--output-format") + 1] == "json":
         if modus == "auth":
             print(json.dumps({{"type": "result", "is_error": True, "result": "Invalid API key · Please run /login"}}))
@@ -254,3 +268,117 @@ def test_wartung_pausiert_worker(app, werkzeug_attrappe):
     assert Worker().einmal() == ["Wartung"] and werkzeug_attrappe == []
     appdaten.zustand_schreiben("wartung", {})
 
+
+
+# --------------------------------------------------------------------------
+# Anmeldung mit dem Claude-Abo aus der App (claude setup-token im Worker)
+
+
+def _anmeldung_bis(admin, anmeldung_id, bedingung, sekunden=15):
+    import time
+
+    ende = time.monotonic() + sekunden
+    while time.monotonic() < ende:
+        stand = admin.get(f"/api/einrichtung/claude/anmeldung/{anmeldung_id}").json()
+        if bedingung(stand):
+            return stand
+        time.sleep(0.2)
+    raise AssertionError(stand)
+
+
+def _anmeldung_starten(admin):
+    from stockmaster.worker import Worker
+
+    antwort = admin.post("/api/einrichtung/claude/anmeldung")
+    assert antwort.status_code == 200, antwort.text
+    w = Worker()
+    w.auftraege_bearbeiten()
+    stand = _anmeldung_bis(admin, antwort.json()["id"], lambda s: s["phase"] != "starte")
+    return w, stand
+
+
+def test_anmeldung_aus_der_app(admin, werkzeug_attrappe, claude, tmp_path):
+    w, stand = _anmeldung_starten(admin)
+    assert stand["phase"] == "warte_auf_code" and stand["link"].startswith("https://claude.com/cai/oauth/authorize")
+    assert stand["token"]["gesetzt"] is False
+    antwort = admin.post(f"/api/einrichtung/claude/anmeldung/{stand['id']}/code", json={"code": "gut-code-12345#abc"})
+    assert antwort.status_code == 200, antwort.text
+    w.anmeldung_thread.join(timeout=20)
+    fertig = admin.get(f"/api/einrichtung/claude/anmeldung/{stand['id']}").json()
+    assert fertig["status"] == "ok" and fertig["phase"] == "fertig" and fertig["test_ok"] is True
+    assert fertig["token"]["gesetzt"] is True and fertig["token"]["letzte4"] == "TTTT"
+    assert fertig["token"]["quelle"] == "anmeldung"
+    from stockmaster import appdaten
+
+    assert appdaten.geheimnis("claude_token") == "sk-ant-oat01-" + "T" * 60
+    # Das Token taucht in keiner Antwort, keinem Audit-Eintrag und keiner Datei im Klartext auf.
+    alles = json.dumps(fertig) + admin.get("/api/einrichtung").text + admin.get("/api/admin/audit").text
+    assert "T" * 60 not in alles
+    for datei in (tmp_path / "app").rglob("*"):
+        if datei.is_file():
+            assert b"T" * 60 not in datei.read_bytes(), datei
+    assert not list((tmp_path / "app" / "tmp").glob("anmeldung-*"))
+    aktionen = [z["aktion"] for z in admin.get("/api/admin/audit").json()]
+    assert {"einrichtung_claude_anmeldung_gestartet", "einrichtung_claude_anmeldung_code",
+            "claude_anmeldung_abgeschlossen"} <= set(aktionen)
+    # Der anschließende Verbindungstest lief mit dem neuen Token.
+    assert admin.get("/api/einrichtung").json()["einstellungen"]["claude"]["letzter_test"]["ok"] is True
+
+
+def test_anmeldung_falscher_code(admin, werkzeug_attrappe, claude):
+    w, stand = _anmeldung_starten(admin)
+    admin.post(f"/api/einrichtung/claude/anmeldung/{stand['id']}/code", json={"code": "falscher-code-999"})
+    w.anmeldung_thread.join(timeout=20)
+    fertig = admin.get(f"/api/einrichtung/claude/anmeldung/{stand['id']}").json()
+    assert fertig["status"] == "fehler" and "abgelehnt" in fertig["meldung"]
+    assert fertig["token"]["gesetzt"] is False
+    nochmal = admin.post(f"/api/einrichtung/claude/anmeldung/{stand['id']}/code", json={"code": "gut-code-12345#abc"})
+    assert nochmal.status_code == 409
+
+
+def test_anmeldung_code_format_und_abbruch(admin):
+    antwort = admin.post("/api/einrichtung/claude/anmeldung")
+    anmeldung_id = antwort.json()["id"]
+    assert admin.post(f"/api/einrichtung/claude/anmeldung/{anmeldung_id}/code",
+                      json={"code": "mit leerzeichen 123"}).status_code == 422
+    assert admin.post(f"/api/einrichtung/claude/anmeldung/{anmeldung_id}/code",
+                      json={"code": "noch-kein-link-123"}).status_code == 409
+    assert admin.post(f"/api/einrichtung/claude/anmeldung/{anmeldung_id}/abbrechen").json()["status"] == "abgebrochen"
+
+
+def test_anmeldung_nur_admin(nutzer):
+    assert nutzer.post("/api/einrichtung/claude/anmeldung").status_code == 404
+
+
+def test_anmeldung_fremder_link_wird_abgelehnt(admin, werkzeug_attrappe, claude):
+    from stockmaster.worker import Worker
+
+    claude.modus("boeser_link")
+    antwort = admin.post("/api/einrichtung/claude/anmeldung")
+    w = Worker()
+    w.auftraege_bearbeiten()
+    w.anmeldung_thread.join(timeout=20)
+    stand = admin.get(f"/api/einrichtung/claude/anmeldung/{antwort.json()['id']}").json()
+    assert stand["status"] == "fehler" and "nicht von Anthropic" in stand["meldung"] and stand["link"] is None
+
+
+def test_anmeldung_abbrechen_beendet_prozess(admin, werkzeug_attrappe, claude):
+    w, stand = _anmeldung_starten(admin)
+    admin.post(f"/api/einrichtung/claude/anmeldung/{stand['id']}/abbrechen")
+    w.anmeldung_thread.join(timeout=20)
+    assert not w.anmeldung_thread.is_alive()
+    assert admin.get(f"/api/einrichtung/claude/anmeldung/{stand['id']}").json()["status"] == "abgebrochen"
+
+
+def test_link_und_token_erkennung():
+    from stockmaster import claude_anmeldung as a
+
+    roh = (b"\x1b]8;id=1;https://claude.com/cai/oauth/authorize?code=true&state=s\x1b\\https://claude.com/cai/oa"
+           b"\x1b]8;;\x1b\\")
+    assert a.link_finden(roh) == "https://claude.com/cai/oauth/authorize?code=true&state=s"
+    assert a.token_finden(b"\x1b[1mYour token:\x1b[22m sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123\r\n") == \
+        "sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123"
+    with pytest.raises(a.AnmeldeFehler):
+        a.link_pruefen("https://claude.com.evil.example/oauth")
+    with pytest.raises(ValueError):
+        a.code_pruefen("a b")

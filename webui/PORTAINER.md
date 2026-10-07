@@ -75,8 +75,11 @@ Das Einmalpasswort steht nur in dieser Ausgabe; der Befehl funktioniert genau ei
 
 Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt zum ersten offenen Schritt:
 
-1. **Claude:** Auf dem eigenen Rechner `claude setup-token` ausführen (Claude-Pro-Abo), Token eintragen,
-   Modell und Aufwand für „Trading-Session“ und „Review/Bericht“ wählen, *Verbindung testen*.
+1. **Claude:** *Mit Claude anmelden* → Link öffnen (geht auf jedem Gerät, z. B. am Handy), mit dem Konto
+   des Claude-Abos anmelden, den angezeigten Code einfügen, *Verbinden*. Der Container führt dafür selbst
+   `claude setup-token` aus und speichert das Token verschlüsselt; danach läuft automatisch der
+   Verbindungstest. Alternativ das Token auf einem eigenen Rechner erzeugen und unter „Oder Token manuell
+   eintragen“ einfügen. Dann Modell und Aufwand für „Trading-Session“ und „Review/Bericht“ wählen.
 2. **Kursdaten:** Anbieter wählen (nur yfinance, Finnhub oder Twelve Data), ggf. API-Key eintragen,
    *Verbindung testen*, *Jetzt abrufen*. „Markt & Kurse“ füllt sich.
 3. **News:** Feeds an- oder abschalten, eigene Feeds ergänzen, *Feed testen*.
@@ -152,7 +155,9 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | API-Log: `Anmeldung an der Datenbank abgelehnt` | Container `db` neu starten (gleicht die Passwörter aus dem Volume `geheim` ab, Log `db-abgleich`). |
 | Systemstatus „Hintergrunddienst“ rot | Container `stockmaster-worker-1` läuft nicht oder ist unhealthy; dessen Log ansehen. |
 | „Markt & Kurse“ zeigt „veraltet“ | Keine Quelle lieferte einen aktuellen Kurs; der Grund steht beim Wert. Einrichtung → Kursdaten → *Verbindung testen*. |
-| Claude-Test: „Token ungültig oder abgelaufen“ | `claude setup-token` neu ausführen und eintragen. |
+| Claude-Test: „Token ungültig oder abgelaufen“ | Einrichtung → Claude → *Neu anmelden* (oder Token manuell neu erzeugen und eintragen). |
+| Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
+| Anmeldung: „Claude Code hat keinen Anmeldelink ausgegeben“ | Das Ausgabeformat der CLI hat sich geändert; Token manuell erzeugen und eintragen, Fehler melden. |
 | Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |
 | Browser: 421 oder `ERR_SSL_PROTOCOL_ERROR` | Name bzw. IP ist dem Proxy unbekannt: `SM_HOSTNAME` verwenden oder in `SM_ZUSAETZLICHE_HOSTS` eintragen. |
 | „Zugriff nur aus dem Heimnetz“ | Anfrage nicht aus privatem Adressbereich: Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |

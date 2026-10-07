@@ -125,6 +125,18 @@ die Nur-Anhängen-Regeln über diese lokale Historie. Kein Code-Pfad pusht Spiel
 - **News:** `tools/news.py` ruft die Feeds aus `config/news.json` und der Einrichtung alle 15 Minuten ab,
   dedupliziert und speichert nur Titel, Kurztext und Link in `news/` (nur anhängen).
 
+## Anmeldung mit dem Claude-Abo
+
+Einrichtung → Claude → *Mit Claude anmelden*: Der worker startet `claude setup-token` in einem
+Pseudo-Terminal (eigenes, danach gelöschtes Home-Verzeichnis), liest den Anmeldelink aus und zeigt ihn
+in der UI (nur Links auf Anthropic-Domains). Nach der Anmeldung im Browser zeigt platform.claude.com
+einen Code; die UI gibt ihn über eine 0600-Datei im App-Verzeichnis an den wartenden Prozess weiter
+(sofort gelöscht). Das ausgegebene Token wird direkt verschlüsselt gespeichert; Ausgaben des Befehls
+werden nie geloggt oder gespeichert. Zeitfenster 10 Minuten; der Prozess muss so lange laufen, weil die
+Anmeldung an ihn gebunden ist (PKCE). Der Ablauf liest die interaktive Ausgabe der CLI und ist gegen die
+im Image feste Version geprüft; ändert sie sich, meldet die UI das und das manuelle Eintragen bleibt
+möglich.
+
 ## Claude-Sessions
 
 Der Worker startet Claude Code im Container (Arbeitsverzeichnis Framework, Datenverzeichnis per

@@ -23,6 +23,7 @@ from . import appdaten, auftraege, claude_optionen
 from .auftraege import Admin2FA, admin_2fa
 from .auth import DB, Streng, audit, begrenzen
 from .config import einstellungen
+from .db import jetzt_utc
 
 router = APIRouter(prefix="/api/einrichtung", tags=["einrichtung"], dependencies=[Depends(admin_2fa)])
 
@@ -365,6 +366,95 @@ def _test_ausfuehren(db, admin, request, art: str, parameter: dict, aktion: str)
         daten["meldung"] = ("Der Hintergrunddienst hat den Test noch nicht abgeschlossen. Das Ergebnis erscheint "
                             "im Systemstatus; läuft der Dienst 'worker'?")
     return daten
+
+
+def _anmeldung(auftrag) -> dict:
+    """Stand einer Anmeldung für die UI: nie das Token, nur Phase, Link und Meldung."""
+    ergebnis = json.loads(auftrag.ergebnis) if auftrag and auftrag.ergebnis else {}
+    return {"id": auftrag.id if auftrag else None, "status": auftrag.status if auftrag else "wartet",
+            "phase": ergebnis.get("phase", "starte"), "link": ergebnis.get("link"),
+            "test_ok": ergebnis.get("test_ok"), "meldung": auftrag.meldung if auftrag else None,
+            "token": appdaten.geheimnis_info("claude_token")}
+
+
+def _anmeldung_laden(db, auftrag_id: str):
+    from .modelle import Auftrag
+
+    auftrag = db.get(Auftrag, auftrag_id)
+    if auftrag is None or auftrag.art != "claude_anmeldung":
+        raise HTTPException(404, "Anmeldung nicht gefunden.")
+    return auftrag
+
+
+@router.post("/claude/anmeldung")
+def claude_anmeldung_starten(request: Request, db: DB, admin: Admin2FA) -> dict:
+    """Startet `claude setup-token` im Worker und liefert den Anmeldelink."""
+    from sqlalchemy import select
+
+    from .modelle import Auftrag
+
+    begrenzen(f"anmeldung:{admin.id}", 10, 3600)
+    for offen in db.scalars(select(Auftrag).where(Auftrag.art == "claude_anmeldung",
+                                                  Auftrag.status.in_(auftraege.OFFEN))).all():
+        offen.abbrechen = True  # es gibt immer nur eine laufende Anmeldung
+    auftrag = auftraege.anlegen(db, "claude_anmeldung", {}, erstellt_von=admin.id)
+    audit(db, admin.id, "einrichtung_claude_anmeldung_gestartet", request, ziel=auftrag.id)
+    db.commit()
+    stand = auftraege.warten_bis(auftrag.id, min(30.0, einstellungen().auftrag_warten_sekunden),
+                                 lambda a: bool(a.ergebnis and '"link"' in a.ergebnis))
+    daten = _anmeldung(stand)
+    if daten["status"] in auftraege.OFFEN and not daten["link"]:
+        daten["meldung"] = "Der Hintergrunddienst bereitet die Anmeldung vor …"
+    return daten
+
+
+@router.get("/claude/anmeldung/{auftrag_id}")
+def claude_anmeldung_stand(auftrag_id: str, db: DB) -> dict:
+    return _anmeldung(_anmeldung_laden(db, auftrag_id))
+
+
+class AnmeldeCode(Streng):
+    code: str = Field(min_length=8, max_length=512)
+
+
+@router.post("/claude/anmeldung/{auftrag_id}/code")
+def claude_anmeldung_code(auftrag_id: str, daten: AnmeldeCode, request: Request, db: DB, admin: Admin2FA) -> dict:
+    from . import claude_anmeldung
+
+    begrenzen(f"anmeldecode:{admin.id}", 10, 600)
+    try:
+        code = claude_anmeldung.code_pruefen(daten.code)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    auftrag = _anmeldung_laden(db, auftrag_id)
+    if auftrag.status not in auftraege.OFFEN or _anmeldung(auftrag)["phase"] != "warte_auf_code":
+        raise HTTPException(409, "Diese Anmeldung wartet nicht auf einen Code. Bitte neu starten.")
+    datei = auftraege.anmeldecode_pfad(auftrag_id)
+    datei.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(datei, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(code)
+    audit(db, admin.id, "einrichtung_claude_anmeldung_code", request, ziel=auftrag_id,
+          meta={"text": "Anmeldecode übergeben"})
+    db.commit()
+    stand = auftraege.warten_bis(auftrag_id, einstellungen().auftrag_warten_sekunden, lambda a: False)
+    daten = _anmeldung(stand)
+    if daten["status"] in auftraege.OFFEN:
+        daten["meldung"] = "Der Code wird geprüft …"
+    return daten
+
+
+@router.post("/claude/anmeldung/{auftrag_id}/abbrechen")
+def claude_anmeldung_abbrechen(auftrag_id: str, request: Request, db: DB, admin: Admin2FA) -> dict:
+    auftrag = _anmeldung_laden(db, auftrag_id)
+    if auftrag.status in auftraege.OFFEN:
+        auftrag.abbrechen = True
+        if auftrag.status == "wartet":
+            auftrag.status, auftrag.beendet, auftrag.meldung = "abgebrochen", jetzt_utc(), "Abgebrochen."
+    auftraege.anmeldecode_pfad(auftrag_id).unlink(missing_ok=True)
+    audit(db, admin.id, "einrichtung_claude_anmeldung_abgebrochen", request, ziel=auftrag_id)
+    db.commit()
+    return _anmeldung(auftrag)
 
 
 @router.post("/claude/test")

@@ -70,6 +70,14 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   for (const bereich of ["Claude", "Kursdaten", "News", "Sessions & Zeitplan", "Spielstart", "Sicherung", "Systemstatus"]) {
     await expect(page.getByRole("heading", { name: bereich, exact: true })).toBeVisible();
   }
+  // Anmeldung über den Container: Dialog öffnet sich; ohne Hintergrunddienst wartet er auf den Link.
+  await page.getByRole("button", { name: "Mit Claude anmelden" }).click();
+  await expect(page.getByRole("dialog", { name: "Mit dem Claude-Abo anmelden" })).toBeVisible();
+  await expect(page.getByText(/Anmeldelink wird im Container erzeugt|bereitet die Anmeldung vor/)).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Abbrechen" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await page.getByText("Oder Token manuell eintragen").click();
   const token = "sk-ant-oat01-e2e-geheim-0000000000000000000000abcd";
   await page.getByRole("textbox", { name: "Claude-Token" }).fill(token);
   await page.locator("#claude").getByRole("button", { name: "Speichern", exact: true }).click();
