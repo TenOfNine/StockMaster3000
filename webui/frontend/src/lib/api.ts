@@ -79,6 +79,147 @@ export interface Ueberblick {
   letzte_sessions: JournalEintrag[];
   letzte_entscheidungen: JournalEintrag[];
   gestartet: boolean;
+  einrichtung_offen: Pflichtschritt[];
+  letzter_lauf: Lauf | null;
+  news: NewsMeldung[];
+}
+
+export interface Pflichtschritt {
+  schritt: "kursdaten" | "claude" | "spielstart";
+  titel: string;
+  text: string;
+  link: string;
+}
+
+export type LaufStatus = "wartet" | "laeuft" | "ok" | "fehler" | "abgebrochen" | "limit";
+
+export interface Lauf {
+  id: string;
+  art: "trading" | "review" | "testsession" | string;
+  status: LaufStatus;
+  meldung: string | null;
+  modell: string | null;
+  aufwand: string | null;
+  auftraggeber: string | null;
+  ausloeser: "manuell" | "zeitplan" | string;
+  erstellt: string | null;
+  begonnen: string | null;
+  beendet: string | null;
+  pruefung_ok: boolean | null;
+  ergebnis: Record<string, unknown> | null;
+}
+
+export interface NewsMeldung {
+  id: string;
+  abgerufen: string;
+  zeit: string | null;
+  quelle: string;
+  quelle_name: string;
+  titel: string;
+  kurztext: string;
+  link: string;
+  ticker: string[];
+}
+
+export interface MarktEintrag {
+  ticker: string;
+  name: string | null;
+  boerse: string;
+  waehrung: string;
+  markt_offen: boolean;
+  kurs: number | null;
+  kurs_zeit: string | null;
+  abfrage: string | null;
+  quelle: string | null;
+  veraltet: boolean;
+  grund: string | null;
+  verzoegerung_minuten: number | null;
+  vortag: number | null;
+  veraenderung: number | null;
+}
+
+export interface Markt {
+  zeit: string | null;
+  quelle_konfiguriert: string | null;
+  erfolgreich: number;
+  anzahl: number;
+  eintraege: MarktEintrag[];
+}
+
+export interface GeheimnisInfo {
+  gesetzt: boolean;
+  letzte4: string | null;
+  geaendert: string | null;
+  quelle: string | null;
+  unlesbar?: boolean;
+}
+
+export interface Voreinstellung {
+  modell: string;
+  aufwand: string;
+}
+
+export interface TestErgebnis {
+  ok: boolean;
+  meldung: string;
+  zeit?: string;
+  beispiele?: string[];
+}
+
+export interface Ampel {
+  id: string;
+  titel: string;
+  stufe: "gruen" | "gelb" | "rot";
+  text: string;
+}
+
+export interface ZeitplanTermin {
+  wochentage: number[];
+  uhrzeit: string;
+  art: "trading" | "review";
+}
+
+export interface EigenerFeed {
+  id: string;
+  name: string;
+  url: string;
+  aktiv: boolean;
+  ticker: string[];
+}
+
+export interface EinrichtungDaten {
+  einstellungen: {
+    claude: { voreinstellungen: { trading: Voreinstellung; review: Voreinstellung }; letzter_test: TestErgebnis | null };
+    kursdaten: { anbieter: "keiner" | "finnhub" | "twelvedata"; intervall_offen_minuten: number; intervall_geschlossen_minuten: number; letzter_test: (TestErgebnis & { anbieter?: string }) | null };
+    news: { aktiv: boolean; intervall_minuten: number; deaktiviert: string[]; eigene: EigenerFeed[]; user_agent: string };
+    zeitplan: { automatik: boolean; zeitzone: string; auftraggeber: string; termine: ZeitplanTermin[] };
+  };
+  geheimnisse: Record<"claude_token" | "kurs_key_finnhub" | "kurs_key_twelvedata", GeheimnisInfo>;
+  optionen: {
+    claude: {
+      cli_version: string;
+      modelle: { wert: string; name: string; hinweis?: string }[];
+      aufwand: { wert: string; name: string }[];
+      unvertraeglich: { modell: string; aufwand: string[]; grund: string }[];
+      laufarten: Record<string, { name: string; zweck: string }>;
+      zwecke: Record<string, string>;
+    };
+    kursanbieter: { id: "finnhub" | "twelvedata"; name: string; hinweis?: string; doku?: string }[];
+    news_feeds: { id: string; name: string; url: string; je_ticker: boolean; aktiv: boolean; eigen: boolean; ticker: string[] }[];
+    auftraggeber: string[];
+  };
+  migration: { aus_umgebung: string[]; ueberfluessige_variablen: string[] };
+  pflichtschritte: Pflichtschritt[];
+  systemstatus: Ampel[];
+  spielstart: {
+    punkte: { id: string; pflicht: boolean; ok: boolean; text: string }[];
+    bereit: boolean;
+    gestartet: boolean;
+    spiel: { startdatum?: string; freigabe_ap12?: string; initialisiert?: string };
+    vorschlag_startdatum: string;
+    auftraggeber: string[];
+  };
+  pfade: { daten: string; app: string };
 }
 
 export interface NavZeile {
@@ -312,3 +453,27 @@ export async function api<T>(pfad: string, optionen: { methode?: string; daten?:
 }
 
 export const holen = <T,>(pfad: string) => () => api<T>(pfad);
+
+/** Rohdaten (z. B. eine Sicherung) senden bzw. eine Datei herunterladen; CSRF wie bei api(). */
+export async function rohAnfrage(pfad: string, optionen: { methode?: string; daten?: unknown; koerper?: Blob; kopf?: Record<string, string> } = {}): Promise<Response> {
+  const kopf: Record<string, string> = { "X-CSRF-Token": csrfToken, ...(optionen.kopf ?? {}) };
+  if (optionen.daten !== undefined) kopf["Content-Type"] = "application/json";
+  if (optionen.koerper) kopf["Content-Type"] = "application/gzip";
+  const antwort = await fetch(pfad, {
+    method: optionen.methode ?? "POST",
+    headers: kopf,
+    body: optionen.koerper ?? (optionen.daten === undefined ? undefined : JSON.stringify(optionen.daten)),
+    credentials: "same-origin",
+  });
+  if (!antwort.ok) {
+    let nachricht = `Fehler ${antwort.status}`;
+    try {
+      const daten = await antwort.json();
+      if (typeof daten?.detail === "string") nachricht = daten.detail;
+    } catch {
+      /* keine JSON-Antwort */
+    }
+    throw new ApiFehler(antwort.status, nachricht);
+  }
+  return antwort;
+}

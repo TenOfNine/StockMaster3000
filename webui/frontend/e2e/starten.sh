@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Startet das Backend für die E2E-Tests mit einem frisch erzeugten Demo-Repository.
+# Startet das Backend für die E2E-Tests mit einem frisch erzeugten Demo-Datenverzeichnis.
 set -euo pipefail
 WURZEL="$(cd "$(dirname "$0")/../../.." && pwd)"
 ARBEIT="${E2E_VERZEICHNIS:-$(mktemp -d)}"
-python3 "$WURZEL/webui/demo/demo_daten.py" --ziel "$ARBEIT/repo" --tage 80 --ende 2026-09-30 --seed 5 >/dev/null
-export SM_REPO_PFAD="$ARBEIT/repo"
+python3 "$WURZEL/webui/demo/demo_daten.py" --ziel "$ARBEIT/daten" --tage 80 --ende 2026-09-30 --seed 5 >/dev/null
+export STOCKMASTER_DATA_DIR="$ARBEIT/daten"
+export STOCKMASTER_APP_DIR="$ARBEIT/app"
+export STOCKMASTER_FRAMEWORK_DIR="$WURZEL"
+export SM_AUFTRAG_WARTEN_SEKUNDEN=1
 export SM_DATENBANK_URL="sqlite:///$ARBEIT/e2e.db"
 export SM_COOKIE_SICHER=false
 export SM_SCHLUESSEL="$(python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())')"

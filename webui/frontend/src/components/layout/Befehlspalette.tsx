@@ -19,7 +19,9 @@ const SEITEN: { zu: string; text: string; stichworte?: string }[] = [
   { zu: "/analyse/kurse", text: "Markt & Kurse", stichworte: "chart historie" },
   { zu: "/analyse/rechner", text: "Zertifikatsrechner", stichworte: "knock-out faktor hebel" },
   { zu: "/regelwerk", text: "Regelwerk", stichworte: "regeln limits kosten universum" },
-  { zu: "/einrichtung", text: "Einrichtung & Aufbau", stichworte: "status arbeitspakete auslegungsfragen" },
+  { zu: "/einrichtung", text: "Einrichtung", stichworte: "claude token modell kursdaten api-key news feeds zeitplan spielstart sicherung export systemstatus" },
+  { zu: "/roadmap", text: "Roadmap & Status", stichworte: "status arbeitspakete auslegungsfragen" },
+  { zu: "/laeufe", text: "Claude-Läufe", stichworte: "session starten log claude" },
   { zu: "/pruefung", text: "Prüfung & Audit", stichworte: "pruefe git historie" },
   { zu: "/konto", text: "Konto & Sicherheit", stichworte: "passwort zwei-faktor" },
 ];

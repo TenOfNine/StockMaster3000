@@ -158,6 +158,26 @@ def vorbereiten(ziel: Path) -> None:
         encoding="utf-8")
 
 
+def demo_news(g, jetzt: datetime, start: date) -> None:
+    """Einige erfundene, klar als Demo gekennzeichnete Meldungen im Format von tools/news.py."""
+    import json as _json
+
+    meldungen = [
+        ("^GDAXI", "Demo: DAX schließt fester", "Simulierte Meldung für die Vorführung der Web-UI."),
+        ("SAP.DE", "Demo: Softwarewerte gefragt", "Simulierte Meldung, kein echter Inhalt."),
+        ("EURUSD=X", "Demo: Euro stabil zum Dollar", "Simulierte Meldung zur Geldpolitik."),
+        ("GC=F", "Demo: Goldpreis seitwärts", "Simulierte Rohstoffmeldung."),
+        ("NVDA", "Demo: Chipwerte im Fokus", "Simulierte Meldung aus den USA."),
+    ]
+    zeilen = []
+    for i, (ticker, titel, text) in enumerate(meldungen):
+        zeit = (jetzt - timedelta(hours=3 * i + 1)).isoformat()
+        zeilen.append(_json.dumps({"id": f"N-demo{i:08d}", "abgerufen": jetzt.isoformat(), "zeit": zeit, "quelle": "demo",
+                                   "quelle_name": "Demo-Feed", "titel": titel, "kurztext": text,
+                                   "link": f"https://example.org/demo/news-{i}", "ticker": [ticker]}, ensure_ascii=False))
+    g.text_anhaengen(g.pfad("news", f"{jetzt:%Y-%m}.jsonl"), "\n".join(zeilen) + "\n")
+
+
 def strategie_text(profil: str) -> str:
     texte = {
         "defensiv": ("Kapitalerhalt mit leichter Mehrrendite gegen 30/70", "Breite ETFs und Qualitätsaktien, "
@@ -347,6 +367,12 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", "session: Abschluss Demo (Nachbuchung)")
     still(session.main, ["ende"])
+    # Marktübersicht und News wie vom Hintergrunddienst (Werte ohne simulierte Kurse erscheinen "veraltet").
+    uhr.stellen(ende + timedelta(days=1), "10:00")
+    still(kurse.markt)
+    demo_news(g, uhr(), start)
+    git(ziel, "add", "-A")
+    git(ziel, "commit", "-q", "-m", "daten: Demo-Kurse und Demo-News")
     for name in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"):
         os.environ.pop(name, None)
     return ziel

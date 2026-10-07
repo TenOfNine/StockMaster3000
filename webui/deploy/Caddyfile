@@ -20,7 +20,13 @@
 {$SM_HOSTNAME:stockmaster.local} localhost {$SM_HOSTS_ZUSATZ:} {
 	tls internal
 
-	request_body {
+	# Anfragen sind klein; nur das Hochladen einer Sicherung (Wiederherstellung, nur Admin) darf groß sein.
+	@wiederherstellung path /api/sicherung/wiederherstellen
+	request_body @wiederherstellung {
+		max_size 1024MB
+	}
+	@normal not path /api/sicherung/wiederherstellen
+	request_body @normal {
 		max_size 64KB
 	}
 	encode zstd gzip
