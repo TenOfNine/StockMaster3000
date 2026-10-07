@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Bot, CalendarClock, CircleStop, Info, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Geschuetzt } from "@/components/Fehlergrenze";
 import { Markdown } from "@/components/Markdown";
 import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
 import { api, ApiFehler, type EinrichtungDaten, type Lauf, type LaufPlan, type LaufStatus } from "@/lib/api";
@@ -222,7 +223,9 @@ function PlanLeiste({ admin }: { admin: boolean }) {
   });
   const p = plan.data;
   if (!p) return <Skelett className="mb-4 h-16 rounded-2xl" />;
-  const naechster = p.naechste[0];
+  // Die Antwort kann von einer anderen Version stammen: fehlende Listen gelten als leer.
+  const naechster = p.naechste?.[0];
+  const zuletzt = p.letzte?.[0];
   return (
     <Karte className="mb-4">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
@@ -239,7 +242,7 @@ function PlanLeiste({ admin }: { admin: boolean }) {
                   ? `Nächster Lauf: ${ARTKURZ[naechster.art] ?? naechster.art} am ${zeit(naechster.zeit)} (${p.zeitzone}) für ${p.auftraggeber}.`
                   : "Kein Termin in den nächsten zwei Wochen."
                 : "Es starten nur manuelle Läufe. Mit der Automatik laufen die Termine aus der Einrichtung von selbst, nur an Handelstagen."}
-              {p.automatik && p.letzte[0] && ` Zuletzt: ${p.letzte[0].termin.replace("T", " ")} – ${p.letzte[0].ergebnis}.`}
+              {p.automatik && zuletzt && ` Zuletzt: ${String(zuletzt.termin).replace("T", " ")} – ${zuletzt.ergebnis}.`}
             </p>
           </div>
         </div>
@@ -270,7 +273,10 @@ export function Laeufe() {
   const client = useQueryClient();
   const laeufe = useQuery({
     queryKey: ["laeufe"],
-    queryFn: () => api<Lauf[]>("/api/laeufe"),
+    queryFn: async () => {
+      const antwort = await api<Lauf[]>("/api/laeufe");
+      return Array.isArray(antwort) ? antwort : [];
+    },
     refetchInterval: (q) => (q.state.data?.some((l) => l.status === "laeuft" || l.status === "wartet") ? 3000 : 20_000),
   });
   const [auswahl, setAuswahl] = useState<string | null>(null);
@@ -306,8 +312,14 @@ export function Laeufe() {
           ) : undefined
         }
       />
-      {admin && <StartDialog offen={startOffen} setOffen={setStartOffen} />}
-      <PlanLeiste admin={admin} />
+      {admin && (
+        <Geschuetzt name="Der Startdialog">
+          <StartDialog offen={startOffen} setOffen={setStartOffen} />
+        </Geschuetzt>
+      )}
+      <Geschuetzt name="Der Zeitplan">
+        <PlanLeiste admin={admin} />
+      </Geschuetzt>
       {!laeufe.data ? (
         <Skelett className="h-96 rounded-2xl" />
       ) : !laeufe.data.length ? (
@@ -321,6 +333,7 @@ export function Laeufe() {
         </Karte>
       ) : (
         <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <Geschuetzt name="Die Liste der Läufe">
           <Karte className="overflow-hidden xl:self-start">
             <ul className="divide-y divide-rand">
               {laeufe.data.map((l) => (
@@ -339,7 +352,9 @@ export function Laeufe() {
               ))}
             </ul>
           </Karte>
+          </Geschuetzt>
           {gewaehlt && (
+            <Geschuetzt key={gewaehlt.id} name="Die Lauf-Ansicht">
             <Karte>
               <KarteKopf
                 titel={ARTNAMEN[gewaehlt.art] ?? gewaehlt.art}
@@ -378,9 +393,12 @@ export function Laeufe() {
                     </div>
                   )
                 )}
-                <Log lauf={gewaehlt} />
+                <Geschuetzt name="Das Log">
+                  <Log lauf={gewaehlt} />
+                </Geschuetzt>
               </div>
             </Karte>
+            </Geschuetzt>
           )}
         </div>
       )}

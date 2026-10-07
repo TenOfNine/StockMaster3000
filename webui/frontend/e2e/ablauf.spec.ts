@@ -16,6 +16,19 @@ function totp(geheimnis: string): string {
   return code.toString().padStart(6, "0");
 }
 
+let letzterCode = "";
+
+/** Ein Zwei-Faktor-Code gilt nur einmal: Folgt ein Test im selben 30-Sekunden-Fenster, auf das nächste warten. */
+async function frischerCode(page: Page): Promise<string> {
+  let code = totp("JBSWY3DPEHPK3PXP");
+  if (code === letzterCode) {
+    await page.waitForTimeout(30_500 - (Date.now() % 30_000));
+    code = totp("JBSWY3DPEHPK3PXP");
+  }
+  letzterCode = code;
+  return code;
+}
+
 async function anmelden(page: Page, email: string, passwort: string) {
   await page.goto("/");
   await page.getByLabel("E-Mail").fill(email);
@@ -62,7 +75,7 @@ test("Benutzer sieht Cockpit, Portfolio, Trade-Akte und Prüfung", async ({ page
 
 test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets bleiben verborgen", async ({ page }) => {
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(totp("JBSWY3DPEHPK3PXP"));
+  await page.getByLabel("Code").fill(await frischerCode(page));
   await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Einrichtung noch nicht abgeschlossen")).toBeVisible();
   await page.getByRole("link", { name: /Claude verbinden/ }).last().click();
@@ -90,7 +103,7 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
 
 test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({ page, browser }) => {
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(totp("JBSWY3DPEHPK3PXP"));
+  await page.getByLabel("Code").fill(await frischerCode(page));
   await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Wertentwicklung")).toBeVisible();
 
@@ -115,19 +128,57 @@ test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({
   await kontext.close();
 });
 
-test("Lauf-Seite zeigt fertigen Lauf, Zeitplan und Startdialog ohne Absturz", async ({ page }) => {
+test("Lauf-Seite zeigt Läufe und Zeitplan und verträgt jede Form von Daten", async ({ page }) => {
   const fehler: string[] = [];
   page.on("pageerror", (e) => fehler.push(e.message));
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(totp("JBSWY3DPEHPK3PXP"));
+  await page.getByLabel("Code").fill(await frischerCode(page));
   await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Wertentwicklung")).toBeVisible();
-  await page.goto("/laeufe");
+  // Wie im Alltag: erst Einrichtung (füllt den Zwischenspeicher), dann per Navigation zu den Läufen.
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Claude-Läufe" }).click();
+  await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+  await page.goto("/einrichtung");
+  await expect(page.getByRole("heading", { name: "Einrichtung", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Claude-Läufe" }).click();
   await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
   await expect(page.getByText("Automatik an")).toBeVisible();
   await expect(page.getByText(/Nächster Lauf/)).toBeVisible();
   await page.getByRole("button", { name: /Trading-Session.*fertig/ }).click();
-  await expect(page.getByText("Ich habe nicht gehandelt")).toBeVisible();
+  await expect(page.getByText("Ich habe nicht gehandelt").first()).toBeVisible();
+  await expect(page.getByText("Prüfung: Prüfung bestanden")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+
+  // Jede Form von Lauf-Daten und Zeitplan-Antworten (derselbe Login, damit die Anmeldebegrenzung nicht greift).
+  const basis = { id: "x", art: "trading", status: "ok", meldung: null, modell: "sonnet", aufwand: "medium", auftraggeber: "auftraggeber-a", ausloeser: "manuell",
+    erstellt: "2026-10-07T16:44:00+00:00", begonnen: "2026-10-07T16:44:05+00:00", beendet: "2026-10-07T16:45:00+00:00", pruefung_ok: true, abbrechen: false, ergebnis: null, parameter: null };
+  const varianten = [
+    { ...basis, ergebnis: { result: "**ok**", num_turns: 3, duration_ms: 1000, subtype: "success", rueckgabe: 0 } },
+    { ...basis, ergebnis: { result: null, rueckgabe: 0 }, meldung: "text" },
+    { ...basis, status: "fehler", meldung: "Fehler", pruefung_ok: null, begonnen: null, beendet: null, aufwand: null, modell: null, auftraggeber: null },
+    { ...basis, status: "limit", ergebnis: { result: 5 } },
+    { ...basis, status: "wartet", erstellt: "kaputt" },
+    { ...basis, status: "abgebrochen", art: "unbekannt" },
+    { ...basis, status: "laeuft", ausloeser: "zeitplan" },
+  ];
+  for (const [i, v] of varianten.entries()) {
+    await page.route("**/api/laeufe?*", (r) => r.fulfill({ json: [{ ...v, id: `x${i}` }] }));
+    await page.route("**/api/laeufe", (r) => (r.request().method() === "GET" ? r.fulfill({ json: [{ ...v, id: `x${i}` }] }) : r.continue()));
+    await page.goto("/laeufe");
+    await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+    await page.waitForTimeout(600);
+    expect(await page.getByText(/konnte nicht angezeigt werden/).count(), `Variante ${i}: ${fehler.join("|")}`).toBe(0);
+    await page.unrouteAll();
+  }
+  // Auch eine unvollständige oder fremde Antwort des Zeitplans darf die Seite nicht beeinträchtigen.
+  const plan = { automatik: true, zeitzone: "Europe/Berlin", auftraggeber: "auftraggeber-a", naechste: [{ zeit: "kaputt", art: "x" }], token_gesetzt: true, letzte: [{ termin: 5, ergebnis: null }] };
+  for (const [i, antwort] of [plan, { ...plan, naechste: undefined, letzte: undefined }, { detail: "fremd" }].entries()) {
+    await page.route("**/api/laeufe/plan", (r) => r.fulfill({ json: antwort }));
+    await page.goto("/laeufe");
+    await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+    await page.waitForTimeout(600);
+    expect(await page.getByText(/konnte nicht angezeigt werden/).allInnerTexts(), `Plan ${i}`).toEqual([]);
+    await page.unrouteAll();
+  }
   expect(fehler).toEqual([]);
 });
