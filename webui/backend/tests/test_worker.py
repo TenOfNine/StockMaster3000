@@ -382,3 +382,85 @@ def test_link_und_token_erkennung():
         a.link_pruefen("https://claude.com.evil.example/oauth")
     with pytest.raises(ValueError):
         a.code_pruefen("a b")
+
+
+# --------------------------------------------------------------------------
+# Trading-Läufe brauchen Startdatum und ausformulierte Anlagerichtlinien
+
+
+def _spiel(demo_repo, **felder):
+    import json as _json
+
+    datei = demo_repo / "spiel.json"
+    alt = _json.loads(datei.read_text())
+    datei.write_text(_json.dumps({**alt, **felder}))
+    return alt
+
+
+def test_trading_ohne_richtlinien_abgelehnt(admin, demo_repo):
+    from stockmaster.spiel import lesen
+
+    _admin_token(admin)
+    vorlage = (demo_repo / "strategie" / "defensiv.md")
+    inhalt = vorlage.read_text()
+    vorlage.write_text("# Anlagerichtlinie Defensiv\n\nStand: Vorlage aus tools/init.py (2026-10-06).\n")
+    try:
+        lesen.zuruecksetzen()
+        antwort = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
+        assert antwort.status_code == 409 and "Anlagerichtlinien fehlen: defensiv" in antwort.json()["detail"]
+        schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
+        assert "richtlinien" in schritte
+        # Die Richtlinien-Session selbst ist erlaubt.
+        ok = admin.post("/api/laeufe", json={"art": "richtlinien", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
+        assert ok.status_code == 201, ok.text
+        status = admin.get("/api/spiel/status").json()
+        ap12 = next(p for p in status["arbeitspakete"] if p["kennung"] == "AP12")
+        assert ap12["instanz"] and not ap12["erledigt"] and "Anlagerichtlinien offen: defensiv" in ap12["detail"]
+    finally:
+        vorlage.write_text(inhalt)
+        lesen.zuruecksetzen()
+
+
+def test_trading_vor_startdatum_abgelehnt(admin, demo_repo):
+    from stockmaster.spiel import lesen
+
+    _admin_token(admin)
+    alt = _spiel(demo_repo, startdatum="2099-01-01")
+    try:
+        lesen.zuruecksetzen()
+        antwort = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
+        assert antwort.status_code == 409 and "beginnt erst am 2099-01-01" in antwort.json()["detail"]
+        # Testsession und Richtlinien sind vor dem Start möglich.
+        assert admin.post("/api/laeufe", json={"art": "testsession", "auftraggeber": "auftraggeber-a",
+                                                "bestaetigt": True}).status_code == 201
+    finally:
+        (demo_repo / "spiel.json").write_text(__import__("json").dumps(alt))
+        lesen.zuruecksetzen()
+
+
+def test_ap12_wird_je_instanz_abgeleitet(admin):
+    ap12 = next(p for p in admin.get("/api/spiel/status").json()["arbeitspakete"] if p["kennung"] == "AP12")
+    assert ap12["instanz"] is True and ap12["erledigt"] is True and "gestartet" in ap12["detail"]
+
+
+# --------------------------------------------------------------------------
+# Ergebnis nicht abschneiden, Berechtigungen für git -C
+
+
+def test_ergebnis_bleibt_vollstaendig(admin, werkzeug_attrappe, claude):
+    from stockmaster.claude_lauf import ereignis_text
+
+    lang = "## Vor dem Spielstart zu klären\n" + "\n".join(f"{n}. Punkt mit Text " * 3 for n in range(1, 400))
+    zeilen = ereignis_text({"type": "result", "subtype": "success", "num_turns": 3, "duration_ms": 1200, "result": lang})
+    assert len(lang) > 2000 and "\n".join(zeilen).endswith(lang.splitlines()[-1])
+    assert zeilen[1] == "## Vor dem Spielstart zu klären"  # Zeilenumbrüche bleiben (Markdown)
+
+
+def test_erlaubnisliste_fuer_git_mit_c():
+    from stockmaster import claude_lauf
+
+    erlaubt = claude_lauf.ERLAUBTE_WERKZEUGE
+    assert "Bash(git -C * log*)" in erlaubt and "Bash(git -C * status*)" in erlaubt
+    verboten = json.loads(claude_lauf.einstellungen_json())["permissions"]["deny"]
+    assert {"Bash(git * push*)", "Bash(git * remote*)", "Bash(git * config*)", "Bash(git * reset*)"} <= set(verboten)
+    assert not any("push" in e or "reset" in e or "config" in e for e in erlaubt)

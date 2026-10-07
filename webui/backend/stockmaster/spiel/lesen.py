@@ -89,7 +89,7 @@ def werkzeuge() -> dict[str, ModuleType]:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
                        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
-                                    "datenverzeichnis", "news")}
+                                    "datenverzeichnis", "news", "richtlinien")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -99,7 +99,7 @@ def zuruecksetzen() -> None:
     """Für Tests: Werkzeuge neu laden (anderes Repository)."""
     for name in list(sys.modules):
         if name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine", "buchen", "pruefe", "init",
-                    "session", "pfade", "news", "datenverzeichnis", "migriere"):
+                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien"):
             del sys.modules[name]
     _module.clear()
 
@@ -206,6 +206,20 @@ def status() -> dict:
                 fragen.append(eintrag)
     # Startdatum und letzte Session sind Spielstand (Datenverzeichnis), nicht Framework.
     spiel = werkzeuge()["gemeinsam"].spiel_lesen()
+    # AP12 (Testsession, Anlagerichtlinien, Freigabe, Start) gehört zur Instanz: der Stand folgt dem Datenverzeichnis.
+    offen = werkzeuge()["gemeinsam"].richtlinien_offen()
+    for paket in pakete:
+        if paket["kennung"] == "AP12":
+            paket["instanz"] = True
+            paket["erledigt"] = bool(spiel.get("startdatum")) and not offen
+            paket["offen_markiert"] = not paket["erledigt"]
+            teile = []
+            if spiel.get("startdatum"):
+                teile.append(f"gestartet {spiel['startdatum']}, Freigabe {spiel.get('freigabe_ap12') or 'unbekannt'}")
+            else:
+                teile.append("Spiel noch nicht gestartet")
+            teile.append("Anlagerichtlinien ausformuliert" if not offen else f"Anlagerichtlinien offen: {', '.join(offen)}")
+            paket["detail"] = "; ".join(teile)
     kopf["startdatum"] = spiel.get("startdatum") or "noch nicht gestartet"
     sessions = werkzeuge()["gemeinsam"].session_eintraege()
     kopf["letzte_session"] = (f"{sessions[-1]['id']} ({sessions[-1]['auftraggeber']})" if sessions else "keine")

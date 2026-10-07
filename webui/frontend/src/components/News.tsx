@@ -21,7 +21,7 @@ export function NewsListe({ meldungen, kompakt, leerText }: { meldungen: NewsMel
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-text-3">
               <span title={zeit(m.zeit ?? m.abgerufen)}>{relativ(m.zeit ?? m.abgerufen)}</span>
               <span>·</span>
-              <span>{m.quelle_name}</span>
+              <span title={m.herausgeber_url ?? undefined}>{m.herausgeber ?? m.quelle_name}</span>
               {m.ticker.slice(0, 3).map((t) => (
                 <Abzeichen key={t} className="font-mono">
                   {t}

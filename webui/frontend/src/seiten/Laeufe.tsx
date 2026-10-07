@@ -3,13 +3,19 @@ import { Link } from "@tanstack/react-router";
 import { Bot, CircleStop, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Markdown } from "@/components/Markdown";
 import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
 import { api, ApiFehler, type EinrichtungDaten, type Lauf, type LaufStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { relativ, zeit } from "@/lib/format";
 
-const ARTNAMEN: Record<string, string> = { trading: "Trading-Session", review: "Reviews und Bericht", testsession: "Testsession (AP12)" };
+const ARTNAMEN: Record<string, string> = {
+  trading: "Trading-Session",
+  review: "Reviews und Bericht",
+  testsession: "Testsession (AP12)",
+  richtlinien: "Anlagerichtlinien (AP12)",
+};
 
 export function LaufStatusAbzeichen({ status }: { status: LaufStatus }) {
   const text = { wartet: "wartet", laeuft: "läuft", ok: "fertig", fehler: "Fehler", abgebrochen: "abgebrochen", limit: "Kontingent erschöpft" }[status];
@@ -282,10 +288,17 @@ export function Laeufe() {
                 }
               />
               <div className="space-y-3 px-5 pb-5">
-                {gewaehlt.meldung && (
-                  <div className={cn("rounded-lg border px-3 py-2 text-[13px]", gewaehlt.status === "ok" ? "border-rand bg-flaeche-2 text-text" : "border-warnung/30 bg-warnung-flaeche text-text")}>
-                    {gewaehlt.meldung}
-                  </div>
+                {gewaehlt.status === "ok" && typeof gewaehlt.ergebnis?.result === "string" && gewaehlt.ergebnis.result ? (
+                  <section aria-label="Ergebnis des Laufs" className="rounded-xl border border-rand bg-flaeche-2/60 p-4">
+                    <h4 className="mb-2 text-[12px] font-semibold tracking-wide text-text-3 uppercase">Ergebnis</h4>
+                    <Markdown text={gewaehlt.ergebnis.result} />
+                  </section>
+                ) : (
+                  gewaehlt.meldung && (
+                    <div className={cn("rounded-lg border px-3 py-2 text-[13px]", gewaehlt.status === "ok" ? "border-rand bg-flaeche-2 text-text" : "border-warnung/30 bg-warnung-flaeche text-text")}>
+                      {gewaehlt.meldung}
+                    </div>
+                  )
                 )}
                 <Log lauf={gewaehlt} />
               </div>
