@@ -32,7 +32,7 @@ export function laufText(l: Lauf): string {
   return `${ARTNAMEN[l.art] ?? l.art} · ${l.modell ?? "?"}${l.aufwand ? ` / ${l.aufwand}` : ""} · ${l.auftraggeber ?? ""}`;
 }
 
-function Log({ lauf }: { lauf: Lauf }) {
+export function Log({ lauf }: { lauf: Lauf }) {
   const [text, setText] = useState("");
   const ab = useRef(0);
   const [fertig, setFertig] = useState(false);
@@ -61,7 +61,12 @@ function Log({ lauf }: { lauf: Lauf }) {
       clearTimeout(zeitgeber);
     };
   }, [lauf.id]);
-  useEffect(() => ende.current?.scrollIntoView({ block: "end" }), [text]);
+  // Block statt Ausdruck: Ein Effekt darf nur eine Aufräumfunktion zurückgeben. Neuere Browser (Chrome 153)
+  // liefern von scrollIntoView() ein Promise; als Rückgabewert würde React es beim Aufräumen aufrufen
+  // und mit "… is not a function" die ganze Seite abbrechen.
+  useEffect(() => {
+    ende.current?.scrollIntoView({ block: "end" });
+  }, [text]);
   return (
     <div className="max-h-[560px] overflow-auto rounded-xl border border-rand bg-[var(--bg)] p-4" aria-live="polite" aria-label="Session-Log">
       {text ? (

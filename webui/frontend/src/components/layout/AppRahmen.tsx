@@ -162,7 +162,9 @@ export function AppRahmen() {
   const [paletteOffen, setPaletteOffen] = useState(false);
   const pfad = useRouterState({ select: (s) => s.location.pathname });
 
-  useEffect(() => setMenueOffen(false), [pfad]);
+  useEffect(() => {
+    setMenueOffen(false);
+  }, [pfad]);
   useEffect(() => {
     const taste = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
