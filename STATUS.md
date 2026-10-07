@@ -315,6 +315,14 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
       Rohtext) und verlinken nur noch Trade-Akten und externe Adressen, und die Fehlerseite des Routers
       nennt die technische Meldung und bietet „Seite neu laden“. Ein E2E-Test öffnet die Seite mit
       laufendem und fertigem Lauf, Zeitplan und Session-Sperre.
+35. Seite „Claude-Läufe“, Fehler „l is not a function“ (2026-10-07, zweiter Absturzbericht): Auch mit einer
+    vollständigen Nachstellung (Hintergrunddienst, Claude-Attrappe, Start über den Dialog, fertiger Lauf,
+    Navigation aus Einrichtung und Cockpit, Reload, dunkles Design) ließ sich der Fehler nicht auslösen; die
+    Ursache ist deshalb nicht bestätigt. Gefunden und behoben wurde ein verwandter Fehler (unvollständige
+    Zeitplan-Antwort führte zu einem Absturz der ganzen Seite). Zusätzlich ist jeder Bereich der Seite
+    (Startdialog, Zeitplan, Liste, Lauf-Ansicht, Log) einzeln abgesichert: Ein Darstellungsfehler zeigt nur dort
+    einen Hinweis mit technischer Meldung und Einzelheiten, der Rest der Seite bleibt benutzbar. Die allgemeine
+    Fehlerseite hat ebenfalls ein Feld „Einzelheiten“. Bei erneutem Auftreten bitte diese Angaben melden.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

@@ -59,13 +59,17 @@ print("J-20261007-08")
 [r]: https://example.org/ref "Titel"
 """
     jetzt = datetime.now(UTC)
-    db.add(Auftrag(art="trading", status="ok", modell="sonnet", aufwand="medium", auftraggeber="auftraggeber-a",
+    db.add(Auftrag(id="lauf-e2e-1", art="trading", status="ok", modell="sonnet", aufwand="medium", auftraggeber="auftraggeber-a",
                    ausloeser="manuell", erstellt=jetzt, begonnen=jetzt, beendet=jetzt, pruefung_ok=True,
                    ergebnis=json.dumps({"result": ergebnis, "is_error": False})))
     db.add(Auftrag(art="trading", status="laeuft", modell="sonnet", aufwand="medium", auftraggeber="auftraggeber-a",
                    ausloeser="zeitplan", erstellt=datetime.now(UTC), begonnen=datetime.now(UTC)))
     db.commit()
-from stockmaster import appdaten
+from stockmaster import appdaten, auftraege
+auftraege.log_pfad("lauf-e2e-1").parent.mkdir(parents=True, exist_ok=True)
+auftraege.log_pfad("lauf-e2e-1").write_text("Lauf lauf-e2e-1: trading, Modell sonnet, Aufwand medium, Auftraggeber auftraggeber-a\n"
+    "→ Bash: python tools/session.py status\nClaude: Ich prüfe zuerst den Stand.\n  ✗ Fehler: Beispiel\n"
+    "Claude: **Ich habe nicht gehandelt.**\nNachlauf: Session-Sperre freigegeben.\nPrüfung: Prüfung bestanden (3 Portfolios, 0 Warnungen).\n", encoding="utf-8")
 import os, pathlib
 _sperre = pathlib.Path(os.environ["STOCKMASTER_DATA_DIR"]) / "session.lock"
 _sperre.write_text(json.dumps({"person": "auftraggeber-a", "start": datetime.now().astimezone().isoformat(timespec="seconds"), "art": "trading"}))

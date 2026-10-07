@@ -57,7 +57,11 @@ function Fehlerseite({ error }: ErrorComponentProps) {
         titel="Diese Seite konnte nicht angezeigt werden"
         text={`Technische Meldung: ${(error as Error | undefined)?.message || "unbekannt"}`}
         aktion={
-          <div className="flex items-center gap-4 text-[13px] font-medium">
+          <div className="flex flex-col items-center gap-2 text-[13px] font-medium">
+            <details className="max-w-xl text-[11px] font-normal text-text-3">
+              <summary className="cursor-pointer">Einzelheiten</summary>
+              <pre className="mt-1 max-h-40 overflow-auto text-left font-mono whitespace-pre-wrap">{String((error as Error | undefined)?.stack ?? "").split("\n").slice(0, 8).join("\n")}</pre>
+            </details>
             <button type="button" onClick={() => window.location.reload()} className="text-akzent hover:underline">
               Seite neu laden
             </button>
