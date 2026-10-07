@@ -82,14 +82,28 @@ def test_session_ende_warnt_ohne_s_eintrag(projekt, uhr, capsys):
 
 def test_faellige_reviews(projekt):
     assert termine.faellige_reviews(date(2026, 10, 20)) == []  # nicht initialisiert
-    portfolio(startdatum="2026-09-28")  # Montag KW 40
-    faellig = termine.faellige_reviews(date(2026, 10, 14))  # Mittwoch KW 42
-    assert [f["zeitraum"] for f in faellig] == ["2026-KW40", "2026-KW41", "2026-09", "2026-Q3"]
-    assert faellig[0]["datei"] == "reviews/2026-KW40_woche.md"
-    for name in ("2026-KW40_woche.md", "2026-KW41_woche.md", "2026-09_monat.md", "2026-Q3_quartal.md"):
-        (projekt / "reviews" / name).write_text("# Review\n")
+    portfolio(startdatum="2026-09-28")  # Starttag: Reviews zählen ab hier in Spieltagen, nicht nach Kalender
+    assert termine.faellige_reviews(date(2026, 10, 4)) == []  # erster Zeitraum endet am 2026-10-04 (noch nicht vorbei)
+    faellig = termine.faellige_reviews(date(2026, 10, 14))
+    assert [(f["art"], f["datei"]) for f in faellig] == [("woche", "reviews/2026-10-04_woche.md"),
+                                                         ("woche", "reviews/2026-10-11_woche.md")]
+    assert faellig[0]["zeitraum"] == "2026-09-28 bis 2026-10-04"
+    (projekt / "reviews" / "2026-10-04_woche.md").write_text("# Review\n")
+    (projekt / "reviews" / "2026-10-11_woche.md").write_text("# Review\n")
     assert termine.faellige_reviews(date(2026, 10, 14)) == []
-    assert termine.faellige_reviews(date(2026, 10, 19))[0]["zeitraum"] == "2026-KW42"
+    assert termine.faellige_reviews(date(2026, 10, 19))[0]["datei"] == "reviews/2026-10-18_woche.md"
+    # Monat nach 28 Tagen, Quartal nach 91 Tagen, unabhängig von Kalendermonaten.
+    arten = {(f["art"], f["datei"]) for f in termine.faellige_reviews(date(2026, 10, 26))}
+    assert ("monat", "reviews/2026-10-25_monat.md") in arten
+    assert not any(a == "quartal" for a, _ in arten)
+    assert ("quartal", "reviews/2026-12-27_quartal.md") in {(f["art"], f["datei"]) for f in
+                                                          termine.faellige_reviews(date(2026, 12, 28))}
+
+
+def test_review_zeitraeume_beginnen_am_starttag_mitten_in_der_woche(projekt):
+    portfolio(startdatum="2026-10-14")  # Mittwoch: keine halbe Kalenderwoche, erster Zeitraum hat 7 volle Tage
+    assert termine.faellige_reviews(date(2026, 10, 20)) == []
+    assert [f["datei"] for f in termine.faellige_reviews(date(2026, 10, 21))] == ["reviews/2026-10-20_woche.md"]
 
 
 def test_pflicht_review_stufe_2(projekt):

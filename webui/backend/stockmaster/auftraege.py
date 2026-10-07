@@ -154,10 +154,10 @@ def hinweise(art: str) -> list[dict]:
         ergebnis.append({"text": f"Das Startdatum ist {start}: Vorher kann nichts gebucht werden, der Lauf kann nur "
                                  "recherchieren. In der Einrichtung lässt sich das noch unberührte Startdatum auf "
                                  "heute vorziehen.", "bremst": True})
-    offen = g.richtlinien_offen()
+    offen = g.richtlinien_offen() if start else []
     if offen:
-        ergebnis.append({"text": f"Anlagerichtlinien fehlen ({', '.join(offen)}): Claude handelt dann nicht, sondern "
-                                 "meldet das. Zuerst den Lauf „Anlagerichtlinien ausformulieren“ ausführen.",
+        ergebnis.append({"text": f"Für {', '.join(offen)} gilt noch keine Anlagerichtlinie; der Hintergrunddienst übernimmt "
+                                 "die Standard-Anlagerichtlinie in Kürze. Bis dahin handelt Claude nicht.",
                          "bremst": True})
     return ergebnis
 

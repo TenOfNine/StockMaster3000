@@ -48,25 +48,31 @@ const zeitpunkt = new Intl.DateTimeFormat("de-DE", {
   timeZone: "Europe/Berlin",
 });
 
-function alsDatum(wert: string): Date {
-  return /^\d{4}-\d{2}-\d{2}$/.test(wert) ? new Date(`${wert}T12:00:00`) : new Date(wert);
+/** Ungültige Zeitangaben ergeben null: Anzeigefunktionen dürfen eine Seite nie zum Absturz bringen. */
+function alsDatum(wert: string): Date | null {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(wert) ? new Date(`${wert}T12:00:00`) : new Date(wert);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export function datum(wert: string | null | undefined): string {
-  return wert ? datumKurz.format(alsDatum(wert)) : STRICH;
+  const d = wert ? alsDatum(wert) : null;
+  return d ? datumKurz.format(d) : STRICH;
 }
 
 export function datumKompakt(wert: string | null | undefined): string {
-  return wert ? datumMonat.format(alsDatum(wert)) : STRICH;
+  const d = wert ? alsDatum(wert) : null;
+  return d ? datumMonat.format(d) : STRICH;
 }
 
 export function zeit(wert: string | null | undefined): string {
-  return wert ? zeitpunkt.format(alsDatum(wert)) : STRICH;
+  const d = wert ? alsDatum(wert) : null;
+  return d ? zeitpunkt.format(d) : STRICH;
 }
 
 export function relativ(wert: string | null | undefined): string {
-  if (!wert) return STRICH;
-  const sekunden = (Date.now() - alsDatum(wert).getTime()) / 1000;
+  const d = wert ? alsDatum(wert) : null;
+  if (!d) return STRICH;
+  const sekunden = (Date.now() - d.getTime()) / 1000;
   const rtf = new Intl.RelativeTimeFormat("de-DE", { numeric: "auto" });
   const stufen: [number, Intl.RelativeTimeFormatUnit][] = [
     [60, "second"],

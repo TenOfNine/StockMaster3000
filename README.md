@@ -103,7 +103,7 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 | Befehl | Zweck |
 | --- | --- |
 | `python tools/session.py start --person <kennung> [--art testsession\|richtlinien\|review]` / `ende` / `status` | Session-Sperre |
-| `python tools/richtlinien.py status` / `vorlage --profil <p>` | Anlagerichtlinien: Stand und Vorlage mit den Limits |
+| `python tools/richtlinien.py status` / `standard` / `vorlage --profil <p>` | Anlagerichtlinien: Stand, Standard-Richtlinien übernehmen, Vorlage mit den Limits |
 | `python tools/kurse.py aktuell <ticker...>` | aktuelle Kurse, protokolliert in `data/kurse/` |
 | `python tools/kurse.py historie <ticker> --von --bis` | Tagesdaten mit Dividenden und Splits |
 | `python tools/kurse.py markt [--historie]` | Marktübersicht für die Web-UI (Fallback-Kette, „veraltet“) |
@@ -114,7 +114,7 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 | `python tools/buchen.py kaufen/verkaufen/aendern/storno ...` | Orders, nur mit Journal-ID |
 | `python tools/bewertung.py nachbuchen` / `bericht` / `review` | Nachbuchung, `ranking.md`, Pflicht-Review |
 | `python tools/pruefe.py [--historie]` | unabhängige Kontrolle |
-| `python tools/termine.py` | fällige Reviews (Woche, Monat, Quartal, Drawdown-Stufe 2) |
+| `python tools/termine.py` | fällige Reviews (nach Spielzeit: 7, 28, 91 Tage; Drawdown-Stufe 2) |
 | `python tools/init.py --startdatum JJJJ-MM-TT --freigabe <kennung>` | Spielstart, einmalig nach Freigabe (AP12) |
 | `python tools/produkte.py ko/faktor ...` | Zertifikatsrechner, nur Anzeige |
 

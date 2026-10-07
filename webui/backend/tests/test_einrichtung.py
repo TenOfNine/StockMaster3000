@@ -6,6 +6,8 @@ import os
 import stat
 import subprocess
 import sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from conftest import ADMIN_PW, WURZEL
@@ -247,14 +249,15 @@ def test_spielstart_einmalig(frisch, client):
     anmelden(client, "admin2@example.org", ADMIN_PW, geheimnis)
     liste = client.get("/api/einrichtung").json()["spielstart"]
     assert liste["bereit"] is True and liste["gestartet"] is False
-    daten = {"startdatum": liste["vorschlag_startdatum"], "freigabe_durch": "auftraggeber-b",
-             "freigabe_ap12_bestaetigt": True, "passwort": ADMIN_PW}
+    heute = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
+    assert liste["vorschlag_startdatum"] == heute  # kein vorab festgelegter Starttermin
+    daten = {"freigabe_durch": "auftraggeber-b", "freigabe_ap12_bestaetigt": True, "passwort": ADMIN_PW}
     assert client.post("/api/einrichtung/spielstart", json={**daten, "passwort": "falsch"}).status_code == 403
     assert client.post("/api/einrichtung/spielstart", json={**daten, "freigabe_ap12_bestaetigt": False}).status_code == 422
     antwort = client.post("/api/einrichtung/spielstart", json=daten)
     assert antwort.status_code == 200, antwort.text
     spiel = json.loads((frisch / "spiel.json").read_text())
-    assert spiel["startdatum"] == daten["startdatum"] and spiel["freigabe_ap12"] == "auftraggeber-b"
+    assert spiel["startdatum"] == heute and spiel["freigabe_ap12"] == "auftraggeber-b"
     log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=frisch, capture_output=True, text=True).stdout
     assert log.startswith("aufbau: Spielstart")
     assert client.post("/api/einrichtung/spielstart", json=daten).status_code == 409
@@ -270,7 +273,6 @@ def test_startdatum_vorziehen_per_api(frisch, client):
     from conftest import anmelden, benutzer_anlegen
 
     from stockmaster import __main__ as cli
-    from stockmaster.einrichtung import naechster_handelstag
 
     cli.einrichten()
     cache = frisch / ".cache"
@@ -283,7 +285,7 @@ def test_startdatum_vorziehen_per_api(frisch, client):
     liste = client.get("/api/einrichtung").json()["spielstart"]
     heute_ziel = liste["vorschlag_startdatum"]
     assert liste["vorziehen"]["moeglich"] is False  # noch nicht gestartet
-    spaeter = naechster_handelstag(date.today() + timedelta(days=7)).isoformat()
+    spaeter = (date.today() + timedelta(days=7)).isoformat()
     daten = {"startdatum": spaeter, "freigabe_durch": "auftraggeber-a", "freigabe_ap12_bestaetigt": True,
              "passwort": ADMIN_PW}
     assert client.post("/api/einrichtung/spielstart", json=daten).status_code == 200
@@ -299,6 +301,6 @@ def test_startdatum_vorziehen_per_api(frisch, client):
     spiel = json.loads((frisch / "spiel.json").read_text())
     assert spiel["startdatum"] == heute_ziel and spiel["startdatum_vorher"][0]["datum"] == spaeter
     log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=frisch, capture_output=True, text=True).stdout
-    assert log.startswith("aufbau: Startdatum auf")
+    assert log.startswith("aufbau: Startdatum vorgezogen")
     assert client.get("/api/einrichtung").json()["spielstart"]["vorziehen"]["moeglich"] is False
     assert client.post("/api/einrichtung/spielstart/vorziehen", json=ziel).status_code == 422

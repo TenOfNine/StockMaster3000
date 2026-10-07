@@ -1,7 +1,7 @@
 # Projektstatus
 
 - Phase: 2 (Startbetrieb-Vorbereitung). Phase 1 (Aufbau, AP1 bis AP11) abgeschlossen am 2026-10-06; AP12 nach Phase 2 verschoben (Entscheidung 5)
-- Startdatum des Spiels: Spielstand, steht je Instanz in spiel.json im Datenverzeichnis (gesetzt in der Einrichtung → Spielstart bzw. mit tools/init.py nach Freigabe von AP12, nie rückwirkend; Entscheidungen 11 und 15)
+- Startdatum des Spiels: Spielstand, steht je Instanz in spiel.json im Datenverzeichnis (Bezugspunkt der Auswertung, gesetzt beim Start in der Einrichtung → Spielstart bzw. mit tools/init.py nach Freigabe von AP12: heute, nie rückwirkend, kein fester Termin; Entscheidungen 11, 15 und 34)
 - Letzte Session: Spielstand, ergibt sich aus dem Journal im Datenverzeichnis
 
 ## Arbeitspakete Phase 1
@@ -276,14 +276,45 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
       /api/einrichtung/zeitplan/automatik`, Admin + Zwei-Faktor, Audit) ohne die Termine zu verlieren.
       `GET /api/laeufe/plan` zeigt Automatik, nächste Termine (Wochentag, Zeitzone, Handelstag) und die
       zuletzt übersprungenen.
-    - **Startdatum:** Vorschlag im Spielstart ist heute (bzw. der nächste Xetra-Handelstag) statt morgen.
-      Ein bereits gesetztes, noch unberührtes Startdatum lässt sich auf heute vorziehen
-      (`tools/init.py --vorziehen`, in der App mit Passwort): nur nach vorne, nie vor heute (kein
-      Backdating), nur an einem Handelstag, nur wenn keine Session läuft und keine Buchung, Order,
+    - **Startdatum:** Vorschlag im Spielstart ist heute. Ein bereits gesetztes, noch unberührtes
+      Startdatum lässt sich auf heute vorziehen (`tools/init.py --vorziehen`, in der App mit Passwort):
+      nur nach vorne, nie vor heute (kein Backdating), nur wenn keine Session läuft und keine Buchung, Order,
       Position, Nachbuchung oder Bewertung existiert (die Historie ändert sich nicht). Das alte Datum bleibt
       in `spiel.json` (`startdatum_vorher`) und im Commit nachvollziehbar.
-    - Offener Punkt für die Auftraggeber: Ein Start „mitten in der Woche ohne Abwarten“ ist damit möglich;
-      regeln.md bleibt unverändert, weil sie kein festes Startdatum vorschreibt.
+    (Fortgeführt und ersetzt in Teilen durch Entscheidung 34.)
+34. Auftrag vom 2026-10-07 („von den fixen Daten komplett wegkommen“, offene Fragen und Anlagerichtlinien
+    selbst entscheiden, Regeländerung ausdrücklich erlaubt). regeln.md v1.3, umgesetzt in Werkzeugen und App:
+    - **Kein fester Start- oder Endtermin.** Das Spiel beginnt beim Start in der App (`init.py` ohne
+      `--startdatum` = heute, auch am Wochenende; ein Handelstag ist nicht nötig, weil Zins und Benchmark
+      ab dem ersten Schlusskurs rechnen). Ein Datum vor heute bleibt Backdating und wird abgelehnt. Die
+      Einrichtung hat kein Datumsfeld mehr. Das gespeicherte Startdatum ist nur noch der Bezugspunkt der
+      Auswertung.
+    - **Feste Zeiten nur im Zeitplan geplanter Läufe**, nicht in Bewertung, Benchmark, Limits oder Reviews.
+    - **Reviews nach Spielzeit statt Kalender** (regeln.md 11): Zeiträume zu 7 Tagen (Woche), 28 Tagen
+      (Monat) und 91 Tagen (Quartal) ab dem Starttag; Dateien `reviews/JJJJ-MM-TT_woche|monat|quartal.md`
+      mit dem letzten Tag des Zeitraums. Begründung: Ein Start mitten in der Woche liefert sonst eine
+      halbe Kalenderwoche, und die Auswertung hinge am Kalender. Bereits vorhandene Reviews nach dem alten
+      Namensschema bleiben als Historie liegen; nur der Starttag eines neuen Spiels ist Bezugspunkt.
+    - **Anlagerichtlinien:** Claude hat die drei Standard-Richtlinien ausformuliert
+      (`config/richtlinien/<profil>.md`, Limits aus `config/profile.json` eingesetzt). Sie gelten ab
+      Spielstart: `init.py` legt sie an, der Hintergrunddienst übernimmt sie in bestehenden Instanzen, wo
+      noch die Vorlage steht (`tools/richtlinien.py standard`, überschreibt nie eine eigene Richtlinie),
+      und der Trading-Prompt weist Claude an, dasselbe zu tun. Die Marktsicht entsteht je Session mit
+      Quellen; die Richtlinie enthält bewusst keine Prognose. Der Lauf „Anlagerichtlinien ausformulieren“
+      bleibt für individuelle Anpassungen (Änderung mit Datum, Anlass, Prüfkriterium).
+    - **Offene Frage 20 (Profilauswahl) entschieden:** Es bleiben immer alle drei Profile; die in
+      Entscheidung 13 beschriebene Profilauswahl (`profile_aktiv`) wird nicht umgesetzt. Begründung:
+      regeln.md beschreibt drei Portfolios, Werkzeuge, Benchmark und Vergleich setzen sie voraus, und ein
+      späteres Abschalten würde Historie und Vergleichbarkeit beschädigen. Eine Auswahl wäre eine eigene,
+      größere Änderung.
+    - **Claude entscheidet Unklarheiten** im Sinne von Kapitalerhalt und Nachvollziehbarkeit und
+      dokumentiert sie hier (regeln.md 12); Limits, Kosten und Risikogrenzen bleiben unverändert.
+    - **Absturz der Seite „Claude-Läufe“** (Fehlermeldung „Something went wrong“): Die Ursache ließ sich im
+      Test nicht auslösen; deshalb wurde jede denkbare Stelle gehärtet. Die Zeitformatierung wirft bei
+      ungültigen Werten nicht mehr, Markdown-Ergebnisse haben eine eigene Fehlergrenze (Ersatz:
+      Rohtext) und verlinken nur noch Trade-Akten und externe Adressen, und die Fehlerseite des Routers
+      nennt die technische Meldung und bietet „Seite neu laden“. Ein E2E-Test öffnet die Seite mit
+      laufendem und fertigem Lauf, Zeitplan und Session-Sperre.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
@@ -404,28 +435,8 @@ Kosten (Abschnitte 4 und 5) bedeuten würde. Je Frage die Begründung:
   Dividende 0,01 am 2024-06-11 stimmen; Xetra-Kurse über yfinance waren etwa
   15 Minuten verzögert (Grenze 30 Minuten).
 
-## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
+## Auslegungsfragen Phase 2: Frage 20 (entschieden)
 
-20. Bleibt offen (2026-10-07): Die Klärung erfordert eine Änderung von
-    regeln.md, die Claude nicht vornimmt. Profilauswahl (Entscheidung 13) und regeln.md v1.2 widersprechen
-    sich: Abschnitt 2 nennt "1.000 EUR je Portfolio (defensiv,
-    ausgewogen, aggressiv)" und "eigenen drei Portfolios", Abschnitt 11
-    den "Monatsvergleich der drei Profile". Die einmalige Freigabe zur
-    Änderung von regeln.md ist verbraucht (Entscheidung 10); Claude
-    ändert die Datei nicht erneut. Bis zur Klärung bleiben in diesem
-    Repository und in den Werkzeugen alle drei Profile aktiv.
-    Formulierungsvorschlag für die Auftraggeber:
-    - Abschnitt 2: "Startkapital: 1.000 EUR je aktivem Portfolio. Je
-      Arbeitsbereich sind die Profile defensiv, ausgewogen und aggressiv
-      einzeln aktivierbar (mindestens eines; config/projekt.json,
-      `profile_aktiv`; ohne Angabe alle drei)."
-    - Abschnitt 2: "eigenen drei Portfolios" ersetzen durch "eigenen
-      Portfolios".
-    - Abschnitt 2, neu: "Nach dem Startdatum ändern nur die
-      Auftraggeber die Auswahl, mit Datum und ohne Rückwirkung.
-      Aktivieren: neues Portfolio mit 1.000 EUR ab dem nächsten
-      Handelstag nach der Freigabe, Benchmark ab demselben Tag.
-      Deaktivieren: nur ohne offene Positionen und Orders; Bewertung und
-      Verzinsung enden, die Historie bleibt."
-    - Abschnitt 11: "Monatsvergleich der drei Profile" ersetzen durch
-      "Monatsvergleich der aktiven Profile".
+20. Entschieden am 2026-10-07 (Entscheidung 34): Es bleiben immer alle drei Profile; die Profilauswahl
+    (Entscheidung 13) wird nicht umgesetzt. Der ursprüngliche Formulierungsvorschlag entfällt, regeln.md
+    bleibt bei drei Portfolios.

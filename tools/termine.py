@@ -1,17 +1,15 @@
-#!/usr/bin/env python3
 """Fällige Reviews nach regeln.md Abschnitt 11 und 7 (Drawdown-Stufe 2).
 
-Ein Review gilt als erledigt, wenn in reviews/ eine Datei mit dem
-festgelegten Namensanfang liegt:
+Reviews richten sich nach der Spielzeit, nicht nach dem Kalender: Ab dem Starttag
+(spiel.json) zählen Zeiträume zu 7 Tagen (Woche), 28 Tagen (Monat) und 91 Tagen
+(Quartal). Ein Zeitraum ist fällig, sobald sein letzter Tag vergangen ist. Ein Review
+gilt als erledigt, wenn die Datei mit dem Datum des letzten Zeitraumtags existiert:
 
-- Wochenreview:  reviews/JJJJ-KWnn_woche.md   (ISO-Kalenderwoche der Vorwoche)
-- Monatsreview:  reviews/JJJJ-MM_monat.md
-- Quartalsreview: reviews/JJJJ-Qn_quartal.md
+- Wochenreview:   reviews/JJJJ-MM-TT_woche.md    (JJJJ-MM-TT = letzter Tag des Zeitraums)
+- Monatsreview:   reviews/JJJJ-MM-TT_monat.md
+- Quartalsreview: reviews/JJJJ-MM-TT_quartal.md
 - Pflicht-Review Drawdown-Stufe 2: reviews/JJJJ-MM-TT_stufe2_<profil>.md,
   vermerkt mit `python tools/bewertung.py review --profil <p> --datei ...`
-
-Fällig sind alle abgeschlossenen Zeiträume seit dem Startdatum, für die
-noch keine Datei existiert.
 """
 
 from __future__ import annotations
@@ -22,10 +20,8 @@ from datetime import date, timedelta
 
 import gemeinsam as g
 
-
-def _vorhanden(praefix: str) -> bool:
-    ordner = g.pfad("reviews")
-    return ordner.exists() and any(ordner.glob(f"{praefix}*.md"))
+ZEITRAEUME = (("woche", 7, "Wochenreview"), ("monat", 28, "Monatsvergleich der Profile"),
+              ("quartal", 91, "Quartals-Meta-Review"))
 
 
 def startdatum() -> date | None:
@@ -35,27 +31,12 @@ def startdatum() -> date | None:
     return min(date.fromisoformat(g.portfolio_laden(p)["startdatum"]) for p in profile)
 
 
-def _wochen(start: date, heute: date):
-    montag = start - timedelta(days=start.weekday())
-    aktuelle = heute - timedelta(days=heute.weekday())
-    while montag < aktuelle:
-        jahr, woche, _ = montag.isocalendar()
-        yield f"{jahr}-KW{woche:02d}", montag, montag + timedelta(days=6)
-        montag += timedelta(days=7)
-
-
-def _monate(start: date, heute: date):
-    jahr, monat = start.year, start.month
-    while (jahr, monat) < (heute.year, heute.month):
-        yield f"{jahr}-{monat:02d}", jahr, monat
-        jahr, monat = (jahr + 1, 1) if monat == 12 else (jahr, monat + 1)
-
-
-def _quartale(start: date, heute: date):
-    jahr, quartal = start.year, (start.month - 1) // 3 + 1
-    while (jahr, quartal) < (heute.year, (heute.month - 1) // 3 + 1):
-        yield f"{jahr}-Q{quartal}", jahr, quartal
-        jahr, quartal = (jahr + 1, 1) if quartal == 4 else (jahr, quartal + 1)
+def _zeitraeume(start: date, heute: date, tage: int):
+    """Abgeschlossene Zeiträume (von, bis) zu je `tage` Tagen seit dem Starttag."""
+    von = start
+    while von + timedelta(days=tage - 1) < heute:
+        yield von, von + timedelta(days=tage - 1)
+        von += timedelta(days=tage)
 
 
 def faellige_reviews(heute: date | None = None) -> list[dict]:
@@ -64,18 +45,12 @@ def faellige_reviews(heute: date | None = None) -> list[dict]:
     if start is None or start > heute:
         return []
     faellig = []
-    for name, von, bis in _wochen(start, heute):
-        if not _vorhanden(name):
-            faellig.append({"art": "woche", "zeitraum": name, "datei": f"reviews/{name}_woche.md",
-                            "text": f"Wochenreview {name} ({von:%d.%m.} bis {bis:%d.%m.%Y})"})
-    for name, _, _ in _monate(start, heute):
-        if not _vorhanden(name + "_"):
-            faellig.append({"art": "monat", "zeitraum": name, "datei": f"reviews/{name}_monat.md",
-                            "text": f"Monatsvergleich der Profile {name}"})
-    for name, _, _ in _quartale(start, heute):
-        if not _vorhanden(name):
-            faellig.append({"art": "quartal", "zeitraum": name, "datei": f"reviews/{name}_quartal.md",
-                            "text": f"Quartals-Meta-Review {name}"})
+    for art, tage, titel in ZEITRAEUME:
+        for von, bis in _zeitraeume(start, heute, tage):
+            datei = f"reviews/{bis.isoformat()}_{art}.md"
+            if not g.pfad(datei).exists():
+                faellig.append({"art": art, "zeitraum": f"{von.isoformat()} bis {bis.isoformat()}", "datei": datei,
+                                "text": f"{titel} ({von:%d.%m.} bis {bis:%d.%m.%Y})"})
     for profil in g.vorhandene_profile():
         portfolio = g.portfolio_laden(profil)
         if int(portfolio.get("drawdown_stufe", 0)) == 2 and not portfolio.get("stufe2_review"):

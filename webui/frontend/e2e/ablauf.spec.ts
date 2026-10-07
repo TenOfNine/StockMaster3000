@@ -114,3 +114,20 @@ test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({
   await expect(neu.getByText("Wertentwicklung")).toBeVisible();
   await kontext.close();
 });
+
+test("Lauf-Seite zeigt fertigen Lauf, Zeitplan und Startdialog ohne Absturz", async ({ page }) => {
+  const fehler: string[] = [];
+  page.on("pageerror", (e) => fehler.push(e.message));
+  await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
+  await page.getByLabel("Code").fill(totp("JBSWY3DPEHPK3PXP"));
+  await page.getByRole("button", { name: "Bestätigen" }).click();
+  await expect(page.getByText("Wertentwicklung")).toBeVisible();
+  await page.goto("/laeufe");
+  await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+  await expect(page.getByText("Automatik an")).toBeVisible();
+  await expect(page.getByText(/Nächster Lauf/)).toBeVisible();
+  await page.getByRole("button", { name: /Trading-Session.*fertig/ }).click();
+  await expect(page.getByText("Ich habe nicht gehandelt")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
+  expect(fehler).toEqual([]);
+});
