@@ -108,9 +108,9 @@ def test_limits_protokoll_fehlt_oder_verletzt(spielstand):
     assert any("keine Limitprüfung" in b for b in befunde(pruefe.pruefe_limits, "ausgewogen"))
 
 
-def test_config_weicht_von_regeln_ab(projekt):
+def test_config_weicht_von_regeln_ab(projekt, framework):
     assert pruefe.pruefe_config_regeln() == []
-    datei = projekt / "config" / "profile.json"
+    datei = framework / "config" / "profile.json"
     daten = json.loads(datei.read_text())
     daten["profile"]["aggressiv"]["max_hebel"] = "12"
     datei.write_text(json.dumps(daten))
@@ -118,8 +118,8 @@ def test_config_weicht_von_regeln_ab(projekt):
     assert fehler == ["FEHLER [Konfiguration] config/profile.json aggressiv.max_hebel = 12, regeln.md = 10."]
 
 
-def test_regeln_geaendert_wird_erkannt(projekt):
-    datei = projekt / "regeln.md"
+def test_regeln_geaendert_wird_erkannt(projekt, framework):
+    datei = framework / "regeln.md"
     datei.write_text(datei.read_text().replace("| Mindest-Cashquote | 10 % |", "| Mindest-Cashquote | 5 % |"))
     assert any("defensiv.min_cashquote" in b for b in befunde(pruefe.pruefe_config_regeln))
 

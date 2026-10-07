@@ -1,0 +1,86 @@
+{
+  "_quelle": "Standard-Feeds für tools/news.py. Änderungen aus der Einrichtungsseite (Feeds an/aus, eigene Feeds, Intervall) liegen in der App-Konfiguration und überschreiben diese Datei nicht.",
+  "_hinweis": "Gespeichert werden nur Titel, Kurztext und Link mit Quelle und Datum (news/ im Datenverzeichnis). News sind datierte Quellen, keine Kurse: Kurse kommen nur aus tools/kurse.py.",
+  "intervall_minuten": 15,
+  "kurztext_max_zeichen": 300,
+  "user_agent": "StockMaster3000/1.0 (privates Boersen-Planspiel)",
+  "feeds": [
+    {
+      "id": "yahoo-ticker",
+      "name": "Yahoo Finance je Wert",
+      "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US",
+      "je_ticker": true,
+      "aktiv": true
+    },
+    {
+      "id": "google-dax",
+      "name": "Google News: DAX",
+      "url": "https://news.google.com/rss/search?q=DAX%20B%C3%B6rse&hl=de&gl=DE&ceid=DE:de",
+      "ticker": ["^GDAXI"],
+      "aktiv": true
+    },
+    {
+      "id": "google-msci-world",
+      "name": "Google News: MSCI World",
+      "url": "https://news.google.com/rss/search?q=%22MSCI%20World%22&hl=de&gl=DE&ceid=DE:de",
+      "ticker": ["EUNL.DE"],
+      "aktiv": true
+    },
+    {
+      "id": "google-wallstreet",
+      "name": "Google News: Wall Street",
+      "url": "https://news.google.com/rss/search?q=Wall%20Street%20S%26P%20500%20Nasdaq&hl=de&gl=DE&ceid=DE:de",
+      "ticker": ["^GSPC", "^NDX"],
+      "aktiv": true
+    },
+    {
+      "id": "google-rohstoffe",
+      "name": "Google News: Gold und Öl",
+      "url": "https://news.google.com/rss/search?q=Goldpreis%20OR%20%C3%96lpreis%20Brent&hl=de&gl=DE&ceid=DE:de",
+      "ticker": ["GC=F", "BZ=F"],
+      "aktiv": true
+    },
+    {
+      "id": "google-geldpolitik",
+      "name": "Google News: Geldpolitik EZB und Fed",
+      "url": "https://news.google.com/rss/search?q=Leitzins%20EZB%20OR%20Fed&hl=de&gl=DE&ceid=DE:de",
+      "ticker": ["EURUSD=X"],
+      "aktiv": true
+    },
+    {
+      "id": "ezb",
+      "name": "EZB Pressemitteilungen",
+      "url": "https://www.ecb.europa.eu/rss/press.html",
+      "aktiv": true
+    },
+    {
+      "id": "fed",
+      "name": "Federal Reserve Press Releases",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "aktiv": true
+    },
+    {
+      "id": "sec-8k",
+      "name": "SEC EDGAR: aktuelle 8-K-Meldungen",
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=40&output=atom",
+      "aktiv": true,
+      "_hinweis": "Die SEC verlangt einen User-Agent mit Kontaktangabe; ohne diese Angabe (Einrichtung → News) antwortet sie mit 403."
+    },
+    {
+      "id": "tagesschau-wirtschaft",
+      "name": "Tagesschau Wirtschaft",
+      "url": "https://www.tagesschau.de/wirtschaft/index~rss2.xml",
+      "aktiv": true
+    }
+  ],
+  "schlagworte": {
+    "^GDAXI": ["DAX"],
+    "^STOXX50E": ["Euro Stoxx", "EuroStoxx"],
+    "^GSPC": ["S&P 500", "S&P500"],
+    "^NDX": ["Nasdaq"],
+    "GC=F": ["Gold", "Goldpreis"],
+    "BZ=F": ["Brent", "Ölpreis"],
+    "EURUSD=X": ["EUR/USD", "Euro-Dollar", "Devisen"],
+    "EUNL.DE": ["MSCI World"]
+  }
+}

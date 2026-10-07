@@ -1,159 +1,158 @@
-# Web-UI mit Portainer betreiben
+# StockMaster mit Portainer betreiben
 
-Der Stack `webui/deploy/portainer/stack.yml` ist für Portainer (Docker Standalone/Compose, kein
-Swarm) gebaut: Er braucht **keine Dateien auf dem Host außer dem Spiel-Repository**, keinen
-`build:`-Schritt und keine Docker Secrets. Die Images baut die GitHub Action
-(`.github/workflows/images.yml`) und legt sie in der GitHub Container Registry ab; Geheimnisse
-stehen als Umgebungsvariablen im Stack.
+Der Stack `webui/deploy/portainer/stack.yml` ist für Portainer (Docker Standalone/Compose, kein Swarm)
+gebaut und **autark**: Er braucht keine Dateien auf dem Host, keinen `build:`-Schritt, keine Docker
+Secrets und kein Spiel-Repository. Spielstand, Kurse, News, Journal, Reviews und Sessions leben nur in
+Volumes; Einstellungen und Secrets (Claude-Token, Kurs-API-Keys) pflegt ein Admin in der App unter
+**Einrichtung**. GitHub liefert nur das Framework (Code, Regeln, Vorlagen) als Images; die App pusht nie
+Spielstand nach GitHub.
 
-| Image | Inhalt |
+| Dienst | Image | Aufgabe |
+| --- | --- | --- |
+| `proxy` | `ghcr.io/<besitzer>/stockmaster3000-proxy` | Caddy mit der Web-App, HTTPS, Heimnetz-Schranke |
+| `api` | `ghcr.io/<besitzer>/stockmaster3000-api` | FastAPI-Backend (ohne Internetzugang) |
+| `worker` | dasselbe api-Image | Hintergrunddienst: Kurse, News, Zeitplan, Claude-Sessions, Verbindungstests |
+| `db` | `ghcr.io/<besitzer>/stockmaster3000-db` | PostgreSQL 16 (Benutzer, Sitzungen, Audit-Log, Läufe) |
+
+| Volume | Inhalt |
 | --- | --- |
-| `ghcr.io/<besitzer>/stockmaster3000-proxy` | Caddy mit der gebauten Web-App |
-| `ghcr.io/<besitzer>/stockmaster3000-api` | FastAPI-Backend |
-| `ghcr.io/<besitzer>/stockmaster3000-db` | PostgreSQL 16 mit eingebautem Init-Skript |
+| `stockmaster_daten` → `/data` | Spielstand mit eigenem, lokalem Git (Prüfspur, ohne Remote) |
+| `stockmaster_app_daten` → `/data-app` | App-Konfiguration, verschlüsselte Secrets, Master-Schlüssel (0600), Lauf-Logs |
+| `stockmaster_geheim` → `/geheim` | vom DB-Container erzeugte Datenbank-Passwörter |
+| `stockmaster_pgdata` | Datenbank |
+| `stockmaster_caddy_data`, `_config` | lokale Zertifizierungsstelle und Zertifikate |
 
 ## 1. Images bereitstellen
 
-Die Action veröffentlicht bei jeder Änderung an `webui/` auf `main` (Tags `latest` und
-`sha-<kurz>`). Beim ersten Mal die Action manuell starten (Actions → Images → Run workflow), falls
-noch kein Push auf `main` stattfand.
+Die Action *Images* veröffentlicht bei jeder Änderung auf `main` (Tags `latest` und `sha-<kurz>`).
+Beim ersten Mal die Action manuell starten (Actions → Images → Run workflow).
 
-**Privates Repository:** Die Pakete sind dann ebenfalls privat. Portainer braucht Zugangsdaten:
+**Privates Repository:** Die Pakete sind dann ebenfalls privat. In GitHub ein Token mit
+`read:packages` anlegen und in Portainer → Registries → *Custom registry* (`ghcr.io`, GitHub-Benutzer,
+Token) eintragen. Alternativ die Pakete auf „Public“ stellen: Die Images enthalten keine Geheimnisse
+und keinen Spielstand.
 
-1. GitHub → Settings → Developer settings → Personal access tokens → Token mit Recht
-   `read:packages` anlegen.
-2. Portainer → Registries → Add registry → *Custom registry*: URL `ghcr.io`, Benutzername =
-   GitHub-Benutzer, Passwort = Token.
+## 2. Stack anlegen
 
-Alternativ die Pakete unter GitHub → Packages → *Package settings* auf „Public“ stellen (die
-Images enthalten keine Geheimnisse und keine Spieldaten).
+Portainer → Stacks → Add stack → Name `stockmaster`, dann:
 
-## 2. Spiel-Repository auf dem Docker-Host
+**Repository (empfohlen):** URL `https://github.com/<besitzer>/StockMaster3000`, Reference
+`refs/heads/main`, Compose path `webui/deploy/portainer/stack.yml`. Oder **Web editor** mit dem Inhalt
+der Datei.
 
-Das Repository, in dem die Sessions laufen, muss auf dem Docker-Host liegen, z. B.:
-
-```bash
-git clone https://github.com/<besitzer>/StockMaster3000 /srv/stockmaster/spiel-repo
-```
-
-Der Stack bindet den Ordner **nur lesend** ein. Nach einem `git pull` im Ordner ist die Web-UI
-sofort aktuell (Änderungen an `tools/` erfordern einen Neustart des Containers `api`).
-
-## 3. Stack anlegen
-
-Portainer → Stacks → Add stack → Name `stockmaster`, dann eine der beiden Methoden:
-
-**Web editor:** Inhalt von `webui/deploy/portainer/stack.yml` einfügen.
-
-**Repository (empfohlen, Updates per Knopfdruck):** Repository URL `https://github.com/<besitzer>/StockMaster3000`,
-Reference `refs/heads/main`, Compose path `webui/deploy/portainer/stack.yml`
-(bei privatem Repository „Authentication“ mit Token aktivieren). Optional „GitOps updates“.
-
-**Environment variables** (Abschnitt „Advanced mode“ → Inhalt von
-`webui/deploy/portainer/stack.env.example` einfügen und ausfüllen):
+**Environment variables** – minimal ist genau eine:
 
 | Variable | Wert |
 | --- | --- |
-| `SM_HOSTNAME` | Name im Heimnetz, z. B. `stockmaster.local` |
-| `SPIEL_REPO` | absoluter Pfad aus Schritt 2 |
-| `POSTGRES_ADMIN_PASSWORD` | beliebiges langes Passwort, z. B. `openssl rand -base64 24` |
-| `POSTGRES_APP_PASSWORD` | beliebiges langes Passwort (anderer Wert als der Admin-Wert); Sonderzeichen sind erlaubt |
-| `SM_SCHLUESSEL` | `openssl rand -base64 32`, genau so einfügen: 44 Zeichen, das letzte ist ein `=`, ohne Anführungszeichen und Leerzeichen |
-| `SM_ZUSAETZLICHE_HOSTS` | optional: weitere Namen oder IP-Adressen, unter denen die Web-UI antwortet (Leerzeichen oder Komma, ohne Port), z. B. die IP des Servers: `192.168.2.187` |
-| `SM_IMAGE_PREFIX` | nur bei abweichendem Registry-Pfad, Standard `ghcr.io/tenofnine/stockmaster3000` |
+| `SM_HOSTNAME` | Name im Heimnetz, z. B. `stockmaster.local` (Pflicht) |
+| `SM_ZUSAETZLICHE_HOSTS` | optional: weitere Namen oder IP-Adressen, z. B. `192.168.2.187` |
+| `SM_HTTPS_PORT`, `SM_HTTP_PORT` | optional, Standard 443 und 80 |
+| `SM_ZUSAETZLICHE_NETZE` | optional, z. B. ein VPN-Bereich |
+| `TZ` | optional, Standard `Europe/Berlin` |
+| `SM_IMAGE_PREFIX`, `SM_IMAGE_TAG` | nur bei abweichender Registry bzw. festem Stand |
 
-Fehlt eine Pflicht-Variable, verweigert der Stack den Start mit einer klaren Meldung. Auch die Werte
-selbst werden beim Start geprüft: Ist `SM_SCHLUESSEL` ungültig, startet die API nicht und nennt den Grund
-im Log (Fehlersuche unten); ungültige Angaben in `SM_HOSTNAME` oder `SM_ZUSAETZLICHE_HOSTS` verhindern den
-Start des Proxys.
-Anschließend *Deploy the stack*. Ports 80/443 sind frei zu halten (sonst `SM_HTTP_PORT` und
-`SM_HTTPS_PORT` anpassen, z. B. 8080 und 8443, wenn Portainer oder ein anderer Proxy sie belegt).
+*Deploy the stack*. Beim ersten Start mit leeren Volumes richtet sich der Stack selbst ein:
 
-> **Schlüssel sichern:** `SM_SCHLUESSEL` verschlüsselt die Zwei-Faktor-Geheimnisse. Wert und
-> Datenbank-Volume `stockmaster_pgdata` getrennt sichern (siehe BETRIEB.md, Sicherung).
+- `db` erzeugt zufällige Datenbank-Passwörter im Volume `geheim` (Log: `db-abgleich: … neu erzeugt`),
+- `api` legt das Datenverzeichnis aus der Vorlage an (eigenes Git, erster Commit „aufbau: Datenverzeichnis
+  aus Vorlage angelegt“), erzeugt den Master-Schlüssel (`/data-app/master.key`, Rechte 0600) und
+  installiert einen Git-Hook, der Commits mit Secrets ablehnt,
+- `worker` meldet sich per Herzschlag und beginnt mit Kurs- und News-Abrufen.
 
-## 4. Ersten Administrator anlegen
+## 3. Ersten Administrator anlegen
 
-Portainer → Containers → `stockmaster-api-1` → **Console** → Command `/bin/sh` → *Connect*:
+Portainer → Containers → `stockmaster-api-1` → **Console** → `/bin/sh` → *Connect*:
 
 ```sh
-python -m stockmaster admin-anlegen --email du@heimnetz.local --anzeigename "Dein Name"
+python -m stockmaster admin-anlegen --email du@heimnetz.local --anzeigename "Admin"
 ```
 
-Das Einmalpasswort steht nur in dieser Ausgabe. Der Befehl funktioniert genau einmal. Danach unter
-`https://<SM_HOSTNAME>` anmelden; Passwortwechsel und Zwei-Faktor sind Pflicht.
+Das Einmalpasswort steht nur in dieser Ausgabe; der Befehl funktioniert genau einmal. Danach unter
+`https://<SM_HOSTNAME>` anmelden; Passwortwechsel und Zwei-Faktor sind Pflicht. (Ein Erststart-Assistent
+über Variablen ist nicht nötig: Der erste Admin wird nicht über Umgebungsvariablen angelegt.)
 
-### Aufruf per IP-Adresse
+## 4. In der App einrichten
 
-Der Proxy antwortet nur auf die Namen, die er kennt: `SM_HOSTNAME`, `localhost` und die Einträge in
-`SM_ZUSAETZLICHE_HOSTS`. Ein Aufruf per nicht eingetragener IP-Adresse (`https://192.168.2.187`) zeigt nach der
-Zertifikatswarnung den Hinweis „Unbekannter Name oder unbekannte Adresse in der URL“ (HTTP 421). Ein nicht
-eingetragener **Name** scheitert schon im TLS-Handshake (`ERR_SSL_PROTOCOL_ERROR`). Zwei Wege:
+Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt zum ersten offenen Schritt:
 
-1. **Hostnamen verwenden (empfohlen):** Eintrag im Router-DNS oder in der Hosts-Datei des Geräts
-   (Windows: `C:\Windows\System32\drivers\etc\hosts`, als Administrator): `192.168.2.187  stockmaster.local`.
-2. **IP eintragen:** `SM_ZUSAETZLICHE_HOSTS=192.168.2.187` setzen und den Stack neu deployen. Die IP muss dann
-   fest bleiben (DHCP-Reservierung im Router). Bei mehreren IP-Adressen enthält das Zertifikat für Aufrufe ohne
-   Namen nur die erste; die übrigen funktionieren nach Bestätigen der Browserwarnung. Die Heimnetz-Schranke
-   gilt unverändert auch für diese Adressen.
+1. **Claude:** Auf dem eigenen Rechner `claude setup-token` ausführen (Claude-Pro-Abo), Token eintragen,
+   Modell und Aufwand für „Trading-Session“ und „Review/Bericht“ wählen, *Verbindung testen*.
+2. **Kursdaten:** Anbieter wählen (nur yfinance, Finnhub oder Twelve Data), ggf. API-Key eintragen,
+   *Verbindung testen*, *Jetzt abrufen*. „Markt & Kurse“ füllt sich.
+3. **News:** Feeds an- oder abschalten, eigene Feeds ergänzen, *Feed testen*.
+4. **Sessions & Zeitplan:** Automatik und Zeiten, z. B. werktags 09:35 und 21:30.
+5. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung.
+6. **Sicherung** und 7. **Systemstatus** (Ampel je Bereich).
 
-## 5. Zertifikat im Heimnetz
+## Update einer bestehenden Installation (Migration)
 
-Die Web-UI nutzt HTTPS mit einer lokalen Zertifizierungsstelle. Im Heimnetz ist das Root-Zertifikat
-direkt abrufbar:
+Ältere Stacks hatten `SPIEL_REPO`, `POSTGRES_ADMIN_PASSWORD`, `POSTGRES_APP_PASSWORD` und `SM_SCHLUESSEL`.
 
-```
-https://<SM_HOSTNAME>/stockmaster-root.crt
-```
+1. Auf GitHub warten, bis *Actions → Images* für den neuen Stand grün ist.
+2. In Portainer den Stack aktualisieren (*Pull and redeploy* bzw. neuen Inhalt im Web editor), dabei die
+   **alten Variablen zunächst stehen lassen**. Sie werden beim ersten Start einmalig übernommen:
+   - `POSTGRES_*` → Dateien im Volume `geheim` (Log `db-abgleich: … aus der Umgebungsvariable übernommen`),
+   - `SM_SCHLUESSEL` → `/data-app/master.key` (gespeicherte Zwei-Faktor-Geheimnisse bleiben gültig),
+   - ein gesetztes `CLAUDE_CODE_OAUTH_TOKEN`, `FINNHUB_API_KEY` oder `TWELVEDATA_API_KEY` → verschlüsselt in
+     die App-Konfiguration.
+3. Einrichtung öffnen: Der Hinweis „Aus dem Stack entfernbar“ nennt die übernommenen Variablen. Diese
+   und `SPIEL_REPO` aus dem Stack löschen und erneut deployen. Ab jetzt gilt die App-Konfiguration.
+4. **Spielstand übernehmen** (nur falls im alten Spiel-Repository schon gespielt wurde; vor dem Spielstart
+   ist nichts zu tun): den alten Ordner einmalig in den Container `api` einbinden (Stack → Volume
+   `/srv/stockmaster/spiel-repo:/alt:ro` ergänzen, deployen) und in der Console ausführen:
 
-(beim ersten Aufruf die Browserwarnung einmalig bestätigen, Datei laden und wie in BETRIEB.md
-beschrieben installieren). Es ist das öffentliche Zertifikat; der private Schlüssel verlässt den
-Container nie. Der Download ist wie alles andere nur aus privaten Adressbereichen erreichbar.
+   ```sh
+   python /app/framework/tools/migriere.py --von /alt
+   ```
 
-## Passwörter ändern
+   Das funktioniert nur in ein leeres bzw. frisch angelegtes Datenverzeichnis. Der erste Commit trägt
+   einen Herkunftsvermerk (Ordner und Commit der alten Arbeitskopie). Danach die Einbindung wieder
+   entfernen.
 
-`POSTGRES_ADMIN_PASSWORD` und `POSTGRES_APP_PASSWORD` können in den Stack-Variablen geändert werden;
-beim Neustart des Containers `db` werden sie in der Datenbank übernommen, das Volume muss nicht
-gelöscht werden. Den Stack danach mit *Update the stack* erneut deployen.
+> **Wichtig:** `SM_SCHLUESSEL` nicht entfernen, bevor die API einmal mit dem neuen Image gestartet ist.
+> Gibt es schon Zwei-Faktor-Geheimnisse, aber weder Schlüsseldatei noch Variable, verweigert die API den
+> Start mit einer Erklärung, statt einen neuen Schlüssel zu erzeugen.
 
 ## Aktualisieren
 
-1. Auf GitHub unter *Actions → Images* warten, bis der Lauf für den neuesten Commit auf `main` grün ist.
-2. Portainer → Stacks → `stockmaster` → **Pull and redeploy** (Repository-Methode) bzw. **Update the
-   stack** (Web editor).
+Portainer → Stacks → `stockmaster` → **Pull and redeploy**. Die Images werden bei jedem Deploy neu
+gezogen (`pull_policy: always`); Volumes und damit Spielstand, Einstellungen und Datenbank bleiben.
+Die erste Logzeile der API lautet `StockMaster API, Version <Commit>`.
 
-Der Stack zieht bei jedem Deploy die Images neu (`pull_policy: always`); ein Schalter „Re-pull image“
-ist nicht mehr nötig. Datenbank-Migrationen laufen beim Start der API automatisch, das
-Datenbank-Volume bleibt erhalten.
+## Sicherung
 
-**Prüfen, welche Version läuft:** Portainer → Containers → `stockmaster-api-1` → Logs. Die erste Zeile
-lautet `StockMaster API, Version <Commit>`. Fehlt sie, läuft noch ein altes Image: Stack stoppen, unter
-*Images* die drei `stockmaster3000-*`-Images löschen und den Stack erneut deployen.
+In der App: Einrichtung → Sicherung → *Export herunterladen* (tar.gz mit Spielstand und lokalem Git,
+ohne Secrets). Mit Secrets nur nach ausdrücklicher Bestätigung und einem eigenen Sicherungspasswort.
+Wiederherstellen ebenda (Passwortbestätigung; der vorherige Stand wird automatisch im App-Verzeichnis
+gesichert). Per Console:
 
-## Hinweise zur Absicherung in Portainer
+```sh
+python -m stockmaster sicherung-export --datei /data-app/tmp/sicherung.tar.gz
+python -m stockmaster sicherung-import --datei /data-app/tmp/sicherung.tar.gz
+```
 
-- Der Zugriff auf Portainer selbst gehört zur Sicherheit des Systems: Zwei-Faktor für Portainer
-  aktivieren und Portainer nicht ins Internet stellen. Wer Portainer bedienen darf, kann die
-  Umgebungsvariablen (Schlüssel, Passwörter) sehen.
-- Die Container laufen mit `cap_drop: ALL`, `no-new-privileges`, schreibgeschütztem Dateisystem
-  (Proxy, API), Ressourcenlimits und internen Netzen; nur der Proxy veröffentlicht Ports.
-- Portainer-Rollen: Benutzer, die nur ansehen sollen, brauchen in Portainer keinen Zugriff auf
-  diese Umgebung.
-- Docker Desktop (Windows/macOS) verändert Quelladressen; für die Heimnetz-Schranke einen
-  Linux-Host verwenden.
+Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` sichern (BETRIEB.md).
+
+## Hinweise zur Absicherung
+
+- Wer Portainer bedienen darf, kann in die Volumes schauen (auch in `/data-app`). Zwei-Faktor für
+  Portainer aktivieren und Portainer nicht ins Internet stellen.
+- Nur der `proxy` veröffentlicht Ports. `api` und `db` liegen in internen Netzen ohne Internet; nur der
+  `worker` darf nach außen (Kursanbieter, Feeds, Claude).
+- Alle Container laufen mit `cap_drop: ALL`, `no-new-privileges`, Ressourcenlimits; `proxy`, `api` und
+  `worker` zusätzlich mit schreibgeschütztem Dateisystem.
 
 ## Fehlersuche
 
 | Symptom | Ursache und Abhilfe |
 | --- | --- |
-| `required variable … is missing` | Pflicht-Variable fehlt in den Stack-Umgebungsvariablen. |
-| `pull access denied` / `unauthorized` / `manifest unknown` | Registry-Zugang in Portainer fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
-| API startet ständig neu, Log: `Konfigurationsfehler: SM_SCHLUESSEL …` | Der Schlüssel fehlt, ist unvollständig oder hat nicht genau 32 Byte. Häufig fehlt beim Kopieren das `=` am Ende oder es wurde der Wert aus der Zeile `-base64 24` genommen. Neu erzeugen mit `openssl rand -base64 32`, vollständig in `SM_SCHLUESSEL` eintragen und den Stack neu deployen. Solange noch kein Zwei-Faktor eingerichtet ist, darf der Schlüssel frei ersetzt werden; danach müssen alle ihren Zwei-Faktor neu einrichten (Administration → Zwei-Faktor zurücksetzen). Ein nur leicht fehlerhafter Wert (fehlendes `=`, Anführungszeichen, Leerraum) wird automatisch korrigiert; das Log warnt dann mit „wurde korrigiert“. |
-| Proxy startet ständig neu, Log: `Konfigurationsfehler: SM_HOSTNAME` bzw. `SM_ZUSAETZLICHE_HOSTS` | Ungültige Angabe: erlaubt sind Namen und IP-Adressen ohne Port, Platzhalter und Sonderzeichen, getrennt durch Leerzeichen oder Komma. Das Log nennt die beanstandete Angabe. |
-| Browser: Hinweis „Unbekannter Name oder unbekannte Adresse in der URL“ (421) oder `ERR_SSL_PROTOCOL_ERROR` | Name oder IP-Adresse sind dem Proxy nicht bekannt: Hostnamen aus `SM_HOSTNAME` verwenden oder die IP bzw. den Namen in `SM_ZUSAETZLICHE_HOSTS` eintragen (siehe „Aufruf per IP-Adresse“). |
-| Container `stockmaster-api-1` ist `unhealthy` | Der Health-Check prüft Schlüssel und Datenbank. Das Log nennt die Ursache (`Health-Check fehlgeschlagen: …`). |
-| API startet ständig neu (`restarting`) | Log des Containers ansehen (Portainer → Containers → `stockmaster-api-1` → Logs). Die API wartet bis zu 2 Minuten auf die Datenbank und nennt dort den Grund. Bei „Anmeldung an der Datenbank abgelehnt“: Container `db` neu starten (er gleicht die Passwörter bei jedem Start ab, Log-Zeile `db-abgleich: Passwörter und Anwendungsrolle abgeglichen`). Fehlt diese Zeile oder steht dort `FEHLER`, das `db`-Log schicken. |
-| `db`-Log: `role "stockmaster" does not exist` | Die Anwendungsrolle fehlt (z. B. nach einem abgebrochenen ersten Start). Das `db`-Image legt sie beim nächsten Start selbst an; den Stack neu deployen. Das Volume muss nicht gelöscht werden. |
-| API-Log: `Permission denied: /repo/...` | Dateien im Spiel-Repository sind für andere Benutzer nicht lesbar: `chmod -R a+rX /srv/stockmaster/spiel-repo`. |
-| Seite zeigt „Zugriff nur aus dem Heimnetz“ | Anfrage kommt nicht aus einem privaten Adressbereich (z. B. VPN): Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |
-| Leere Ansicht „kein Commit“ / Git-Historie fehlt | Der Ordner `SPIEL_REPO` ist kein Git-Repository oder `.git` ist nicht lesbar. |
+| `required variable SM_HOSTNAME is missing` | `SM_HOSTNAME` in den Stack-Variablen setzen. |
+| `pull access denied` / `manifest unknown` | Registry-Zugang fehlt (Schritt 1) oder Images noch nicht veröffentlicht. |
+| API-Log: `Konfigurationsfehler: Es gibt gespeicherte Zwei-Faktor-Geheimnisse, aber keinen Master-Schlüssel` | Update ohne `SM_SCHLUESSEL`: den bisherigen Wert einmalig wieder setzen und deployen. |
+| API-Log: `Anmeldung an der Datenbank abgelehnt` | Container `db` neu starten (gleicht die Passwörter aus dem Volume `geheim` ab, Log `db-abgleich`). |
+| Systemstatus „Hintergrunddienst“ rot | Container `stockmaster-worker-1` läuft nicht oder ist unhealthy; dessen Log ansehen. |
+| „Markt & Kurse“ zeigt „veraltet“ | Keine Quelle lieferte einen aktuellen Kurs; der Grund steht beim Wert. Einrichtung → Kursdaten → *Verbindung testen*. |
+| Claude-Test: „Token ungültig oder abgelaufen“ | `claude setup-token` neu ausführen und eintragen. |
+| Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |
+| Browser: 421 oder `ERR_SSL_PROTOCOL_ERROR` | Name bzw. IP ist dem Proxy unbekannt: `SM_HOSTNAME` verwenden oder in `SM_ZUSAETZLICHE_HOSTS` eintragen. |
+| „Zugriff nur aus dem Heimnetz“ | Anfrage nicht aus privatem Adressbereich: Bereich in `SM_ZUSAETZLICHE_NETZE` eintragen. |

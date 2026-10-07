@@ -1,16 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, CalendarCheck2, Flag, History, NotebookPen, Rocket } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Flag, History, Newspaper, NotebookPen, Rocket } from "lucide-react";
 import { useState } from "react";
 
 import { EntscheidungsZeile, SessionKarte, TerminZeile } from "@/components/Bausteine";
+import { NewsListe } from "@/components/News";
 import { NavDiagramm, Sparkline } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
 import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Seitenkopf, Skelett, StufenAbzeichen } from "@/components/ui";
-import { api, PROFILE, type Kennzahlen, type NavDaten, type Profil } from "@/lib/api";
+import { api, PROFILE, type Kennzahlen, type Lauf, type NavDaten, type NewsMeldung, type Pflichtschritt, type Profil } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, prozent } from "@/lib/format";
+import { datum, euro, faktor, prozent, relativ } from "@/lib/format";
+import { LaufStatusAbzeichen, laufText } from "@/seiten/Laeufe";
 
 function gruss(): string {
   const stunde = new Date().getHours();
@@ -49,6 +51,8 @@ export function Cockpit() {
         }
       />
 
+      {daten && daten.einrichtung_offen.length > 0 && <EinrichtungsHinweis schritte={daten.einrichtung_offen} />}
+
       {!daten ? (
         <div className="grid gap-4 md:grid-cols-3">
           {[0, 1, 2].map((i) => (
@@ -56,7 +60,13 @@ export function Cockpit() {
           ))}
         </div>
       ) : !daten.gestartet ? (
-        <NichtGestartet phase={daten.status.phase} />
+        <>
+          <NichtGestartet phase={daten.status.phase} ziel={daten.einrichtung_offen[0]?.link} />
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <NewsKarte meldungen={daten.news} />
+            <LaufKarte lauf={daten.letzter_lauf} />
+          </div>
+        </>
       ) : (
         <>
           <section className="grid gap-4 md:grid-cols-3" aria-label="Portfolios">
@@ -88,6 +98,7 @@ export function Cockpit() {
                   {daten.termine.length > 4 && <p className="px-3 text-[12px] text-text-3">und {daten.termine.length - 4} weitere</p>}
                 </div>
               </Karte>
+              <LaufKarte lauf={daten.letzter_lauf} />
               <Karte className="flex-1">
                 <KarteKopf
                   titel="Letzte Sessions"
@@ -107,6 +118,10 @@ export function Cockpit() {
                 </div>
               </Karte>
             </div>
+          </div>
+
+          <div className="mt-4">
+            <NewsKarte meldungen={daten.news} />
           </div>
 
           <Karte className="mt-4">
@@ -198,13 +213,103 @@ function PortfolioKarte({ profil, k, werte }: { profil: Profil; k: Kennzahlen; w
   );
 }
 
-function NichtGestartet({ phase }: { phase?: string }) {
+function linkTeile(link: string | undefined): { to: string; hash?: string } {
+  const [to, hash] = (link ?? "/einrichtung").split("#");
+  return { to, hash };
+}
+
+function EinrichtungsHinweis({ schritte }: { schritte: Pflichtschritt[] }) {
+  const erster = linkTeile(schritte[0].link);
+  return (
+    <Karte className="mb-4 border-warnung/40">
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-warnung-flaeche text-warnung">
+          <AlertTriangle className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-semibold text-text">Einrichtung noch nicht abgeschlossen</div>
+          <p className="text-[12.5px] text-text-3">
+            {schritte.map((s, i) => (
+              <span key={s.schritt}>
+                {i > 0 && " · "}
+                <Link to={linkTeile(s.link).to} hash={linkTeile(s.link).hash} className="text-text-2 hover:text-text hover:underline">
+                  {s.titel}
+                </Link>
+              </span>
+            ))}
+            {" – "}
+            {schritte[0].text}
+          </p>
+        </div>
+        <Link to={erster.to} hash={erster.hash} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-text px-3.5 text-[13px] font-medium text-bg hover:opacity-90">
+          {schritte[0].titel} <ArrowRight className="size-4" />
+        </Link>
+      </div>
+    </Karte>
+  );
+}
+
+function NewsKarte({ meldungen }: { meldungen: NewsMeldung[] }) {
+  return (
+    <Karte>
+      <KarteKopf
+        titel="Neueste Meldungen"
+        icon={<Newspaper className="size-4" />}
+        untertitel="News-Speicher (RSS) mit Quelle und Datum"
+        aktion={
+          <Link to="/analyse/kurse" className="inline-flex items-center gap-1 text-[12.5px] text-text-3 hover:text-text">
+            Je Wert <ArrowRight className="size-3.5" />
+          </Link>
+        }
+      />
+      <div className="px-2 pb-2">
+        <NewsListe meldungen={meldungen} kompakt />
+      </div>
+    </Karte>
+  );
+}
+
+function LaufKarte({ lauf }: { lauf: Lauf | null }) {
+  return (
+    <Karte>
+      <KarteKopf
+        titel="Letzter Claude-Lauf"
+        icon={<Bot className="size-4" />}
+        aktion={
+          <Link to="/laeufe" className="text-[12.5px] text-text-3 hover:text-text">
+            Alle
+          </Link>
+        }
+      />
+      <div className="px-5 pb-4">
+        {lauf ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-[13px] font-medium text-text">{laufText(lauf)}</span>
+              <LaufStatusAbzeichen status={lauf.status} />
+            </div>
+            <p className="text-[12px] text-text-3">
+              {relativ(lauf.erstellt)} · {lauf.ausloeser === "zeitplan" ? "per Zeitplan" : "manuell"}
+              {lauf.pruefung_ok != null && ` · Prüfung ${lauf.pruefung_ok ? "bestanden" : "mit Fehlern"}`}
+            </p>
+            {lauf.meldung && <p className="line-clamp-3 text-[12.5px] text-text-2">{lauf.meldung}</p>}
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-3">Noch kein Lauf. Sessions starten unter Claude-Läufe oder per Zeitplan.</p>
+        )}
+      </div>
+    </Karte>
+  );
+}
+
+function NichtGestartet({ phase, ziel }: { phase?: string; ziel?: string }) {
   const schritte = [
-    ["Auslegungsfragen entscheiden", "Die Auftraggeber bestätigen oder ändern die konservativen Auslegungen."],
-    ["Testsession ohne Order", "Nachbuchen, Prüfen, Marktüberblick und Bericht einmal vollständig durchspielen."],
+    ["Einrichtung", "Claude-Token, Kursdaten und News in der App hinterlegen und testen."],
+    ["Testsession ohne Order", "Nachbuchen, Prüfen, Marktüberblick und Bericht einmal vollständig durchspielen (Claude-Läufe)."],
     ["Anlagerichtlinien", "Ziel, Risikobudget, Horizont und Ausgangsstrategie je Profil ausformulieren."],
-    ["Freigabe und Start", "Nach der Freigabe setzt tools/init.py das Startdatum – nie rückwirkend."],
+    ["Freigabe und Start", "Nach der Freigabe startet ein Admin das Spiel in der Einrichtung (tools/init.py) – nie rückwirkend."],
   ];
+  const link = linkTeile(ziel ?? "/einrichtung#spielstart");
   return (
     <Karte className="glanz overflow-hidden">
       <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_1.2fr]">
@@ -214,11 +319,11 @@ function NichtGestartet({ phase }: { phase?: string }) {
           </div>
           <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-text">Noch kein Spielstart</h2>
           <p className="mt-2 text-[14px] leading-relaxed text-text-2">
-            Die Werkzeuge sind fertig und geprüft. Sobald die Portfolios mit tools/init.py angelegt sind, erscheinen hier Werte, Benchmarks und
+            Die Werkzeuge sind fertig und geprüft. Sobald das Spiel in der Einrichtung gestartet ist, erscheinen hier Werte, Benchmarks und
             Entscheidungen.
           </p>
           {phase && <p className="mt-4 rounded-lg border border-rand bg-flaeche-2 px-3 py-2 text-[12.5px] text-text-3">Phase laut STATUS.md: {phase}</p>}
-          <Link to="/einrichtung" className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-text px-4 text-sm font-medium text-bg hover:opacity-90">
+          <Link to={link.to} hash={link.hash} className="mt-5 inline-flex h-10 items-center gap-2 rounded-lg bg-text px-4 text-sm font-medium text-bg hover:opacity-90">
             Zur Einrichtung <ArrowRight className="size-4" />
           </Link>
         </div>

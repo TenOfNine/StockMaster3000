@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ..auth import Angemeldet, angemeldet, begrenzen
+from ..auth import DB, Angemeldet, angemeldet, begrenzen
 from . import lesen
 
 router = APIRouter(prefix="/api/spiel", tags=["spiel"], dependencies=[Depends(angemeldet)])
@@ -22,12 +22,18 @@ def _404(funktion, *argumente):
 
 
 @router.get("/ueberblick")
-def ueberblick() -> dict:
+def ueberblick(db: DB) -> dict:
+    from ..auftraege import letzter_lauf
+    from ..einrichtung import pflichtschritte
+
     bench = lesen.benchmark()
     profile = lesen.profile()
     journal = lesen.journal()
     sessions = [e for e in journal if e["art"] == "S"][-5:][::-1]
     return {
+        "einrichtung_offen": pflichtschritte(),
+        "letzter_lauf": letzter_lauf(db),
+        "news": lesen.news(anzahl=8)["meldungen"],
         "repo": lesen.repo_info(),
         "status": lesen.status()["kopf"],
         "sperre": lesen.sperre(),
@@ -102,6 +108,17 @@ def termine() -> list[dict]:
 @router.get("/kurse")
 def kurs_ticker() -> list[dict]:
     return lesen.kurs_ticker()
+
+
+@router.get("/markt")
+def markt() -> dict:
+    return lesen.markt()
+
+
+@router.get("/news")
+def news(ticker: Annotated[str | None, Query(max_length=20)] = None,
+         anzahl: Annotated[int, Query(ge=1, le=200)] = 50, tage: Annotated[int, Query(ge=1, le=365)] = 30) -> dict:
+    return _404(lesen.news, ticker, anzahl, tage)
 
 
 @router.get("/kurse/{ticker}")

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { BookOpenText, CandlestickChart, Lightbulb } from "lucide-react";
+import { AlertTriangle, BookOpenText, CandlestickChart, Clock, Lightbulb, Newspaper } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -8,10 +8,11 @@ import { Kerzendiagramm } from "@/components/diagramme/Kerzendiagramm";
 import { Legende, NavDiagramm } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
 import { Markdown } from "@/components/Markdown";
+import { NewsListe } from "@/components/News";
 import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Seitenkopf, Skelett } from "@/components/ui";
-import { api, PROFILE, type Dokument, type Kennzahlen, type Kerze, type Lesson, type NavDaten, type Review } from "@/lib/api";
+import { api, PROFILE, type Dokument, type Kennzahlen, type Kerze, type Lesson, type Markt, type MarktEintrag, type NavDaten, type NewsMeldung, type Review } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, prozent, zahl } from "@/lib/format";
+import { datum, euro, faktor, prozent, relativ, zahl, zeit } from "@/lib/format";
 
 // --------------------------------------------------------------------------
 // Ranking
@@ -232,59 +233,151 @@ export function ReviewsLessons() {
 // --------------------------------------------------------------------------
 // Markt & Kurse
 
+const GRUPPEN_MARKT: { titel: string; passt: (e: MarktEintrag) => boolean }[] = [
+  { titel: "Benchmark und Devisen", passt: (e) => e.ticker === "EUNL.DE" || e.ticker === "EURUSD=X" },
+  { titel: "Indizes und Rohstoffe", passt: (e) => /[\^=]/.test(e.ticker) && e.ticker !== "EURUSD=X" },
+  { titel: "Werte in den Portfolios", passt: (e) => !/[\^=]/.test(e.ticker) && e.ticker !== "EUNL.DE" },
+];
+
+function Marktzeile({ e, aktiv, waehlen }: { e: MarktEintrag; aktiv: boolean; waehlen: () => void }) {
+  return (
+    <tr onClick={waehlen} className={cn("cursor-pointer border-t border-rand", aktiv ? "bg-flaeche-3" : "hover:bg-flaeche-2")}>
+      <td className="px-4 py-2.5">
+        <button type="button" onClick={waehlen} className="text-left">
+          <div className="font-mono text-[12.5px] text-text">{e.ticker}</div>
+          <div className="truncate text-[12px] text-text-3">{e.name ?? e.boerse}</div>
+        </button>
+      </td>
+      <td className="zahl px-3 py-2.5 text-right text-[13.5px] font-semibold text-text">
+        {zahl(e.kurs, e.ticker === "EURUSD=X" ? 4 : 2)} {e.ticker !== "EURUSD=X" && <span className="text-[11.5px] font-normal text-text-3">{e.waehrung}</span>}
+      </td>
+      <td className="px-3 py-2.5 text-right">
+        <Delta wert={e.veraenderung} />
+      </td>
+      <td className="px-3 py-2.5 text-[12px] text-text-3">
+        <div title={zeit(e.kurs_zeit)}>{e.kurs_zeit ? zeit(e.kurs_zeit) : "–"}</div>
+        <div>{e.verzoegerung_minuten != null ? `${e.verzoegerung_minuten} Min. Verzögerung` : e.markt_offen ? "Markt offen" : "Markt geschlossen"}</div>
+      </td>
+      <td className="px-4 py-2.5 text-[12px]">
+        {e.veraltet ? (
+          <Abzeichen ton="warnung" icon={<AlertTriangle className="size-3" />}>
+            veraltet
+          </Abzeichen>
+        ) : (
+          <Abzeichen>{e.quelle}</Abzeichen>
+        )}
+        {e.veraltet && e.quelle && <div className="mt-1 max-w-[220px] truncate text-text-3" title={e.grund ?? undefined}>{e.quelle}</div>}
+      </td>
+    </tr>
+  );
+}
+
 export function Kurse() {
+  const markt = useQuery({ queryKey: ["markt"], queryFn: () => api<Markt>("/api/spiel/markt"), refetchInterval: 60_000 });
   const liste = useQuery({ queryKey: ["kurse"], queryFn: () => api<{ ticker: string; name: string | null; bis: string | null }[]>("/api/spiel/kurse") });
   const [ticker, setTicker] = useState<string | null>(null);
   useEffect(() => {
-    if (!ticker && liste.data?.length) setTicker(liste.data.find((t) => t.ticker === "^GDAXI")?.ticker ?? liste.data[0].ticker);
-  }, [liste.data, ticker]);
-  const kerzen = useQuery({ queryKey: ["kerzen", ticker], queryFn: () => api<Kerze[]>(`/api/spiel/kurse/${encodeURIComponent(ticker!)}`), enabled: !!ticker });
+    if (ticker) return;
+    const erster = markt.data?.eintraege.find((e) => e.ticker === "^GDAXI")?.ticker ?? markt.data?.eintraege[0]?.ticker ?? liste.data?.[0]?.ticker;
+    if (erster) setTicker(erster);
+  }, [markt.data, liste.data, ticker]);
+  const hatHistorie = !!ticker && !!liste.data?.some((t) => t.ticker === ticker);
+  const kerzen = useQuery({ queryKey: ["kerzen", ticker], queryFn: () => api<Kerze[]>(`/api/spiel/kurse/${encodeURIComponent(ticker!)}`), enabled: hatHistorie });
+  const news = useQuery({ queryKey: ["news", ticker], queryFn: () => api<{ meldungen: NewsMeldung[] }>(`/api/spiel/news?ticker=${encodeURIComponent(ticker!)}&anzahl=15`), enabled: !!ticker });
   const statistik = useMemo(() => {
     const k = kerzen.data ?? [];
     if (k.length < 2) return null;
     const letzte = k[k.length - 1];
-    const vorher = k[k.length - 2];
     const hoch = Math.max(...k.map((x) => x.high));
     const tief = Math.min(...k.map((x) => x.low));
-    return { letzte, tag: letzte.close / vorher.close - 1, gesamt: letzte.close / k[0].close - 1, hoch, tief };
+    return { letzte, gesamt: letzte.close / k[0].close - 1, hoch, tief };
   }, [kerzen.data]);
+  const eintraege = markt.data?.eintraege ?? [];
+  const gewaehlt = eintraege.find((e) => e.ticker === ticker);
+  const zusaetzlich = (liste.data ?? []).filter((t) => !eintraege.some((e) => e.ticker === t.ticker));
 
   return (
     <div className="einblenden">
-      <Seitenkopf titel="Markt & Kurse" untertitel="Gespeicherte Tagesdaten aus data/historie/ (Kursquelle tools/kurse.py). Die Web-UI ruft selbst keine Kurse ab." />
-      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <Karte className="overflow-hidden lg:self-start">
-          {liste.isPending ? (
-            <Skelett className="m-3 h-60" />
-          ) : !liste.data?.length ? (
-            <Leer titel="Keine gespeicherten Kurse" />
-          ) : (
-            <ul className="p-1.5">
-              {liste.data.map((t) => (
-                <li key={t.ticker}>
-                  <button
-                    onClick={() => setTicker(t.ticker)}
-                    className={cn("flex w-full flex-col rounded-lg px-3 py-2 text-left", ticker === t.ticker ? "bg-flaeche-3" : "hover:bg-flaeche-2")}
-                  >
-                    <span className="font-mono text-[12.5px] text-text">{t.ticker}</span>
-                    <span className="truncate text-[12px] text-text-3">{t.name ?? `bis ${datum(t.bis)}`}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Karte>
+      <Seitenkopf
+        titel="Markt & Kurse"
+        untertitel="Kurse aus tools/kurse.py, abgerufen vom Hintergrunddienst (5 Minuten bei offenem Markt, sonst stündlich). Die Web-UI rechnet nicht selbst. Fällt jede Quelle aus, steht dort der letzte bekannte Kurs mit Kennzeichnung – gebucht wird nur zu protokollierten Kursen."
+        aktionen={
+          markt.data?.zeit ? (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] text-text-3">
+              <Clock className="size-3.5" /> Stand {relativ(markt.data.zeit)} · {markt.data.erfolgreich}/{markt.data.anzahl} aktuell
+            </span>
+          ) : undefined
+        }
+      />
+      <Karte className="mb-4 overflow-hidden">
+        {markt.isPending ? (
+          <Skelett className="m-4 h-48" />
+        ) : !eintraege.length ? (
+          <Leer
+            icon={<CandlestickChart className="size-5" />}
+            titel="Noch keine Marktübersicht"
+            text="Der Hintergrunddienst hat noch keine Kurse abgerufen. In der Einrichtung unter Kursdaten eine Quelle wählen und „Jetzt abrufen“ drücken; der Systemstatus zeigt, ob der Dienst läuft."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr className="text-left text-[11.5px] font-medium tracking-wide text-text-3 uppercase">
+                  <th className="px-4 py-2.5 font-medium">Wert</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Kurs</th>
+                  <th className="px-3 py-2.5 text-right font-medium">ggü. Vortag</th>
+                  <th className="px-3 py-2.5 font-medium">Zeitstempel</th>
+                  <th className="px-4 py-2.5 font-medium">Quelle</th>
+                </tr>
+              </thead>
+              {GRUPPEN_MARKT.map((g) => {
+                const zeilen = eintraege.filter(g.passt);
+                if (!zeilen.length) return null;
+                return (
+                  <tbody key={g.titel}>
+                    <tr>
+                      <td colSpan={5} className="bg-flaeche-2 px-4 py-1.5 text-[11.5px] font-semibold text-text-3">
+                        {g.titel}
+                      </td>
+                    </tr>
+                    {zeilen.map((e) => (
+                      <Marktzeile key={e.ticker} e={e} aktiv={e.ticker === ticker} waehlen={() => setTicker(e.ticker)} />
+                    ))}
+                  </tbody>
+                );
+              })}
+            </table>
+          </div>
+        )}
+      </Karte>
+      {zusaetzlich.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <span className="self-center text-[12px] text-text-3">Weitere gespeicherte Tagesdaten:</span>
+          {zusaetzlich.map((t) => (
+            <button key={t.ticker} onClick={() => setTicker(t.ticker)} className={cn("rounded-md border px-2 py-1 font-mono text-[12px]", ticker === t.ticker ? "border-akzent text-text" : "border-rand text-text-2 hover:border-rand-stark")}>
+              {t.ticker}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Karte>
-          <KarteKopf titel={<span className="font-mono">{ticker ?? "–"}</span>} icon={<CandlestickChart className="size-4" />} untertitel={statistik ? `Letzter Schluss ${datum(statistik.letzte.datum)}` : undefined} />
+          <KarteKopf
+            titel={<span className="font-mono">{ticker ?? "–"}</span>}
+            icon={<CandlestickChart className="size-4" />}
+            untertitel={gewaehlt?.name ?? (statistik ? `Letzter Schluss ${datum(statistik.letzte.datum)}` : undefined)}
+          />
+          {gewaehlt?.veraltet && gewaehlt.grund && (
+            <p className="mx-5 mb-3 rounded-lg border border-warnung/30 bg-warnung-flaeche px-3 py-2 text-[12.5px] text-text-2">
+              <span className="font-medium text-text">Kein aktueller Kurs: </span>
+              {gewaehlt.grund}
+            </p>
+          )}
           {statistik && (
-            <div className="grid grid-cols-2 gap-4 px-5 pb-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 px-5 pb-3 sm:grid-cols-3">
               <div>
-                <div className="text-[12px] text-text-3">Schluss</div>
+                <div className="text-[12px] text-text-3">Letzter Schluss</div>
                 <div className="zahl text-[18px] font-semibold text-text">{zahl(statistik.letzte.close)}</div>
-              </div>
-              <div>
-                <div className="text-[12px] text-text-3">Tag</div>
-                <Delta wert={statistik.tag} gross />
               </div>
               <div>
                 <div className="text-[12px] text-text-3">Zeitraum</div>
@@ -298,7 +391,19 @@ export function Kurse() {
               </div>
             </div>
           )}
-          <div className="px-3 pb-4">{kerzen.data ? <Kerzendiagramm kerzen={kerzen.data} hoehe={420} /> : <Skelett className="h-[420px]" />}</div>
+          <div className="px-3 pb-4">
+            {!hatHistorie ? (
+              <Leer titel="Noch keine Tagesdaten" text="Tagesdaten (400 Tage) holt der Hintergrunddienst beim ersten Abruf und danach täglich nach US-Börsenschluss." />
+            ) : kerzen.data ? (
+              <Kerzendiagramm kerzen={kerzen.data} hoehe={420} />
+            ) : (
+              <Skelett className="h-[420px]" />
+            )}
+          </div>
+        </Karte>
+        <Karte className="xl:self-start">
+          <KarteKopf titel="Meldungen zu diesem Wert" icon={<Newspaper className="size-4" />} untertitel="News-Speicher, Zuordnung über Feed oder Schlagwort" />
+          <div className="px-2 pb-2">{news.data ? <NewsListe meldungen={news.data.meldungen} leerText="Zu diesem Wert gibt es noch keine Meldungen." /> : <Skelett className="m-3 h-40" />}</div>
         </Karte>
       </div>
     </div>

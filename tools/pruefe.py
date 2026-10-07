@@ -5,11 +5,16 @@ Prüft:
 - Cash und Positionen lassen sich aus trades/ vollständig nachrechnen.
 - Jede Order verweist auf einen Journal-Eintrag, der vor ihr erfasst wurde.
 - Jeder Kurs in trades/ findet sich in data/kurse/ bzw. data/historie/.
-- trades/, journal/, data/kurse/, data/limits/ werden nur angehängt
-  (gegenüber dem letzten Commit bzw. mit --historie über alle Commits).
+- trades/, journal/, data/kurse/, data/limits/, news/ werden nur angehängt
+  (gegenüber dem letzten Commit bzw. mit --historie über alle Commits des
+  lokalen Spielstand-Gits im Datenverzeichnis).
 - Limits waren bei jeder Ausführung eingehalten (data/limits/).
 - config/profile.json stimmt mit der Tabelle in regeln.md überein.
 - Warnung bei verwaister Session-Sperre und fehlenden Feiertagen.
+- Warnung, wenn das Spielstand-Git ein Remote hat (Spielstand bleibt lokal).
+
+Spielstand kommt aus dem Datenverzeichnis (STOCKMASTER_DATA_DIR), regeln.md und
+config/ aus dem Framework.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ import kurse
 import limits
 from gemeinsam import D
 
-NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits")
+NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits", "news")
 ORDER_AKTIONEN = ("kauf", "verkauf", "vormerkung", "aenderung", "storno")
 
 
@@ -271,14 +276,29 @@ def pruefe_kurse(profil: str) -> list[Befund]:
 
 
 def _git(*argumente, pruefen=True) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *argumente], cwd=g.root(), capture_output=True, check=pruefen)
+    """Git im Datenverzeichnis (lokales Spielstand-Repository)."""
+    return subprocess.run(["git", "-c", f"safe.directory={g.root()}", *argumente], cwd=g.root(),
+                          capture_output=True, check=pruefen)
 
 
 def ist_git() -> bool:
+    """Das Datenverzeichnis ist selbst die Wurzel eines Git-Repositorys mit mindestens einem Commit."""
+    if not (g.root() / ".git").exists():
+        return False
     try:
         return _git("rev-parse", "--verify", "HEAD", pruefen=False).returncode == 0
     except FileNotFoundError:
         return False
+
+
+def pruefe_remote() -> list[Befund]:
+    if not ist_git():
+        return []
+    remotes = _git("remote", pruefen=False).stdout.decode().split()
+    if remotes:
+        return [warnung("Spielstand-Git", f"Das Datenverzeichnis hat ein Remote ({', '.join(remotes)}). "
+                                          "Spielstand bleibt lokal; Werkzeuge pushen nie.")]
+    return []
 
 
 def _inhalt(ref: str, datei: str) -> bytes | None:
@@ -385,7 +405,7 @@ def _regelwert(text: str) -> Decimal:
 
 
 def regeln_tabelle() -> dict[str, dict[str, Decimal]]:
-    text = g.pfad("regeln.md").read_text(encoding="utf-8")
+    text = g.framework_pfad("regeln.md").read_text(encoding="utf-8")
     abschnitt = re.search(r"^## 7\..*?$(.*?)^## ", text, re.S | re.M)
     if not abschnitt:
         raise ValueError("Abschnitt 7 in regeln.md nicht gefunden")
@@ -454,7 +474,7 @@ def pruefe_kalender() -> list[Befund]:
 
 
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
-    befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender()
+    befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
     bloecke = g.journal_bloecke()
     befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)
@@ -470,7 +490,7 @@ def alle_pruefungen(historie: bool = False) -> list[Befund]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Spielstand unabhängig prüfen (Rückgabewert 1 bei Fehlern).")
     parser.add_argument("--historie", action="store_true",
-                        help="Nur-Anhängen über alle Commits prüfen (für die GitHub Action)")
+                        help="Nur-Anhängen über alle Commits des lokalen Spielstand-Gits prüfen")
     args = parser.parse_args(argv)
     try:
         befunde = alle_pruefungen(historie=args.historie)

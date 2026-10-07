@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   BookOpenText,
+  Bot,
   Calculator,
   ChevronDown,
   CircleUserRound,
@@ -20,6 +21,7 @@ import {
   Scale,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
   Trophy,
   Unlock,
@@ -54,6 +56,7 @@ const GRUPPEN: { titel?: string; eintraege: NavEintrag[] }[] = [
     eintraege: [
       { zu: "/entscheidungen", text: "Zeitachse & Trade-Akten", icon: <NotebookPen className="size-4" /> },
       { zu: "/sessions", text: "Sessions & Abwägungen", icon: <FileClock className="size-4" /> },
+      { zu: "/laeufe", text: "Claude-Läufe", icon: <Bot className="size-4" /> },
     ],
   },
   {
@@ -69,7 +72,7 @@ const GRUPPEN: { titel?: string; eintraege: NavEintrag[] }[] = [
     titel: "Projekt",
     eintraege: [
       { zu: "/regelwerk", text: "Regelwerk", icon: <Scale className="size-4" /> },
-      { zu: "/einrichtung", text: "Einrichtung & Aufbau", icon: <ListChecks className="size-4" /> },
+      { zu: "/roadmap", text: "Roadmap & Status", icon: <ListChecks className="size-4" /> },
       { zu: "/pruefung", text: "Prüfung & Audit", icon: <GitCommitHorizontal className="size-4" /> },
     ],
   },
@@ -97,7 +100,16 @@ function Navigation({ beiKlick }: { beiKlick?: () => void }) {
   const { sitzung } = useAuth();
   const aktiv = (zu: string) => (zu === "/" ? pfad === "/" : pfad === zu || pfad.startsWith(`${zu}/`));
   const gruppen: { titel?: string; eintraege: NavEintrag[] }[] = sitzung?.benutzer?.ist_admin
-    ? [...GRUPPEN, { titel: "Verwaltung", eintraege: [{ zu: "/admin", text: "Administration", icon: <Users className="size-4" /> }] }]
+    ? [
+        ...GRUPPEN,
+        {
+          titel: "Verwaltung",
+          eintraege: [
+            { zu: "/einrichtung", text: "Einrichtung", icon: <SlidersHorizontal className="size-4" /> },
+            { zu: "/admin", text: "Administration", icon: <Users className="size-4" /> },
+          ],
+        },
+      ]
     : GRUPPEN;
   return (
     <nav className="space-y-5" aria-label="Hauptnavigation">
@@ -290,7 +302,8 @@ function Kopfzeile({ oeffneMenue, oeffnePalette }: { oeffneMenue: () => void; oe
               <DropdownMenu.Separator className="my-1 h-px bg-rand" />
               <MenueLink zu="/konto" icon={<CircleUserRound className="size-4" />}>Konto & Sicherheit</MenueLink>
               {benutzer?.ist_admin && <MenueLink zu="/admin" icon={<ShieldCheck className="size-4" />}>Administration</MenueLink>}
-              <MenueLink zu="/einrichtung" icon={<FlaskConical className="size-4" />}>Einrichtung & Aufbau</MenueLink>
+              {benutzer?.ist_admin && <MenueLink zu="/einrichtung" icon={<SlidersHorizontal className="size-4" />}>Einrichtung</MenueLink>}
+              <MenueLink zu="/roadmap" icon={<FlaskConical className="size-4" />}>Roadmap & Status</MenueLink>
               <DropdownMenu.Separator className="my-1 h-px bg-rand" />
               <DropdownMenu.Item
                 onSelect={() => void abmelden()}

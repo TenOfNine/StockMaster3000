@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import admin, auth
+from . import admin, auftraege, auth, einrichtung, sicherung
 from .config import SchluesselFehler, einstellungen
 from .db import engine
 from .spiel import router as spiel
@@ -58,7 +58,9 @@ def app_erstellen() -> FastAPI:
                     return JSONResponse({"detail": "Zugriff nur aus dem Heimnetz."}, status_code=403)
             except ValueError:
                 return JSONResponse({"detail": "Zugriff nur aus dem Heimnetz."}, status_code=403)
-        if request.headers.get("content-length", "0").isdigit() and int(request.headers.get("content-length", "0")) > 64_000:
+        laenge = request.headers.get("content-length", "0")
+        grenze = e.sicherung_max_mb * 1024 * 1024 if request.url.path == sicherung.RESTORE_PFAD else 64_000
+        if laenge.isdigit() and int(laenge) > grenze:
             return JSONResponse({"detail": "Anfrage zu groß."}, status_code=413)
         antwort = await call_next(request)
         for name, wert in SICHERHEITS_HEADER.items():
@@ -95,6 +97,9 @@ def app_erstellen() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(spiel.router)
+    app.include_router(einrichtung.router)
+    app.include_router(auftraege.router)
+    app.include_router(sicherung.router)
     return app
 
 

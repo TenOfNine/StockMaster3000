@@ -1,9 +1,11 @@
-"""Lesedienst: liest das Spiel-Repository ausschließlich lesend.
+"""Lesedienst: liest Framework und Datenverzeichnis ausschließlich lesend.
 
+Framework (STOCKMASTER_FRAMEWORK_DIR): Werkzeuge, Regeln, config/, Doku.
+Datenverzeichnis (STOCKMASTER_DATA_DIR): Spielstand mit lokalem Git.
 Berechnungen (Kennzahlen, Bewertung, Fälligkeiten, Zertifikate) kommen aus
-den Werkzeugen in tools/ des Repositorys; die Web-UI rechnet nicht selbst.
-Kursdaten werden nur aus dem Zwischenspeicher data/historie/ gelesen; es
-gibt keine Netzwerkabfragen und keine Schreibzugriffe.
+den Werkzeugen in tools/; die Web-UI rechnet nicht selbst. Kurse und News
+liest sie nur aus dem, was der Hintergrunddienst gespeichert hat; die API
+selbst ruft nichts aus dem Netz ab.
 """
 
 from __future__ import annotations
@@ -25,8 +27,9 @@ from ..config import einstellungen
 
 TICKER_MUSTER = re.compile(r"^[A-Z0-9^=.\-]{1,20}$")
 ID_MUSTER = re.compile(r"^[JS]-\d{8}-\d{2}$")
-WURZEL_DOKUMENTE = ("README.md", "CLAUDE.md", "regeln.md", "STATUS.md", "KONZEPT.md", "AUFTRAG_PHASE1.md",
-                    "AUFTRAG_WEBUI.md", "lessons.md", "ranking.md", "DEMO.md")
+FRAMEWORK_DOKUMENTE = ("README.md", "CLAUDE.md", "regeln.md", "STATUS.md", "KONZEPT.md", "AUFTRAG_PHASE1.md",
+                       "AUFTRAG_WEBUI.md")
+DATEN_DOKUMENTE = ("lessons.md", "ranking.md", "DEMO.md")
 
 
 class NichtGefunden(Exception):
@@ -56,8 +59,17 @@ class _NurSpeicher:
 _module: dict[str, ModuleType] = {}
 
 
+def framework() -> Path:
+    return einstellungen().framework_pfad.resolve()
+
+
+def daten() -> Path:
+    return einstellungen().daten_pfad.resolve()
+
+
 def repo() -> Path:
-    return einstellungen().repo_pfad.resolve()
+    """Spielstand-Repository (Datenverzeichnis); Name aus Stufe 1 beibehalten."""
+    return daten()
 
 
 _ladesperre = threading.Lock()
@@ -70,12 +82,14 @@ def werkzeuge() -> dict[str, ModuleType]:
     with _ladesperre:
         if not _module:
             sys.dont_write_bytecode = True  # das Spiel-Repository bleibt unverändert
-            pfad = str(repo() / "tools")
-            os.environ["BOERSE_ROOT"] = str(repo())
+            pfad = str(framework() / "tools")
+            os.environ["STOCKMASTER_FRAMEWORK_DIR"] = str(framework())
+            os.environ["STOCKMASTER_DATA_DIR"] = str(daten())
             if pfad not in sys.path:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
-                       for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine")}
+                       for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
+                                    "datenverzeichnis", "news")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -85,7 +99,7 @@ def zuruecksetzen() -> None:
     """Für Tests: Werkzeuge neu laden (anderes Repository)."""
     for name in list(sys.modules):
         if name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine", "buchen", "pruefe", "init",
-                    "session"):
+                    "session", "pfade", "news", "datenverzeichnis", "migriere"):
             del sys.modules[name]
     _module.clear()
 
@@ -129,7 +143,7 @@ def _git(*argumente: str) -> str:
 def repo_info() -> dict:
     kopf = _git("log", "-1", "--format=%H%x1f%h%x1f%aI%x1f%s").strip().split("\x1f")
     return {
-        "pfad_name": repo().name,
+        "pfad_name": daten().name,
         "commit": kopf[1] if len(kopf) > 1 else None,
         "commit_zeit": kopf[2] if len(kopf) > 2 else None,
         "commit_text": kopf[3] if len(kopf) > 3 else None,
@@ -165,7 +179,7 @@ def _nummerierte_liste(zeilen: list[str]) -> list[dict]:
 
 
 def status() -> dict:
-    datei = repo() / "STATUS.md"
+    datei = framework() / "STATUS.md"
     text = datei.read_text(encoding="utf-8") if datei.exists() else ""
     kopf = {}
     pakete, entscheidungen, fragen = [], [], []
@@ -190,7 +204,13 @@ def status() -> dict:
                 eintrag["abschnitt"] = titel
                 eintrag["entschieden"] = "entschieden" in titel.lower() or "Entschieden:" in eintrag["text"]
                 fragen.append(eintrag)
-    return {"kopf": kopf, "arbeitspakete": pakete, "entscheidungen": entscheidungen, "auslegungsfragen": fragen}
+    # Startdatum und letzte Session sind Spielstand (Datenverzeichnis), nicht Framework.
+    spiel = werkzeuge()["gemeinsam"].spiel_lesen()
+    kopf["startdatum"] = spiel.get("startdatum") or "noch nicht gestartet"
+    sessions = werkzeuge()["gemeinsam"].session_eintraege()
+    kopf["letzte_session"] = (f"{sessions[-1]['id']} ({sessions[-1]['auftraggeber']})" if sessions else "keine")
+    return {"kopf": kopf, "arbeitspakete": pakete, "entscheidungen": entscheidungen, "auslegungsfragen": fragen,
+            "spiel": spiel}
 
 
 # --------------------------------------------------------------------------
@@ -474,12 +494,13 @@ def journal_eintrag(eintrag_id: str) -> dict:
 
 def _erlaubte_dokumente() -> dict[str, Path]:
     erlaubt = {}
-    for name in WURZEL_DOKUMENTE:
-        pfad = repo() / name
-        if pfad.is_file():
-            erlaubt[name] = pfad
+    for wurzel, namen in ((framework(), FRAMEWORK_DOKUMENTE), (daten(), DATEN_DOKUMENTE)):
+        for name in namen:
+            pfad = wurzel / name
+            if pfad.is_file():
+                erlaubt[name] = pfad
     for ordner in ("strategie", "reviews"):
-        for pfad in sorted((repo() / ordner).glob("*.md")):
+        for pfad in sorted((daten() / ordner).glob("*.md")):
             erlaubt[f"{ordner}/{pfad.name}"] = pfad
     return erlaubt
 
@@ -501,7 +522,7 @@ def dokument(name: str) -> dict:
     if name not in erlaubt:
         raise NichtGefunden("Dokument nicht gefunden.")
     pfad = erlaubt[name].resolve()
-    if repo() not in pfad.parents or pfad.is_symlink():
+    if not any(wurzel in pfad.parents for wurzel in (framework(), daten())) or erlaubt[name].is_symlink():
         raise NichtGefunden("Dokument nicht gefunden.")
     return {"pfad": name, "titel": _titel(pfad), "inhalt": pfad.read_text(encoding="utf-8")}
 
@@ -517,7 +538,7 @@ def reviews() -> list[dict]:
 
 
 def lessons() -> list[dict]:
-    datei = repo() / "lessons.md"
+    datei = daten() / "lessons.md"
     if not datei.exists():
         return []
     eintraege, aktuell = [], None
@@ -539,7 +560,7 @@ def lessons() -> list[dict]:
 def konfiguration() -> dict:
     ergebnis = {}
     for name in ("profile", "kosten", "universum", "projekt"):
-        datei = repo() / "config" / f"{name}.json"
+        datei = framework() / "config" / f"{name}.json"
         ergebnis[name] = json.loads(datei.read_text(encoding="utf-8")) if datei.exists() else None
     return ergebnis
 
@@ -634,11 +655,12 @@ def git_commit(hash_wert: str) -> dict:
 
 def pruefung() -> dict:
     """Führt tools/pruefe.py lesend in einem eigenen Prozess aus (Positivliste, Zeitlimit)."""
-    umgebung = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "BOERSE_ROOT": str(repo()), "HOME": "/tmp",  # noqa: S108 - leeres HOME für den Prüfprozess
-                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": str(repo()),
+    umgebung = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "STOCKMASTER_DATA_DIR": str(daten()),
+                "STOCKMASTER_FRAMEWORK_DIR": str(framework()), "HOME": "/tmp",  # noqa: S108 - leeres HOME für den Prüfprozess
+                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": str(daten()),
                 "PYTHONDONTWRITEBYTECODE": "1"}
     try:
-        ergebnis = subprocess.run([sys.executable, "-E", "-s", str(repo() / "tools" / "pruefe.py")], cwd=repo(),
+        ergebnis = subprocess.run([sys.executable, "-E", "-s", str(framework() / "tools" / "pruefe.py")], cwd=daten(),
                                   capture_output=True, text=True, env=umgebung,
                                   timeout=einstellungen().pruefung_timeout_sekunden)
     except subprocess.TimeoutExpired:
@@ -651,3 +673,35 @@ def pruefung() -> dict:
     zeilen = [z for z in ergebnis.stdout.splitlines() if z.startswith("Prüfung")]
     return {"ok": ergebnis.returncode == 0, "befunde": befunde,
             "zusammenfassung": zeilen[-1] if zeilen else (ergebnis.stderr.strip()[-500:] or "Keine Ausgabe.")}
+
+
+# --------------------------------------------------------------------------
+# Marktübersicht und News (geschrieben vom Hintergrunddienst über tools/kurse.py und tools/news.py)
+
+
+def _cache_json(name: str) -> dict:
+    datei = daten() / ".cache" / name
+    if not datei.exists():
+        return {}
+    try:
+        return json.loads(datei.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def markt() -> dict:
+    stand = _cache_json("markt.json")
+    eintraege = []
+    for e in stand.get("eintraege", []):
+        eintraege.append({**e, **{k: _num(e.get(k)) for k in ("kurs", "vortag", "veraenderung")}})
+    return {"zeit": stand.get("zeit"), "quelle_konfiguriert": stand.get("quelle_konfiguriert"),
+            "erfolgreich": stand.get("erfolgreich", 0), "anzahl": stand.get("anzahl", 0), "eintraege": eintraege}
+
+
+def news(ticker: str | None = None, anzahl: int = 50, tage: int = 30) -> dict:
+    if ticker is not None and not TICKER_MUSTER.match(ticker):
+        raise NichtGefunden("Ungültiger Ticker.")
+    meldungen = werkzeuge()["news"].gespeicherte(tage)
+    if ticker:
+        meldungen = [m for m in meldungen if ticker in m.get("ticker", [])]
+    return {"stand": _cache_json("news_stand.json").get("zeit"), "meldungen": meldungen[:anzahl]}

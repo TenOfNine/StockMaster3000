@@ -46,6 +46,38 @@ test("Benutzer sieht Cockpit, Portfolio, Trade-Akte und Prüfung", async ({ page
 
   await page.goto("/admin");
   await expect(page.getByText("Seite nicht gefunden")).toBeVisible();
+
+  await page.goto("/einrichtung");
+  await expect(page.getByText("Nur für Administratoren")).toBeVisible();
+
+  await page.goto("/roadmap");
+  await expect(page.getByRole("heading", { name: "Roadmap & Status" })).toBeVisible();
+
+  await page.goto("/analyse/kurse");
+  await expect(page.getByRole("heading", { name: "Markt & Kurse" })).toBeVisible();
+  await expect(page.getByText("Benchmark und Devisen")).toBeVisible();
+  await expect(page.getByText("veraltet").first()).toBeVisible();
+  await expect(page.getByText("Meldungen zu diesem Wert")).toBeVisible();
+});
+
+test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets bleiben verborgen", async ({ page }) => {
+  await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
+  await page.getByLabel("Code").fill(totp("JBSWY3DPEHPK3PXP"));
+  await page.getByRole("button", { name: "Bestätigen" }).click();
+  await expect(page.getByText("Einrichtung noch nicht abgeschlossen")).toBeVisible();
+  await page.getByRole("link", { name: /Claude verbinden/ }).last().click();
+  await expect(page.getByRole("heading", { name: "Einrichtung", exact: true })).toBeVisible();
+  for (const bereich of ["Claude", "Kursdaten", "News", "Sessions & Zeitplan", "Spielstart", "Sicherung", "Systemstatus"]) {
+    await expect(page.getByRole("heading", { name: bereich, exact: true })).toBeVisible();
+  }
+  const token = "sk-ant-oat01-e2e-geheim-0000000000000000000000abcd";
+  await page.getByRole("textbox", { name: "Claude-Token" }).fill(token);
+  await page.locator("#claude").getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page.getByText("Claude-Token gespeichert (verschlüsselt).")).toBeVisible();
+  await expect(page.getByText("••••abcd")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Claude-Token" })).toHaveValue("");
+  expect(await page.content()).not.toContain(token);
+  await expect(page.getByText("Hintergrunddienst", { exact: true })).toBeVisible();
 });
 
 test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({ page, browser }) => {

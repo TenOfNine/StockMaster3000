@@ -29,8 +29,23 @@ jobs:
       - name: Tests (ohne Netzwerk, Kursdaten gemockt)
         run: python -m pytest -q
 
-      - name: Prüfskript über die gesamte Historie
-        run: python tools/pruefe.py --historie
+      # Das Repository enthält keinen Spielstand: pruefe.py läuft gegen ein frisch initialisiertes
+      # Datenverzeichnis und gegen ein mit Demo-Buchungen befülltes (eigenes lokales Git, ohne Remote).
+      - name: Prüfskript auf frisch initialisiertem Datenverzeichnis
+        run: |
+          python tools/datenverzeichnis.py einrichten --ziel "$RUNNER_TEMP/daten-leer"
+          STOCKMASTER_DATA_DIR="$RUNNER_TEMP/daten-leer" python tools/pruefe.py --historie
+
+      - name: Prüfskript auf Datenverzeichnis mit Demo-Buchungen
+        run: |
+          python webui/demo/demo_daten.py --ziel "$RUNNER_TEMP/daten-demo" --tage 60 --ende 2026-09-30
+          STOCKMASTER_DATA_DIR="$RUNNER_TEMP/daten-demo" python tools/pruefe.py --historie
+
+      - name: Kein Spielstand im Repository
+        run: |
+          for pfad in portfolios trades data journal reviews strategie news lessons.md ranking.md session.lock spiel.json; do
+            if git ls-files --error-unmatch "$pfad" >/dev/null 2>&1; then echo "Spielstand im Repository: $pfad"; exit 1; fi
+          done
 
   webui-backend:
     name: Web-UI Backend

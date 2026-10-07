@@ -5,12 +5,24 @@ Alle Kurse für Buchungen kommen aus diesem Werkzeug. Aktuelle Abfragen werden
 in data/kurse/JJJJ-MM-TT.csv protokolliert, Tagesdaten (OHLC, Dividenden,
 Splits) in data/historie/ zwischengespeichert. Der Marktstatus ergibt sich
 aus config/universum.json.
+
+Kursquellen (config/kursquellen.json): Ist ein Anbieter konfiguriert
+(Umgebung STOCKMASTER_KURSANBIETER und STOCKMASTER_KURSANBIETER_KEY, gesetzt
+vom Hintergrunddienst aus der App-Konfiguration), wird er zuerst gefragt, dann
+yfinance. `markt` erzeugt die Marktübersicht für die Web-UI; fällt jede Quelle
+aus, zeigt sie den letzten bekannten Kurs mit Kennzeichnung "veraltet". Solche
+Kurse werden nie protokolliert und nie gebucht.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -120,7 +132,196 @@ class YFinanceQuelle:
         return D(float(wert)) if wert else None
 
 
-QUELLE = YFinanceQuelle()
+class NichtUnterstuetzt(Exception):
+    """Der Anbieter führt diesen Ticker nicht (oder nicht als dasselbe Instrument): nächste Quelle fragen."""
+
+
+def _http_json(url: str, kopfzeilen: dict, timeout: float = 10.0):
+    anfrage = urllib.request.Request(url, headers={"User-Agent": "StockMaster3000/1.0", "Accept": "application/json",
+                                                   **kopfzeilen})
+    try:
+        with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 - feste https-URL aus config
+            return json.loads(antwort.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise KursFehler(f"HTTP {exc.code}") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise KursFehler(f"nicht erreichbar ({getattr(exc, 'reason', exc)})") from None
+    except ValueError:
+        raise KursFehler("ungültige Antwort (kein JSON)") from None
+
+
+class Kontingent:
+    """Zählt Anfragen je Anbieter (Minute und Tag) prozessübergreifend im Zwischenspeicher."""
+
+    def __init__(self, name: str, je_minute: int | None, je_tag: int | None):
+        self.name, self.je_minute, self.je_tag = name, je_minute, je_tag
+
+    def _datei(self) -> Path:
+        from pfade import cache_pfad
+        return cache_pfad(f"kontingent_{self.name}.json")
+
+    def reservieren(self, anzahl: int = 1) -> bool:
+        """Bucht `anzahl` Anfragen, wenn das Kontingent reicht; sonst False (dann übernimmt die nächste Quelle)."""
+        jetzt_s = time.time()
+        with g.schreibsperre():
+            datei = self._datei()
+            try:
+                stand = g.json_lesen(datei) if datei.exists() else {}
+            except (OSError, ValueError):
+                stand = {}
+            zeiten = [t for t in stand.get("zeiten", []) if jetzt_s - t < 86400]
+            minute = sum(1 for t in zeiten if jetzt_s - t < 60)
+            if self.je_minute and minute + anzahl > self.je_minute:
+                return False
+            if self.je_tag and len(zeiten) + anzahl > self.je_tag:
+                return False
+            zeiten += [jetzt_s] * anzahl
+            g.json_schreiben(datei, {"anbieter": self.name, "zeiten": zeiten})
+        return True
+
+
+class AnbieterQuelle:
+    """Kurs-API eines Anbieters (Finnhub, Twelve Data). Der Key steht nie in URLs oder Meldungen."""
+
+    def __init__(self, kennung: str, key: str, konfig: dict, http=_http_json):
+        self.kennung, self._key, self.konfig, self._http = kennung, key, konfig, http
+        self.name = kennung
+        self.kontingent = Kontingent(kennung, konfig.get("max_pro_minute"), konfig.get("max_pro_tag"))
+        self._puffer: dict[str, tuple[Decimal, datetime, float]] = {}
+        self._puffer_sekunden = 60
+
+    def symbol(self, ticker: str) -> str | None:
+        """Symbol beim Anbieter oder None, wenn es dort kein identisches Instrument gibt."""
+        if ticker in self.konfig.get("symbole", {}):
+            return self.konfig["symbole"][ticker]
+        if any(zeichen in ticker for zeichen in "^=/"):
+            return None
+        if "." in ticker:
+            basis, suffix = ticker.rsplit(".", 1)
+            ziel = self.konfig.get("suffix", {}).get("." + suffix)
+            return basis + ziel if ziel else None
+        return ticker
+
+    def _kopf(self) -> dict:
+        if self.kennung == "finnhub":
+            return {"X-Finnhub-Token": self._key}
+        return {"Authorization": f"apikey {self._key}"}
+
+    def _anfragen(self, symbole: list[str]) -> dict:
+        if not self.kontingent.reservieren(len(symbole)):
+            raise KursFehler(f"Kontingent von {self.konfig['name']} ausgeschöpft")
+        from urllib.parse import quote
+        url = f"{self.konfig['url']}?symbol={quote(','.join(symbole), safe=',:/')}"
+        daten = self._http(url, self._kopf())
+        if self.kennung == "finnhub":
+            return {symbole[0]: daten}
+        if isinstance(daten, dict) and daten.get("status") == "error":
+            raise KursFehler(f"{self.konfig['name']}: {str(daten.get('message', 'Fehler'))[:160]}")
+        return daten if len(symbole) > 1 else {symbole[0]: daten}
+
+    def _auswerten(self, symbol: str, daten) -> tuple[Decimal, datetime]:
+        if not isinstance(daten, dict) or daten.get("status") == "error":
+            meldung = daten.get("message", "kein Kurs") if isinstance(daten, dict) else "kein Kurs"
+            raise KursFehler(f"{self.konfig['name']} liefert für {symbol} keinen Kurs ({str(meldung)[:120]})")
+        if self.kennung == "finnhub":
+            wert, stempel = daten.get("c"), daten.get("t")
+        else:
+            wert = daten.get("close")
+            stempel = daten.get("last_quote_at") or daten.get("timestamp")
+        try:
+            wert = D(str(wert)) if wert not in (None, "") else None
+            stempel = int(stempel) if stempel else None
+        except (ArithmeticError, ValueError, TypeError):
+            wert = None
+        if not wert or wert <= 0 or not stempel:
+            raise KursFehler(f"{self.konfig['name']} liefert für {symbol} keinen gültigen Kurs")
+        return _runden(wert), datetime.fromtimestamp(stempel, tz=g.TZ)
+
+    def vorladen(self, tickers: list[str]) -> None:
+        """Batch-Abfrage (Twelve Data) für alle zuordenbaren Ticker; Ergebnis kurz zwischengespeichert."""
+        if not self.konfig.get("batch"):
+            return
+        symbole = sorted({s for s in (self.symbol(t) for t in tickers) if s} -
+                         {s for s, (_, _, t) in self._puffer.items() if time.time() - t < self._puffer_sekunden})
+        groesse = int(self.konfig.get("batch_groesse", 8))
+        for i in range(0, len(symbole), groesse):
+            teil = symbole[i:i + groesse]
+            try:
+                antwort = self._anfragen(teil)
+            except KursFehler:
+                return  # Einzelabfragen bzw. nächste Quelle übernehmen
+            for symbol in teil:
+                try:
+                    wert, zeit = self._auswerten(symbol, antwort.get(symbol))
+                except KursFehler:
+                    continue
+                self._puffer[symbol] = (wert, zeit, time.time())
+
+    def aktuell(self, ticker: str) -> tuple[Decimal, datetime]:
+        symbol = self.symbol(ticker)
+        if symbol is None:
+            raise NichtUnterstuetzt(ticker)
+        gepuffert = self._puffer.get(symbol)
+        if gepuffert and time.time() - gepuffert[2] < self._puffer_sekunden:
+            return gepuffert[0], gepuffert[1]
+        antwort = self._anfragen([symbol])
+        wert, zeit = self._auswerten(symbol, antwort.get(symbol))
+        self._puffer[symbol] = (wert, zeit, time.time())
+        return wert, zeit
+
+    def historie(self, ticker, von, bis):
+        raise NichtUnterstuetzt(ticker)
+
+    def marktkapitalisierung(self, ticker):
+        return None
+
+
+class KursKette:
+    """Fallback-Kette: konfigurierter Anbieter, dann die bestehende Quelle (yfinance).
+
+    Historie und Marktkapitalisierung kommen weiter aus der bestehenden Quelle, damit
+    gespeicherte Tagesdaten einheitlich bleiben (Split-Rückrechnung in YFinanceQuelle).
+    """
+
+    name = "kette"
+
+    def __init__(self, quellen: list):
+        self.quellen = quellen
+        self.basis = quellen[-1]
+
+    def vorladen(self, tickers: list[str]) -> None:
+        for quelle in self.quellen:
+            if hasattr(quelle, "vorladen"):
+                quelle.vorladen(tickers)
+
+    def aktuell(self, ticker: str):
+        return _ueber_quellen(ticker, self.quellen, None)[:2]
+
+    def historie(self, ticker, von, bis):
+        return self.basis.historie(ticker, von, bis)
+
+    def marktkapitalisierung(self, ticker):
+        return self.basis.marktkapitalisierung(ticker)
+
+
+def anbieter_konfig() -> dict:
+    return g.config("kursquellen")
+
+
+def quelle_aus_umgebung():
+    """Quelle laut Umgebung (vom Hintergrunddienst aus der App-Konfiguration gesetzt)."""
+    kennung = os.environ.get("STOCKMASTER_KURSANBIETER", "").strip().lower()
+    key = os.environ.get("STOCKMASTER_KURSANBIETER_KEY", "").strip()
+    if not kennung or kennung == "keiner" or not key:
+        return YFinanceQuelle()
+    try:
+        konfig = anbieter_konfig()["anbieter"][kennung]
+    except (KeyError, OSError, ValueError):
+        return YFinanceQuelle()
+    return KursKette([AnbieterQuelle(kennung, key, konfig), YFinanceQuelle()])
+
+
+QUELLE = quelle_aus_umgebung()
 
 
 # --------------------------------------------------------------------------
@@ -214,29 +415,58 @@ def kurs_protokoll_pfad(datum: date) -> Path:
     return g.pfad("data", "kurse", f"{datum.isoformat()}.csv")
 
 
+def _ueber_quellen(ticker: str, quellen: list, abfrage: datetime | None) -> tuple[Decimal, datetime, str]:
+    """Fragt die Quellen der Reihe nach; ein unbrauchbarer Kurs führt zur nächsten Quelle.
+
+    Unbrauchbar: Fehler, kein positiver Wert oder (bei offenem Markt) älter als das
+    maximale Kursalter. Scheitern alle, gilt die ungünstigere Annahme: kein Kurs.
+    """
+    gruende = []
+    for quelle in quellen:
+        try:
+            wert, kurs_zeit = quelle.aktuell(ticker)[:2]
+        except NichtUnterstuetzt:
+            continue
+        except KursFehler as exc:
+            gruende.append((quelle.name, str(exc)))
+            continue
+        except Exception as exc:
+            gruende.append((quelle.name, f"Kursabfrage für {ticker} fehlgeschlagen: {exc}"))
+            continue
+        if wert is None or D(wert) <= 0:
+            gruende.append((quelle.name, f"Für {ticker} kam kein gültiger Kurs (Wert: {wert})."))
+            continue
+        if abfrage is not None:
+            kurs_zeit = kurs_zeit.astimezone(g.TZ) if kurs_zeit else abfrage
+            max_alter = timedelta(minutes=g.projekt()["max_kursalter_minuten"])
+            if markt_offen(ticker, abfrage) and abfrage - kurs_zeit > max_alter:
+                gruende.append((quelle.name, (
+                    f"Kurs für {ticker} ist veraltet ({kurs_zeit.isoformat()}, älter als "
+                    f"{max_alter.seconds // 60} Minuten) obwohl der Markt offen ist. "
+                    "Kein Handel ohne verlässlichen Kurs.")))
+                continue
+        return D(wert), kurs_zeit, quelle.name
+    if len(gruende) == 1:
+        raise KursFehler(gruende[0][1])
+    if not gruende:
+        raise KursFehler(f"Keine Kursquelle führt {ticker}.")
+    raise KursFehler(f"Kein verlässlicher Kurs für {ticker}: " + " | ".join(f"{n}: {t}" for n, t in gruende))
+
+
 def aktuell(tickers: list[str]) -> list[Kurs]:
-    """Fragt aktuelle Kurse ab und protokolliert jeden einzelnen."""
+    """Fragt aktuelle Kurse ab und protokolliert jeden einzelnen (mit der tatsächlich genutzten Quelle)."""
     ergebnisse = []
-    max_alter = timedelta(minutes=g.projekt()["max_kursalter_minuten"])
+    quellen = getattr(QUELLE, "quellen", [QUELLE])
+    if hasattr(QUELLE, "vorladen"):
+        QUELLE.vorladen(list(tickers))
     for ticker in tickers:
         _, boerse = boerse_von(ticker)
         abfrage = g.jetzt()
-        try:
-            wert, kurs_zeit = QUELLE.aktuell(ticker)
-        except KursFehler:
-            raise
-        except Exception as exc:
-            raise KursFehler(f"Kursabfrage für {ticker} fehlgeschlagen: {exc}") from exc
-        if wert is None or D(wert) <= 0:
-            raise KursFehler(f"Für {ticker} kam kein gültiger Kurs (Wert: {wert}).")
+        wert, kurs_zeit, quelle_name = _ueber_quellen(ticker, quellen, abfrage)
         offen = markt_offen(ticker, abfrage)
         kurs_zeit = kurs_zeit.astimezone(g.TZ) if kurs_zeit else abfrage
-        if offen and abfrage - kurs_zeit > max_alter:
-            raise KursFehler(
-                f"Kurs für {ticker} ist veraltet ({kurs_zeit.isoformat()}, älter als "
-                f"{max_alter.seconds // 60} Minuten) obwohl der Markt offen ist. Kein Handel ohne verlässlichen Kurs.")
         kurs = Kurs(ticker=ticker, kurs=_runden(wert), waehrung=boerse["waehrung"], zeit=abfrage,
-                    quelle=QUELLE.name, markt_offen=offen, kurs_zeit=kurs_zeit)
+                    quelle=quelle_name, markt_offen=offen, kurs_zeit=kurs_zeit)
         g.csv_anhaengen(kurs_protokoll_pfad(abfrage.date()), KURS_FELDER, [{
             "zeit": g.iso(kurs.zeit), "ticker": ticker, "kurs": kurs.kurs, "waehrung": kurs.waehrung,
             "quelle": kurs.quelle, "markt_offen": "ja" if offen else "nein"}])
@@ -342,6 +572,130 @@ def historie(ticker: str, von: date, bis: date) -> list[Kerze]:
 
 
 # --------------------------------------------------------------------------
+# Marktübersicht für die Web-UI (Hintergrunddienst); bucht nichts
+
+
+def markt_tickers() -> list[str]:
+    """Basiswerte, Benchmark, Devisen und alle Werte in den Portfolios."""
+    uni = universum()
+    tickers = list(uni["basiswerte"]) + list(uni.get("sonstige_ticker", {}))
+    try:
+        for profil in g.vorhandene_profile():
+            for position in g.portfolio_laden(profil)["positionen"]:
+                tickers.append(position["basiswert"])
+            for order in g.portfolio_laden(profil)["offene_orders"]:
+                if order.get("basiswert") or order.get("ticker"):
+                    tickers.append(order.get("basiswert") or order.get("ticker"))
+    except Fehler:
+        pass
+    return list(dict.fromkeys(t for t in tickers if t))
+
+
+def letzter_bekannter(ticker: str, tage: int = 14) -> dict | None:
+    """Letzter protokollierter Kurs (data/kurse/) bzw. letzter Schlusskurs (data/historie/)."""
+    heute = g.heute()
+    for abstand in range(tage + 1):
+        zeilen = [z for z in g.csv_lesen(kurs_protokoll_pfad(heute - timedelta(days=abstand))) if z["ticker"] == ticker]
+        if zeilen:
+            zeile = zeilen[-1]
+            return {"kurs": D(zeile["kurs"]), "zeit": zeile["zeit"], "quelle": zeile["quelle"]}
+    kerzen = gespeicherte_historie(ticker)
+    if kerzen:
+        letzte = max(kerzen)
+        return {"kurs": kerzen[letzte].close, "zeit": schluss(ticker, letzte).isoformat(), "quelle": "historie:close"}
+    return None
+
+
+def _vortagesschluss(ticker: str, tag: date) -> Decimal | None:
+    kerzen = gespeicherte_historie(ticker)
+    frueher = [d for d in kerzen if d < tag]
+    return kerzen[max(frueher)].close if frueher else None
+
+
+def markt_pfad() -> Path:
+    from pfade import cache_pfad
+    return cache_pfad("markt.json")
+
+
+def markt(tickers: list[str] | None = None, historie_auffrischen: bool = False) -> dict:
+    """Fragt alle Ticker ab (protokolliert über aktuell()) und speichert die Übersicht.
+
+    Fällt jede Quelle aus, steht dort der letzte bekannte Kurs mit veraltet=True.
+    Solche Werte sind nur Anzeige: nicht protokolliert, nie für Buchungen.
+    """
+    tickers = tickers or markt_tickers()
+    namen = {**{t: v["name"] for t, v in universum()["basiswerte"].items()},
+             **{t: v["name"] for t, v in universum().get("sonstige_ticker", {}).items()}}
+    fehler_historie = {}
+    if historie_auffrischen:
+        for ticker in tickers:
+            try:
+                historie(ticker, g.heute() - timedelta(days=400), g.heute() - timedelta(days=1))
+            except Fehler as exc:
+                fehler_historie[ticker] = str(exc)[:200]
+    if hasattr(QUELLE, "vorladen"):
+        QUELLE.vorladen(list(tickers))
+    eintraege = []
+    for ticker in tickers:
+        try:
+            boerse_name, boerse = boerse_von(ticker)
+        except Fehler:
+            continue
+        eintrag = {"ticker": ticker, "name": namen.get(ticker), "boerse": boerse_name, "waehrung": boerse["waehrung"],
+                   "markt_offen": markt_offen(ticker)}
+        try:
+            kurs = aktuell([ticker])[0]
+            eintrag.update({"kurs": kurs.kurs, "kurs_zeit": g.iso(kurs.kurs_zeit), "abfrage": g.iso(kurs.zeit),
+                            "quelle": kurs.quelle, "veraltet": False, "grund": None,
+                            "verzoegerung_minuten": max(0, int((kurs.zeit - kurs.kurs_zeit).total_seconds() // 60))})
+            stichtag = kurs.kurs_zeit.astimezone(g.TZ).date()
+        except Fehler as exc:
+            letzter = letzter_bekannter(ticker)
+            eintrag.update({"veraltet": True, "grund": str(exc)[:300], "kurs": letzter["kurs"] if letzter else None,
+                            "kurs_zeit": letzter["zeit"] if letzter else None,
+                            "quelle": f"letzter bekannter Kurs ({letzter['quelle']})" if letzter else None,
+                            "abfrage": g.iso(g.jetzt()), "verzoegerung_minuten": None})
+            stichtag = g.zeit_lesen(letzter["zeit"]).date() if letzter else g.heute()
+        vortag = _vortagesschluss(ticker, stichtag)
+        eintrag["vortag"] = vortag
+        eintrag["veraenderung"] = (eintrag["kurs"] / vortag - 1) if eintrag.get("kurs") and vortag else None
+        if ticker in fehler_historie:
+            eintrag["fehler_historie"] = fehler_historie[ticker]
+        eintraege.append(eintrag)
+    stand = {"zeit": g.iso(g.jetzt()), "quelle_konfiguriert": getattr(QUELLE, "quellen", [QUELLE])[0].name,
+             "erfolgreich": sum(1 for e in eintraege if not e["veraltet"]), "anzahl": len(eintraege),
+             "eintraege": eintraege}
+    g.json_schreiben(markt_pfad(), stand)
+    return stand
+
+
+def verbindung_testen(kennung: str) -> dict:
+    """Ein Testkurs von genau dieser Quelle (Key aus STOCKMASTER_KURSANBIETER_KEY); nicht protokolliert."""
+    if kennung == "yfinance":
+        quelle, ticker = YFinanceQuelle(), g.projekt()["benchmark_ticker"]
+    else:
+        konfig = anbieter_konfig()["anbieter"].get(kennung)
+        if konfig is None:
+            raise Fehler(f"Unbekannter Kursanbieter '{kennung}'.")
+        key = os.environ.get("STOCKMASTER_KURSANBIETER_KEY", "").strip()
+        if not key:
+            raise Fehler("Kein API-Key übergeben.")
+        quelle, ticker = AnbieterQuelle(kennung, key, konfig), konfig.get("test_ticker", "AAPL")
+    beginn = time.monotonic()
+    try:
+        wert, zeit = quelle.aktuell(ticker)[:2]
+    except NichtUnterstuetzt:
+        return {"ok": False, "meldung": f"{ticker} wird von {kennung} nicht geführt."}
+    except Exception as exc:  # noqa: BLE001 - Klartext für die Einrichtungsseite
+        return {"ok": False, "meldung": f"{kennung}: {exc}"[:300]}
+    alter = int((g.jetzt() - zeit.astimezone(g.TZ)).total_seconds() // 60)
+    return {"ok": True, "ticker": ticker, "kurs": g.text(_runden(wert)), "kurs_zeit": g.iso(zeit),
+            "alter_minuten": alter, "dauer_ms": int((time.monotonic() - beginn) * 1000),
+            "meldung": f"{ticker}: {g.text(_runden(wert))} (Kurszeit {zeit.astimezone(g.TZ):%d.%m. %H:%M}, "
+                       f"vor {alter} Min.)"}
+
+
+# --------------------------------------------------------------------------
 # Kommandozeile
 
 
@@ -354,6 +708,11 @@ def main(argv=None) -> int:
     p_hist.add_argument("ticker", help="Ticker")
     p_hist.add_argument("--von", required=True, help="Startdatum JJJJ-MM-TT")
     p_hist.add_argument("--bis", required=True, help="Enddatum JJJJ-MM-TT")
+    p_markt = unter.add_parser("markt", help="Marktübersicht für die Web-UI (alle Werte des Universums)")
+    p_markt.add_argument("--historie", action="store_true", help="zusätzlich Tagesdaten (400 Tage) ergänzen")
+    p_markt.add_argument("ticker", nargs="*", help="nur diese Ticker (Standard: Universum und Portfolios)")
+    p_test = unter.add_parser("test", help="Verbindung zu einer Kursquelle prüfen (ohne Protokoll, bucht nichts)")
+    p_test.add_argument("--anbieter", required=True, help="finnhub, twelvedata oder yfinance")
     args = parser.parse_args(argv)
 
     try:
@@ -368,6 +727,16 @@ def main(argv=None) -> int:
                 eur = in_eur(k.kurs, k.waehrung, fx.kurs if fx else None)
                 print(f"{k.ticker:<12} {g.text(k.kurs):>14} {k.waehrung:<4} {eur:>14.4f} "
                       f"{'offen' if k.markt_offen else 'zu':<8} {k.kurs_zeit.isoformat()}")
+        elif args.befehl == "test":
+            print(json.dumps(verbindung_testen(args.anbieter), ensure_ascii=False))
+        elif args.befehl == "markt":
+            stand = markt(args.ticker or None, historie_auffrischen=args.historie)
+            print(f"Marktübersicht: {stand['erfolgreich']} von {stand['anzahl']} Kursen aktuell "
+                  f"(Quelle zuerst: {stand['quelle_konfiguriert']}).")
+            for e in stand["eintraege"]:
+                kennz = "VERALTET" if e["veraltet"] else e["quelle"]
+                print(f"{e['ticker']:<12} {g.text(e['kurs']) if e['kurs'] is not None else '–':>14} "
+                      f"{e['waehrung']:<4} {kennz}")
         else:
             kerzen = historie(args.ticker, g.datum_lesen(args.von), g.datum_lesen(args.bis))
             print(",".join(HISTORIE_FELDER))

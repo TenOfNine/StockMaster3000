@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Initialisierung des Spiels (AUFTRAG_PHASE1.md AP11).
 
-Nur wenn AP1 bis AP10 in STATUS.md abgehakt sind und das Startdatum heute
-oder in der Zukunft liegt (kein Backdating). Legt die drei Portfolios mit je
-1.000 EUR an, leere Logbücher und Anlagerichtlinien-Vorlagen in strategie/.
-Der Benchmark startet mit dem ersten Schlusskurs ab Startdatum
-(tools/bewertung.py bericht).
+Nur wenn AP1 bis AP10 in STATUS.md (Framework) abgehakt sind, ein Auftraggeber
+die Freigabe nach AP12 erteilt (regeln.md Abschnitt 2) und das Startdatum heute
+oder in der Zukunft liegt (kein Backdating). Legt im Datenverzeichnis die drei
+Portfolios mit je 1.000 EUR an, leere Logbücher, Anlagerichtlinien-Vorlagen in
+strategie/ und spiel.json (Startdatum, Freigabe). Der Benchmark startet mit dem
+ersten Schlusskurs ab Startdatum (tools/bewertung.py bericht).
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ Stand: Vorlage aus tools/init.py ({datum}). Wird in AP12 ausformuliert;
 
 
 def status_pruefen() -> None:
-    text = g.pfad("STATUS.md").read_text(encoding="utf-8")
+    text = g.framework_pfad("STATUS.md").read_text(encoding="utf-8")
     fehlend = [ap for ap in VORAUSSETZUNG if not re.search(rf"^- \[x\] {ap} ", text, re.M | re.I)]
     if fehlend:
         raise Fehler(f"Initialisierung erst nach Abschluss von AP1 bis AP10; offen: {', '.join(fehlend)}.")
@@ -79,8 +80,13 @@ def vorlage(profil: str, datum) -> str:
                   "Aufteilung zum ersten Schlusskurs ab Startdatum, ohne Rebalancing und Kosten.")
 
 
-def initialisieren(startdatum_text: str) -> list[str]:
+def initialisieren(startdatum_text: str, freigabe: str) -> list[str]:
     status_pruefen()
+    erlaubt = g.projekt()["auftraggeber"]
+    if freigabe not in erlaubt:
+        raise Fehler(f"Freigabe nach AP12 nur durch einen Auftraggeber ({', '.join(erlaubt)}), nicht '{freigabe}'.")
+    if g.spiel_lesen().get("startdatum"):
+        raise Fehler(f"Das Spiel ist bereits gestartet (Startdatum {g.spiel_lesen()['startdatum']}).")
     startdatum = g.datum_lesen(startdatum_text)
     if startdatum < g.heute():
         raise Fehler(f"Startdatum {startdatum} liegt in der Vergangenheit (heute {g.heute()}). Kein Backdating.")
@@ -109,23 +115,24 @@ def initialisieren(startdatum_text: str) -> list[str]:
     g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.PROFILE], [])
     for ordner in ("journal", "reviews", "data/kurse", "data/historie", "data/limits"):
         g.pfad(ordner).mkdir(parents=True, exist_ok=True)
-    status = g.pfad("STATUS.md")
-    text = status.read_text(encoding="utf-8")
-    neu = re.sub(r"^- Startdatum des Spiels:.*$",
-                 f"- Startdatum des Spiels: {startdatum.isoformat()} (gesetzt am {g.heute().isoformat()} "
-                 "durch tools/init.py)", text, count=1, flags=re.M)
-    g.atomar_schreiben(status, neu)
+    g.json_schreiben(g.spiel_pfad(), {
+        "startdatum": startdatum.isoformat(), "initialisiert": g.iso(g.jetzt()),
+        "freigabe_ap12": freigabe, "werkzeug": "tools/init.py",
+    })
     meldungen.append(f"Benchmark {benchmark}: Basis ist der erste Schlusskurs ab {startdatum}.")
-    meldungen.append("STATUS.md: Startdatum eingetragen. Jetzt prüfen, committen und pushen.")
+    meldungen.append("spiel.json: Startdatum und Freigabe eingetragen. Jetzt prüfen und im Datenverzeichnis "
+                     "committen (python tools/datenverzeichnis.py commit).")
     return meldungen
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Spiel initialisieren: drei Portfolios mit je 1.000 EUR.")
     parser.add_argument("--startdatum", required=True, help="erster Handelstag, JJJJ-MM-TT (heute oder später)")
+    parser.add_argument("--freigabe", required=True,
+                        help="Kennung des Auftraggebers, der AP12 freigegeben hat (config/projekt.json)")
     args = parser.parse_args(argv)
     try:
-        for meldung in initialisieren(args.startdatum):
+        for meldung in initialisieren(args.startdatum, args.freigabe):
             print(meldung)
     except Fehler as exc:
         print(f"Fehler: {exc}", file=sys.stderr)

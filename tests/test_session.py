@@ -48,15 +48,16 @@ def test_unbekannte_person(projekt, uhr):
     assert session.main(["start", "--person", "Mallory", "--ohne-git"]) == 1
 
 
-def test_start_committet_und_pusht_ende_committet(projekt, uhr, tmp_path_factory):
+def test_start_und_ende_committen_lokal_ohne_push(projekt, uhr, tmp_path_factory):
     remote = tmp_path_factory.mktemp("remote") / "repo.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
     git_init(projekt)
     subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=projekt, check=True)
     subprocess.run(["git", "push", "-q", "-u", "origin", "main"], cwd=projekt, check=True)
+    remote_vorher = subprocess.run(["git", "rev-parse", "main"], cwd=remote, capture_output=True, text=True).stdout
     uhr.stellen("2026-10-12T10:00:00")
     assert session.main(["start", "--person", "auftraggeber-b"]) == 0
-    log = subprocess.run(["git", "log", "--format=%s", "origin/main", "-1"], cwd=projekt, capture_output=True,
+    log = subprocess.run(["git", "log", "--format=%s", "-1"], cwd=projekt, capture_output=True,
                          text=True).stdout.strip()
     assert log == "session: Start auftraggeber-b"
     assert session.main(["ende"]) == 0
@@ -64,12 +65,10 @@ def test_start_committet_und_pusht_ende_committet(projekt, uhr, tmp_path_factory
                          text=True).stdout.strip()
     assert log == "session: Ende auftraggeber-b"
     assert not (projekt / "session.lock").exists()
+    # Spielstand bleibt lokal: selbst ein vorhandenes Remote wird nie beschrieben.
+    assert subprocess.run(["git", "rev-parse", "main"], cwd=remote, capture_output=True, text=True).stdout == remote_vorher
 
 
-def test_push_fehlgeschlagen_raeumt_auf(projekt, uhr):
-    git_init(projekt)  # kein Remote -> Push scheitert
-    vorher = subprocess.run(["git", "rev-parse", "HEAD"], cwd=projekt, capture_output=True, text=True).stdout
+def test_ohne_spielstand_git_raeumt_auf(projekt, uhr):
     assert session.main(["start", "--person", "auftraggeber-a"]) == 1
     assert not (projekt / "session.lock").exists()
-    nachher = subprocess.run(["git", "rev-parse", "HEAD"], cwd=projekt, capture_output=True, text=True).stdout
-    assert vorher == nachher

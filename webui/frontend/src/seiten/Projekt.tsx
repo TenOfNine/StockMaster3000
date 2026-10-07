@@ -199,9 +199,9 @@ export function Regelwerk() {
 }
 
 // --------------------------------------------------------------------------
-// Einrichtung & Aufbau
+// Roadmap & Status (Inhalt unverändert; die Einstellungen liegen auf der Seite Einrichtung)
 
-export function Einrichtung() {
+export function RoadmapStatus() {
   const status = useQuery({ queryKey: ["status"], queryFn: () => api<StatusDaten>("/api/spiel/status") });
   const [dokument, setDokument] = useState<string | null>(null);
   const dok = useQuery({ queryKey: ["dokument", dokument], queryFn: () => api<Dokument>(`/api/spiel/dokument?pfad=${dokument}`), enabled: !!dokument });
@@ -212,7 +212,7 @@ export function Einrichtung() {
   return (
     <div className="einblenden">
       <Seitenkopf
-        titel="Einrichtung & Aufbau"
+        titel="Roadmap & Status"
         untertitel="Projektstatus aus STATUS.md: Arbeitspakete, Entscheidungen der Auftraggeber und offene Auslegungsfragen."
         aktionen={
           <>

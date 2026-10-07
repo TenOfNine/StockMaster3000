@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Federal Reserve (Testfeed)</title>
+  <id>urn:test:fed</id>
+  <updated>2026-10-12T18:00:00Z</updated>
+  <entry>
+    <title>Federal Reserve issues FOMC statement</title>
+    <link href="https://www.federalreserve.gov/newsevents/pressreleases/monetary20261012a.htm"/>
+    <id>urn:test:fed:1</id>
+    <updated>2026-10-12T18:00:00Z</updated>
+    <summary>The Committee decided to maintain the target range. Gold and EUR/USD reacted.</summary>
+  </entry>
+</feed>

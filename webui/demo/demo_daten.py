@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Erzeugt ein Demo-Spiel-Repository mit simulierten Kursen.
+"""Erzeugt ein Demo-Datenverzeichnis (Spielstand) mit simulierten Kursen.
 
 Nur für Entwicklung, Tests und Vorführung der Web-UI. Alle Buchungen laufen
 über die echten Werkzeuge in tools/ (init, session, buchen, bewertung,
 termine, pruefe); nur die Kursquelle und die Uhr sind simuliert. Das
-Ergebnis liegt in einem eigenen Verzeichnis mit eigenem Git-Repository und
-gelangt nie in das Spiel-Repository.
+Ergebnis ist ein Datenverzeichnis wie im Betrieb (eigenes, lokales Git ohne
+Remote) und gelangt nie in das Framework-Repository.
 
     python webui/demo/demo_daten.py --ziel /tmp/stockmaster-demo --tage 100
 """
@@ -147,29 +147,35 @@ def still(funktion, *argumente):
 
 
 def vorbereiten(ziel: Path) -> None:
+    """Leeres Datenverzeichnis aus der Vorlage des Frameworks (wie beim ersten Containerstart)."""
     if ziel.exists():
         shutil.rmtree(ziel)
-    ziel.mkdir(parents=True)
-    for name in ("CLAUDE.md", "regeln.md", "STATUS.md", "lessons.md", "README.md", "requirements.txt", ".gitignore"):
-        shutil.copy(QUELLE_REPO / name, ziel / name)
-    for ordner in ("config", "tools"):
-        shutil.copytree(QUELLE_REPO / ordner, ziel / ordner, ignore=shutil.ignore_patterns("__pycache__"))
-    for ordner in ("portfolios", "trades", "strategie", "journal", "reviews", "data/kurse", "data/historie",
-                   "data/nav", "data/limits"):
-        (ziel / ordner).mkdir(parents=True, exist_ok=True)
-        (ziel / ordner / ".gitkeep").touch()
+    import datenverzeichnis
+
+    datenverzeichnis.einrichten(ziel)
     (ziel / "DEMO.md").write_text(
         "# Demo-Arbeitsbereich\n\nSimulierte Kurse, erzeugt mit webui/demo/demo_daten.py. Kein echtes Spiel.\n",
         encoding="utf-8")
-    remote = ziel.parent / f"{ziel.name}-origin.git"
-    if remote.exists():
-        shutil.rmtree(remote)
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
-    git(ziel, "init", "-q", "-b", "main")
-    git(ziel, "config", "user.email", "demo@stockmaster.invalid")
-    git(ziel, "config", "user.name", "Demo")
-    git(ziel, "config", "commit.gpgsign", "false")
-    git(ziel, "remote", "add", "origin", str(remote))
+
+
+def demo_news(g, jetzt: datetime, start: date) -> None:
+    """Einige erfundene, klar als Demo gekennzeichnete Meldungen im Format von tools/news.py."""
+    import json as _json
+
+    meldungen = [
+        ("^GDAXI", "Demo: DAX schließt fester", "Simulierte Meldung für die Vorführung der Web-UI."),
+        ("SAP.DE", "Demo: Softwarewerte gefragt", "Simulierte Meldung, kein echter Inhalt."),
+        ("EURUSD=X", "Demo: Euro stabil zum Dollar", "Simulierte Meldung zur Geldpolitik."),
+        ("GC=F", "Demo: Goldpreis seitwärts", "Simulierte Rohstoffmeldung."),
+        ("NVDA", "Demo: Chipwerte im Fokus", "Simulierte Meldung aus den USA."),
+    ]
+    zeilen = []
+    for i, (ticker, titel, text) in enumerate(meldungen):
+        zeit = (jetzt - timedelta(hours=3 * i + 1)).isoformat()
+        zeilen.append(_json.dumps({"id": f"N-demo{i:08d}", "abgerufen": jetzt.isoformat(), "zeit": zeit, "quelle": "demo",
+                                   "quelle_name": "Demo-Feed", "titel": titel, "kurztext": text,
+                                   "link": f"https://example.org/demo/news-{i}", "ticker": [ticker]}, ensure_ascii=False))
+    g.text_anhaengen(g.pfad("news", f"{jetzt:%Y-%m}.jsonl"), "\n".join(zeilen) + "\n")
 
 
 def strategie_text(profil: str) -> str:
@@ -233,9 +239,10 @@ def review_text(faellig: dict, zeit: datetime) -> str:
 
 def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path:
     ziel = ziel.resolve()
+    os.environ["STOCKMASTER_DATA_DIR"] = str(ziel)
+    os.environ.pop("STOCKMASTER_FRAMEWORK_DIR", None)
+    sys.path.insert(0, str(QUELLE_REPO / "tools"))
     vorbereiten(ziel)
-    os.environ["BOERSE_ROOT"] = str(ziel)
-    sys.path.insert(0, str(ziel / "tools"))
     import bewertung
     import buchen
     import gemeinsam as g
@@ -254,12 +261,11 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     kurse.QUELLE = SimulierteQuelle(uhr, start, ende, seed)
 
     uhr.stellen(start, "08:00")
-    still(init.main, ["--startdatum", start.isoformat()])
+    still(init.main, ["--startdatum", start.isoformat(), "--freigabe", KENNUNGEN[0]])
     for profil in g.PROFILE:
         (ziel / "strategie" / f"{profil}.md").write_text(strategie_text(profil), encoding="utf-8")
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", f"aufbau: Demo-Arbeitsbereich initialisiert (Start {start})")
-    git(ziel, "push", "-q", "-u", "origin", "main")
 
     tag = start
     nummer_session = 0
@@ -352,7 +358,6 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
             git(ziel, "commit", "-q", "-m", f"session: {tag.isoformat()} {kennung}")
             uhr.stellen(tag, "10:45")
             still(session.main, ["ende"])
-            git(ziel, "push", "-q", "origin", "main")
         tag += timedelta(days=1)
     # Abschluss: Stand bis zum Ende nachbuchen, damit die Ansicht aktuell ist
     uhr.stellen(ende + timedelta(days=1), "07:30")
@@ -362,14 +367,19 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", "session: Abschluss Demo (Nachbuchung)")
     still(session.main, ["ende"])
-    git(ziel, "push", "-q", "origin", "main")
+    # Marktübersicht und News wie vom Hintergrunddienst (Werte ohne simulierte Kurse erscheinen "veraltet").
+    uhr.stellen(ende + timedelta(days=1), "10:00")
+    still(kurse.markt)
+    demo_news(g, uhr(), start)
+    git(ziel, "add", "-A")
+    git(ziel, "commit", "-q", "-m", "daten: Demo-Kurse und Demo-News")
     for name in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"):
         os.environ.pop(name, None)
     return ziel
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Demo-Spiel-Repository mit simulierten Kursen erzeugen.")
+    parser = argparse.ArgumentParser(description="Demo-Datenverzeichnis mit simulierten Kursen erzeugen.")
     parser.add_argument("--ziel", required=True, help="Zielverzeichnis (wird überschrieben)")
     parser.add_argument("--tage", type=int, default=100, help="Länge der Simulation in Kalendertagen")
     parser.add_argument("--seed", type=int, default=7)
@@ -377,7 +387,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     ziel = erzeugen(Path(args.ziel), args.tage, args.seed,
                     date.fromisoformat(args.ende) if args.ende else None)
-    print(f"Demo-Repository erzeugt: {ziel}")
+    print(f"Demo-Datenverzeichnis erzeugt: {ziel}")
     return 0
 
 

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Wirtschaft (Testfeed)</title>
+    <link>https://www.tagesschau.de/wirtschaft</link>
+    <item>
+      <title>DAX schließt mit Gewinnen &amp; neuem Rekord</title>
+      <link>https://www.tagesschau.de/wirtschaft/dax-rekord-100.html</link>
+      <guid>https://www.tagesschau.de/wirtschaft/dax-rekord-100.html</guid>
+      <description>&lt;p&gt;Der deutsche Leitindex DAX legte am Montag deutlich zu.&lt;/p&gt;</description>
+      <pubDate>Mon, 12 Oct 2026 16:45:00 +0200</pubDate>
+    </item>
+    <item>
+      <title>Goldman Sachs erhöht Prognose</title>
+      <link>https://www.tagesschau.de/wirtschaft/goldman-100.html</link>
+      <guid>goldman-100</guid>
+      <description>Die Bank sieht mehr Wachstum.</description>
+      <pubDate>Mon, 12 Oct 2026 14:00:00 +0200</pubDate>
+    </item>
+    <item>
+      <title>Gefährlicher Link</title>
+      <link>javascript:alert(1)</link>
+      <description>wird verworfen</description>
+    </item>
+  </channel>
+</rss>

@@ -1,7 +1,9 @@
 name: Images
 
 # Baut die Images für den Portainer-Stack und veröffentlicht sie in der GitHub Container Registry
-# (ghcr.io/<besitzer>/stockmaster3000-{api,proxy,db}). Läuft bei Änderungen auf main und per Hand.
+# (ghcr.io/<besitzer>/stockmaster3000-{api,proxy,db}; der worker nutzt das api-Image). Das api-Image
+# enthält das Framework (tools/, config/, Regeln, Vorlagen) und die Claude Code CLI, nie Spielstand.
+# Läuft bei Änderungen auf main und per Hand.
 # Bei Pull Requests wird nur gebaut, nicht veröffentlicht.
 
 on:
@@ -9,6 +11,11 @@ on:
     branches: [main]
     paths:
       - "webui/**"
+      - "tools/**"
+      - "config/**"
+      - "vorlagen/**"
+      - "*.md"
+      - "requirements.txt"
       - "docker-compose.yml"
       - ".github/workflows/images.yml"
   pull_request:
@@ -16,6 +23,9 @@ on:
       - "webui/deploy/**"
       - "webui/backend/**"
       - "webui/frontend/**"
+      - "tools/**"
+      - "config/**"
+      - "vorlagen/**"
       - ".github/workflows/images.yml"
   workflow_dispatch:
 
@@ -28,13 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Stack-Datei mit Beispielwerten auflösen
+      - name: Stack-Datei mit der minimalen Variablenliste auflösen (nur SM_HOSTNAME)
         env:
           SM_HOSTNAME: stockmaster.local
-          SPIEL_REPO: /srv/stockmaster/spiel-repo
-          POSTGRES_ADMIN_PASSWORD: aaaa
-          POSTGRES_APP_PASSWORD: bbbb
-          SM_SCHLUESSEL: ${{ 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=' }}
         run: docker compose -f webui/deploy/portainer/stack.yml config --quiet
       - name: Fehlende Pflicht-Variable wird abgelehnt
         run: |

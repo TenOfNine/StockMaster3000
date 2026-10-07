@@ -10,7 +10,9 @@ import { Anmeldung } from "./seiten/Anmeldung";
 import { Cockpit } from "./seiten/Cockpit";
 import { Entscheidungen, Sessions } from "./seiten/Entscheidungen";
 import { Portfolio } from "./seiten/Portfolio";
-import { Einrichtung, Pruefung, Regelwerk } from "./seiten/Projekt";
+import { Einrichtung } from "./seiten/Einrichtung";
+import { Laeufe } from "./seiten/Laeufe";
+import { Pruefung, Regelwerk, RoadmapStatus } from "./seiten/Projekt";
 import { Rechner } from "./seiten/Rechner";
 import { Administration, Konto } from "./seiten/Verwaltung";
 
@@ -67,6 +69,8 @@ const seiten = [
   createRoute({ getParentRoute: () => app, path: "/analyse/rechner", component: Rechner }),
   createRoute({ getParentRoute: () => app, path: "/regelwerk", component: Regelwerk }),
   createRoute({ getParentRoute: () => app, path: "/einrichtung", component: Einrichtung }),
+  createRoute({ getParentRoute: () => app, path: "/roadmap", component: RoadmapStatus }),
+  createRoute({ getParentRoute: () => app, path: "/laeufe", component: Laeufe }),
   createRoute({ getParentRoute: () => app, path: "/pruefung", component: Pruefung }),
   createRoute({ getParentRoute: () => app, path: "/konto", component: Konto }),
   createRoute({ getParentRoute: () => app, path: "/admin", component: NurAdmin }),

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Rauchtest des Docker-Stacks: baut, startet mit einem Demo-Repository und prüft
-# Erreichbarkeit, HTTPS (auch per IP-Adresse), Sicherheits-Header, Admin-Erstanlage, Anmeldung,
-# abgelehnte Fehlkonfiguration und die Heimnetz-Schranke.
+# Rauchtest des Docker-Stacks: baut, startet mit LEEREN Volumes und prüft die Selbstinitialisierung
+# (Datenverzeichnis mit lokalem Git, Master-Schlüssel, erzeugte DB-Passwörter), Erreichbarkeit, HTTPS
+# (auch per IP-Adresse), Sicherheits-Header, Admin-Erstanlage, Anmeldung, Hintergrunddienst, Neustart
+# ohne Datenverlust, Export und Wiederherstellung, abgelehnte Fehlkonfiguration und die Heimnetz-Schranke.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ARBEIT="$(mktemp -d)"
 export COMPOSE_PROJECT_NAME=stockmaster-rauchtest
-export SPIEL_REPO="$ARBEIT/repo" SM_HTTPS_PORT=18443 SM_HTTP_PORT=18080 SM_HOSTNAME=stockmaster.local
+export SM_HTTPS_PORT=18443 SM_HTTP_PORT=18080 SM_HOSTNAME=stockmaster.local
 export SM_ZUSAETZLICHE_HOSTS=127.0.0.1   # Zugriff per IP-Adresse (ohne Servernamen) wird mitgeprüft
 aufraeumen() {
   docker network disconnect extern-rauchtest "${COMPOSE_PROJECT_NAME}-proxy-1" >/dev/null 2>&1 || true
@@ -15,13 +16,23 @@ aufraeumen() {
 }
 trap aufraeumen EXIT
 
-python3 webui/demo/demo_daten.py --ziel "$SPIEL_REPO" --tage 40 --ende 2026-09-30 >/dev/null
-[ -d secrets ] || bash webui/deploy/einrichten.sh
+# Keine Geheimnisse und kein Spielstand vom Host: alles entsteht beim ersten Start in den Volumes.
+unset SM_SCHLUESSEL POSTGRES_ADMIN_PASSWORD POSTGRES_APP_PASSWORD CLAUDE_CODE_OAUTH_TOKEN || true
 if [ -n "${RAUCHTEST_OHNE_BUILD:-}" ]; then docker compose up -d --no-build --wait --wait-timeout 300; else docker compose up -d --build --wait --wait-timeout 300; fi
 
 curl() { command curl --silent --show-error --insecure --noproxy '*' "$@"; }
 pruefe() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FEHL $1: erwartet '$3', erhalten '$2'"; exit 1; fi; }
 
+pruefe "Datenverzeichnis aus der Vorlage mit lokalem Git" \
+  "$(docker compose exec -T api git -C /data log --format=%s | tail -n 1 | grep -c '^aufbau: Datenverzeichnis aus Vorlage angelegt')" 1
+pruefe "Spielstand-Git ohne Remote" "$(docker compose exec -T api git -C /data remote | wc -l | tr -d ' ')" 0
+pruefe "Master-Schlüssel mit Rechten 0600" "$(docker compose exec -T api stat -c %a /data-app/master.key)" 600
+pruefe "DB-Passwort erzeugt, Admin-Passwort für die API unlesbar" \
+  "$(docker compose exec -T api sh -c 'test -s /geheim/db_app_passwort && ! cat /geheim/db_admin_passwort 2>/dev/null && echo ok')" ok
+pruefe "Prüfskript auf frischem Datenverzeichnis" \
+  "$(docker compose exec -T api python /app/framework/tools/pruefe.py --historie | tail -n 1 | grep -c '^Prüfung bestanden')" 1
+pruefe "Hintergrunddienst gesund" "$(docker inspect -f '{{.State.Health.Status}}' "${COMPOSE_PROJECT_NAME}-worker-1")" healthy
+pruefe "Claude Code CLI im Image" "$(docker compose exec -T worker claude --version | grep -c 'Claude Code')" 1
 pruefe "SPA erreichbar" "$(curl -o /dev/null -w '%{http_code}' https://localhost:18443/)" 200
 pruefe "API-Health" "$(curl https://localhost:18443/api/health)" '{"ok":true}'
 pruefe "HTTP leitet auf HTTPS um" "$(curl -o /dev/null -w '%{http_code}' http://localhost:18080/)" 308
@@ -53,13 +64,25 @@ else
   echo "ok   zweite Admin-Erstanlage abgelehnt"
 fi
 
-# Fehlkonfiguration bricht den Start mit klarer Meldung ab (statt später als Fehler 500 aufzufallen).
-# --no-deps: nur der eine Container; timeout: falls der Dienst wider Erwarten startet, hängt der Test nicht.
-AUSGABE="$(timeout 120 docker compose run --rm --no-deps -e SM_SCHLUESSEL_DATEI=/nicht/vorhanden -e SM_SCHLUESSEL=ohne-gueltiges-base64 \
-  api python -m stockmaster migrieren 2>&1 || true)"
-grep -q "Konfigurationsfehler: SM_SCHLUESSEL ist kein gültiges Base64" <<<"$AUSGABE" \
-  && echo "ok   Ungültiger Schlüssel bricht den Start der API ab" \
-  || { echo "FEHL Ungültiger Schlüssel wurde nicht abgelehnt:"; echo "$AUSGABE"; exit 1; }
+# Export (mit lokalem Git) und Wiederherstellung über die Kommandozeile.
+docker compose exec -T api python -m stockmaster sicherung-export --datei /data-app/tmp/rauchtest.tar.gz >/dev/null \
+  && echo "ok   Export des Datenverzeichnisses"
+pruefe "Export enthält das lokale Git, keine Secrets" \
+  "$(docker compose exec -T api python -c "import tarfile; n = tarfile.open('/data-app/tmp/rauchtest.tar.gz').getnames(); print('spielstand/.git/HEAD' in n and not any('master.key' in x or 'geheimnisse' in x for x in n))")" True
+KOPF_VORHER="$(docker compose exec -T api git -C /data rev-parse HEAD)"
+docker compose exec -T api sh -c 'echo test > /data/lessons.md'
+docker compose exec -T api python -m stockmaster sicherung-import --datei /data-app/tmp/rauchtest.tar.gz >/dev/null \
+  && echo "ok   Wiederherstellung"
+pruefe "Wiederhergestellter Stand" "$(docker compose exec -T api git -C /data status --porcelain | wc -l | tr -d ' ')" 0
+
+# Neustart verliert keine Daten (Volumes bleiben; Schlüssel und Spielstand unverändert).
+SCHLUESSEL_VORHER="$(docker compose exec -T api sha256sum /data-app/master.key)"
+docker compose down >/dev/null 2>&1
+if [ -n "${RAUCHTEST_OHNE_BUILD:-}" ]; then docker compose up -d --no-build --wait --wait-timeout 300; else docker compose up -d --wait --wait-timeout 300; fi
+pruefe "Spielstand nach Neustart" "$(docker compose exec -T api git -C /data rev-parse HEAD)" "$KOPF_VORHER"
+pruefe "Master-Schlüssel nach Neustart" "$(docker compose exec -T api sha256sum /data-app/master.key)" "$SCHLUESSEL_VORHER"
+pruefe "Anmeldung nach Neustart" "$(curl -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$ANMELDUNG" https://localhost:18443/api/auth/login)" 200
+
 AUSGABE="$(timeout 120 docker compose run --rm --no-deps -e SM_ZUSAETZLICHE_HOSTS='evil.local}' proxy 2>&1 || true)"
 grep -q "Konfigurationsfehler: SM_ZUSAETZLICHE_HOSTS" <<<"$AUSGABE" \
   && echo "ok   Ungültige Hosts brechen den Start des Proxys ab" \
