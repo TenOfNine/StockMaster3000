@@ -68,6 +68,10 @@ def einstellungen_json() -> str:
     return json.dumps({"permissions": {"deny": verboten}, "env": {"DISABLE_AUTOUPDATER": "1"}})
 
 
+def _dauer(sekunden: int) -> str:
+    return f"{sekunden // 60} Minuten" if sekunden % 60 == 0 else f"{sekunden} Sekunden"
+
+
 def prompt(art: str, auftrag) -> str:
     e = einstellungen()
     aufwand = auftrag.aufwand or "Standard der CLI"
@@ -77,7 +81,12 @@ def prompt(art: str, auftrag) -> str:
         f"finden es über STOCKMASTER_DATA_DIR. Kein git pull und kein git push: Am Ende lokal committen mit "
         f"`python tools/datenverzeichnis.py commit -m \"session: ...\"`. Auftraggeber: {auftrag.auftraggeber} "
         f"(Schritt 1 entfällt). Setup dieses Laufs: Modell {auftrag.modell}, Aufwand {aufwand}, Lauf {auftrag.id}, "
-        f"gestartet {'per Zeitplan' if auftrag.ausloeser == 'zeitplan' else 'manuell'} über die Web-UI."
+        f"gestartet {'per Zeitplan' if auftrag.ausloeser == 'zeitplan' else 'manuell'} über die Web-UI. "
+        f"Shell: Einzelne `python tools/…`-Aufrufe und lesendes git, ls und date laufen sofort. Alles andere (Pipes, "
+        f"Schleifen, echo, awk, head …) braucht die Freigabe eines Administrators in der Web-UI und gilt nach "
+        f"{_dauer(einstellungen().freigabe_wartezeit_sekunden)} ohne Antwort als abgelehnt; schreibende "
+        f"Shell-Befehle (Umleitung, tee, sed -i, rm …) sind nie freigebbar. Bevorzuge einzelne Aufrufe und werte "
+        f"die Ausgabe selbst aus; wiederhole einen abgelehnten Befehl nicht."
     )
     if art == "trading":
         return ("Führe eine Trading-Session nach CLAUDE.md (Trading-Modus) durch. " + gemeinsam +
@@ -144,15 +153,23 @@ def kurs_umgebung() -> dict:
     return {"STOCKMASTER_KURSANBIETER": anbieter, "STOCKMASTER_KURSANBIETER_KEY": key} if key else {}
 
 
-def befehl(prompt_text: str, modell: str, aufwand: str, json_ausgabe: bool = False, nur_test: bool = False) -> list[str]:
+def befehl(prompt_text: str, modell: str, aufwand: str) -> list[str]:
+    """Kurzer Verbindungstest: eine Runde ohne Werkzeuge, Antwort als JSON."""
+    return ["claude", "-p", prompt_text, *claude_optionen.cli_argumente(modell, aufwand),
+            "--no-session-persistence", "--permission-prompts", "none", "--output-format", "json", "--max-turns", "1",
+            "--tools", ""]
+
+
+def lauf_befehl(modell: str, aufwand: str) -> list[str]:
+    """Claude-Lauf. Der Auftrag kommt als stream-json über stdin und Freigabe-Anfragen als control_request über
+    stdout (--permission-prompt-tool stdio): So kann der Worker Befehle, die weder erlaubt noch verboten sind,
+    einem Administrator vorlegen. Verbote (`permissions.deny`) entscheidet die CLI selbst und fragt dafür nie."""
     e = einstellungen()
-    argumente = ["claude", "-p", prompt_text, *claude_optionen.cli_argumente(modell, aufwand),
-                 "--no-session-persistence", "--permission-prompts", "none"]
-    if nur_test:
-        return argumente + ["--output-format", "json", "--max-turns", "1", "--tools", ""]
-    return argumente + ["--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",
-                        "--add-dir", str(e.daten_pfad), "--settings", einstellungen_json(),
-                        "--allowedTools", *ERLAUBTE_WERKZEUGE]
+    return ["claude", "-p", *claude_optionen.cli_argumente(modell, aufwand), "--no-session-persistence",
+            "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+            "--permission-prompts", "host", "--permission-prompt-tool", "stdio", "--permission-mode", "acceptEdits",
+            "--add-dir", str(e.daten_pfad), "--settings", einstellungen_json(),
+            "--allowedTools", *ERLAUBTE_WERKZEUGE]
 
 
 def fehler_einordnen(text: str) -> tuple[str, str]:
@@ -208,9 +225,47 @@ def ereignis_text(ereignis: dict) -> list[str]:
     return zeilen
 
 
+def _senden(prozess, nachricht: dict) -> None:
+    """Eine Zeile stream-json an die CLI; ist sie schon beendet, geht die Nachricht ins Leere."""
+    try:
+        prozess.stdin.write(json.dumps(nachricht, ensure_ascii=False) + "\n")
+        prozess.stdin.flush()
+    except (OSError, ValueError):
+        pass
+
+
+def _freigabe_beantworten(prozess, ereignis: dict, entscheider: Callable[..., tuple[bool, str]] | None,
+                          schreiben: Callable[[str], None]) -> None:
+    """control_request der CLI (can_use_tool) an den Entscheider geben und die Antwort zurückschicken."""
+    anfrage = ereignis.get("request") or {}
+    kennung = ereignis.get("request_id")
+    if anfrage.get("subtype") != "can_use_tool":
+        _senden(prozess, {"type": "control_response", "response": {
+            "subtype": "error", "request_id": kennung, "error": "Nicht unterstützte Anfrage."}})
+        return
+    werkzeug, eingabe = str(anfrage.get("tool_name", "?")), anfrage.get("input") or {}
+    schreiben(f"? Freigabe angefragt – {werkzeug}: {_kurz(eingabe.get('command') or eingabe, 300)}")
+    if entscheider is None:
+        erlaubt, meldung = False, "Keine Freigabe möglich."
+    else:
+        try:
+            erlaubt, meldung = entscheider(werkzeug, eingabe, anfrage.get("description"))
+        except Exception as exc:  # noqa: BLE001 - im Zweifel ablehnen, nie freigeben
+            erlaubt, meldung = False, f"Freigabe nicht möglich ({type(exc).__name__})."
+    schreiben("  ✓ Freigabe erteilt" if erlaubt else f"  ✗ Freigabe abgelehnt: {meldung}")
+    antwort = {"behavior": "allow", "updatedInput": eingabe} if erlaubt else {"behavior": "deny", "message": meldung}
+    _senden(prozess, {"type": "control_response", "response": {"subtype": "success", "request_id": kennung,
+                                                                 "response": antwort}})
+
+
 def ausfuehren(befehl_liste: list[str], env: dict, cwd: Path, log: Path, schwaerzen: Schwaerzer,
-               abbrechen: Callable[[], bool], zeitlimit_s: int, starter=subprocess.Popen) -> dict:
-    """Startet den Lauf, schreibt das Log live (geschwärzt) und liefert das Ergebnis."""
+               abbrechen: Callable[[], bool], zeitlimit_s: int, starter=subprocess.Popen,
+               auftrag: str | None = None, entscheider: Callable[..., tuple[bool, str]] | None = None) -> dict:
+    """Startet den Lauf, schreibt das Log live (geschwärzt) und liefert das Ergebnis.
+
+    Mit `auftrag` kommt der Auftrag über stdin (stream-json), und Freigabe-Anfragen der CLI gehen an
+    `entscheider(werkzeug, eingabe, beschreibung) -> (erlaubt, Meldung)`. Ohne Entscheider wird abgelehnt.
+    """
     log.parent.mkdir(parents=True, exist_ok=True)
     ergebnis: dict = {"result": None, "is_error": None}
     beginn = time.monotonic()
@@ -219,8 +274,10 @@ def ausfuehren(befehl_liste: list[str], env: dict, cwd: Path, log: Path, schwaer
             ausgabe.write(schwaerzen(zeile) + "\n")
             ausgabe.flush()
 
-        prozess = starter(befehl_liste, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, bufsize=1)
+        prozess = starter(befehl_liste, cwd=cwd, env=env, stdin=subprocess.PIPE if auftrag else None,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        if auftrag:
+            _senden(prozess, {"type": "user", "message": {"role": "user", "content": auftrag}})
         abgebrochen = None
         for roh in prozess.stdout:
             roh = roh.rstrip("\n")
@@ -232,12 +289,19 @@ def ausfuehren(befehl_liste: list[str], env: dict, cwd: Path, log: Path, schwaer
                     ergebnis.setdefault("ausgabe", "")
                     ergebnis["ausgabe"] = (ergebnis["ausgabe"] + "\n" + roh)[-2000:]
                 ereignis = None
-            if ereignis:
+            if ereignis and ereignis.get("type") == "control_request":
+                _freigabe_beantworten(prozess, ereignis, entscheider, schreiben)
+            elif ereignis:
                 for zeile in ereignis_text(ereignis):
                     schreiben(zeile)
                 if ereignis.get("type") == "result":
                     ergebnis.update({k: ereignis.get(k) for k in ("result", "is_error", "subtype", "num_turns",
                                                                    "duration_ms", "total_cost_usd")})
+                    if auftrag:  # die CLI wartet auf weitere Eingaben, bis stdin geschlossen ist
+                        try:
+                            prozess.stdin.close()
+                        except OSError:
+                            pass
             if abbrechen():
                 abgebrochen = "abgebrochen"
             elif time.monotonic() - beginn > zeitlimit_s:
@@ -253,6 +317,11 @@ def ausfuehren(befehl_liste: list[str], env: dict, cwd: Path, log: Path, schwaer
                 break
         rueckgabe = prozess.wait()
         prozess.stdout.close()
+        if prozess.stdin and not prozess.stdin.closed:
+            try:
+                prozess.stdin.close()
+            except OSError:
+                pass
     ergebnis["rueckgabe"] = rueckgabe
     ergebnis["abgebrochen"] = abgebrochen
     for schluessel in ("result", "ausgabe"):
@@ -282,7 +351,7 @@ def verbindung_testen(token: str, modell: str, aufwand: str, starter=subprocess.
         env.pop("STOCKMASTER_KURSANBIETER_KEY", None)
         beginn = time.monotonic()
         try:
-            lauf = starter(befehl("Antworte nur mit dem Wort OK.", modell, aufwand, nur_test=True), cwd=temp, env=env,
+            lauf = starter(befehl("Antworte nur mit dem Wort OK.", modell, aufwand), cwd=temp, env=env,
                            capture_output=True, text=True, timeout=120)
         except FileNotFoundError:
             return {"ok": False, "meldung": "Claude Code CLI ist im Container nicht installiert (Befehl 'claude')."}

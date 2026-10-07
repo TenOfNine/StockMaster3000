@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from . import appdaten, auftraege, claude_anmeldung, claude_lauf, claude_optionen
+from . import appdaten, auftraege, claude_anmeldung, claude_lauf, claude_optionen, freigaben
 from .config import einstellungen
 from .db import jetzt_utc, neue_sitzung, utc
 from .modelle import AuditEintrag, Auftrag
@@ -371,11 +371,15 @@ class Worker:
         try:
             with claude_lauf.TempVerzeichnis() as temp:
                 ergebnis = claude_lauf.ausfuehren(
-                    claude_lauf.befehl(claude_lauf.prompt(auftrag.art, auftrag), auftrag.modell, auftrag.aufwand or ""),
-                    claude_lauf.umgebung(token, temp), e.framework_pfad, log_datei, schwaerzen, abbrechen, zeitlimit)
+                    claude_lauf.lauf_befehl(auftrag.modell, auftrag.aufwand or ""),
+                    claude_lauf.umgebung(token, temp), e.framework_pfad, log_datei, schwaerzen, abbrechen, zeitlimit,
+                    auftrag=claude_lauf.prompt(auftrag.art, auftrag),
+                    entscheider=freigaben.entscheider_fuer(auftrag_id, schwaerzen, abbrechen))
         except FileNotFoundError:
             ergebnis = {"rueckgabe": 127, "ausgabe": "Claude Code CLI ist im Container nicht installiert.",
                         "abgebrochen": None, "is_error": True}
+        finally:
+            freigaben.schliessen(auftrag_id)
         status, meldung = self._lauf_ergebnis(ergebnis)
         nachlauf = self._nachlauf(auftrag)
         with open(log_datei, "a", encoding="utf-8") as datei:
@@ -446,6 +450,7 @@ def starten(pause: float = 5.0) -> None:
         anzahl = auftraege.verwaiste_aufraeumen(db, stunden=0)
         if anzahl:
             log.warning("%s Lauf/Läufe aus einem früheren Start als abgebrochen markiert.", anzahl)
+    freigaben.schliessen()  # Anfragen eines früheren Starts: die CLI, die wartete, gibt es nicht mehr
     worker = Worker()
     while True:
         try:

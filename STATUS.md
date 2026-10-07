@@ -344,6 +344,37 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Feed oder überfälligem Abruf, rot erst, wenn alle Feeds ausfallen. Tests: Werkzeug (Klartext je Ursache,
     Verlauf, Zusammenfassung), Backend (Details, Status je Feed, Worker), Oberfläche (Färbung, Banner, Details,
     Abrufstatus) und E2E.
+37. Freigaben in der Web-UI (2026-10-07; Auftrag eines Auftraggebers nach einem Testlauf, in dem ein Shell-Befehl mit
+    Schleife und Pipe abgelehnt wurde: „Approval Surface“, auch für Läufe ohne Bedienung, drei Minuten Wartezeit,
+    Schreiben in den Spielstand bleibt gesperrt): **Umgesetzt.** Bisher lief die CLI mit
+    `--permission-prompts none`: Was weder erlaubt noch verboten war, wurde ohne Rückfrage abgelehnt. Jetzt
+    startet der Worker sie mit `--input-format stream-json --permission-prompt-tool stdio`; der Auftrag geht über
+    stdin, und die CLI fragt Befehle, die weder auf der Positivliste noch unter den Verboten stehen, per
+    `control_request` an. Der Worker legt je Anfrage eine Zeile in `freigaben` an, die Web-UI zeigt sie im Lauf
+    (Befehl Zeichen für Zeichen ohne Ligaturen, Beschreibung von Claude als ungeprüft gekennzeichnet, Restzeit,
+    „Erlauben“ und „Ablehnen“) und als Hinweis „n Freigaben offen“ in der Kopfzeile für Administratoren.
+    Entscheiden dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag `freigabe_erlaubt` oder
+    `freigabe_abgelehnt`; wer entschieden hat, steht nur in der Datenbank). Eine Freigabe gilt nur für den einen
+    Aufruf. Ohne Entscheidung verfällt die Anfrage nach `SM_FREIGABE_WARTEZEIT_SEKUNDEN` (Standard 180) und gilt als
+    abgelehnt; deshalb hängen auch Zeitplan-Läufe nie. Ein schon abgelehnter oder verfallener Befehl wartet im
+    selben Lauf nicht erneut; Abbruch, Lauf-Ende und Neustart des Dienstes schließen offene Anfragen.
+    Schichten, die zusammenwirken: (1) Verbotsregeln der CLI entscheiden vor jeder Anfrage und werden nie zur
+    Freigabe vorgelegt (mit CLI 2.1.293 geprüft: `curl` unter `Bash(curl*)` wird ohne `control_request`
+    abgelehnt). (2) `freigabe_regeln.py` lehnt ohne Rückfrage ab, was nicht erkennbar nur liest: nur Bash ist
+    freigebbar; erlaubt sind lesende Werkzeuge (echo, printf, cat, head, tail, wc, sort, uniq, cut, tr, grep, awk,
+    column, nl, tac, paste, comm, diff, ls, date, pwd, basename, dirname) und `python tools/…`, einfache
+    `for`-Schleifen und Pipes; gesperrt sind Umleitungen in Dateien, Befehlsersetzung, Unterschalen,
+    Hintergrundprozesse, schreibende oder ausführende Optionen (sort -o, tail -f, date -s, awk mit system, getline,
+    `>`, `|` oder ENVIRON), Pfade außerhalb von Spielstand und Framework (kein /data-app, /proc, /etc, `..`, `~`),
+    nicht definierte Variablen sowie Steuer- und Umkehrzeichen. Das ist eine Mustererkennung und kein Beweis.
+    (3) `pruefe.py` nach jedem Lauf und die Git-Historie des Datenverzeichnisses. Konservative Auslegung (CLAUDE.md,
+    Entwicklungsmodus), bitte am Ende bestätigen: `sed`, `find` und `xargs` sind nicht freigebbar, und im
+    awk-Programm ist jedes `>` gesperrt (auch als Vergleich). Grenze: Ändert eine neue CLI-Version das Protokoll
+    und beantwortet der Worker eine Anfrage nicht, endet der Lauf erst mit dem Zeitlimit. Der Lauf-Prompt nennt
+    Claude die Regeln (einzelne Aufrufe bevorzugen, abgelehnte Befehle nicht wiederholen). Tests: Regeln (93 Fälle),
+    Worker mit CLI-Attrappe (erlauben, ablehnen, Zeitablauf und Wiederholung, harte Sperre, Abbruch, Rechte,
+    Dienststart), Oberfläche und E2E; zusätzlich ein Lauf mit der echten CLI (erlaubt: awk liefert 42; Verbot: curl
+    ohne Anfrage; Sperre: Umleitung, Datei nicht angelegt).
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

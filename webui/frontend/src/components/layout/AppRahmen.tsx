@@ -35,6 +35,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { relativ } from "@/lib/format";
 
+import { FreigabeHinweis } from "../Freigaben";
 import { Abzeichen, PROFIL_FARBE, PROFIL_NAME, Taste } from "../ui";
 import { Befehlspalette } from "./Befehlspalette";
 
@@ -279,6 +280,7 @@ function Kopfzeile({ oeffneMenue, oeffnePalette }: { oeffneMenue: () => void; oe
         </span>
       </button>
       <div className="ml-auto flex items-center gap-2">
+        <FreigabeHinweis />
         <Sperrstatus />
         <button onClick={umschalten} className="rounded-lg p-2 text-text-2 hover:bg-flaeche-3 hover:text-text" aria-label="Darstellung umschalten">
           {theme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}

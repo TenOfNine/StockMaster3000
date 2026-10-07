@@ -147,6 +147,20 @@ unter „Claude-Läufe“ zu sehen; danach gibt der Worker eine liegengebliebene
 und führt `pruefe.py` aus. Modell und Aufwand stehen am Lauf, im Audit-Log und im Session-Eintrag.
 Optionen für Modell und Aufwand: `config/claude.json` (gegen `claude --help` der installierten Version).
 
+### Freigaben
+
+Befehle, die weder auf der Positivliste noch unter den Verboten stehen (etwa eine Schleife mit `echo` und
+`awk`), lehnt der Worker nicht mehr pauschal ab: Die CLI fragt, und ein Administrator entscheidet in der
+Web-UI. Die Anfrage erscheint unter „Claude-Läufe“ im Lauf (Befehl, Beschreibung von Claude, Restzeit,
+„Erlauben“ oder „Ablehnen“) und als Hinweis „n Freigaben offen“ in der Kopfzeile. Eine Freigabe gilt nur für
+diesen einen Aufruf. Ohne Entscheidung gilt die Anfrage nach drei Minuten als abgelehnt
+(`SM_FREIGABE_WARTEZEIT_SEKUNDEN`, Standard 180), damit Läufe nach Zeitplan nie hängen bleiben.
+
+Nie freigebbar, auch nicht auf Wunsch: alles, was nicht erkennbar nur liest, vor allem Umleitungen in Dateien,
+Befehlsersetzung, Pfade außerhalb von Spielstand und Framework und Umgebungsvariablen. Der Spielstand bleibt
+für Claude schreibgeschützt. Alle Anfragen samt Ausgang stehen am Lauf; wer entschieden hat, steht im Audit-Log.
+Nachsehen im Container `worker`: `grep -B1 "Freigabe" /data-app/laeufe/<Lauf-ID>.log`.
+
 ## Sicherung und Wiederherstellung
 
 ```bash

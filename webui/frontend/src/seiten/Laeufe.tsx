@@ -4,6 +4,7 @@ import { Bot, CalendarClock, CircleStop, Info, Loader2, Play, ScrollText, Shield
 import { useEffect, useRef, useState } from "react";
 
 import { Geschuetzt } from "@/components/Fehlergrenze";
+import { FreigabePanel, OHNE_LIGATUREN } from "@/components/Freigaben";
 import { Markdown } from "@/components/Markdown";
 import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
 import { api, ApiFehler, type EinrichtungDaten, type Lauf, type LaufPlan, type LaufStatus } from "@/lib/api";
@@ -70,9 +71,9 @@ export function Log({ lauf }: { lauf: Lauf }) {
   return (
     <div className="max-h-[560px] overflow-auto rounded-xl border border-rand bg-[var(--bg)] p-4" aria-live="polite" aria-label="Session-Log">
       {text ? (
-        <pre className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-text-2">
+        <pre className={cn("font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-text-2", OHNE_LIGATUREN)}>
           {text.split("\n").map((zeile, i) => (
-            <div key={i} className={cn(zeile.startsWith("Claude:") && "text-text", zeile.startsWith("→") && "text-akzent", zeile.trimStart().startsWith("✗") && "text-schlecht", zeile.startsWith("Prüfung:") && "font-semibold text-text")}>
+            <div key={i} className={cn(zeile.startsWith("Claude:") && "text-text", zeile.startsWith("→") && "text-akzent", zeile.startsWith("?") && "text-warnung", zeile.trimStart().startsWith("✓") && "text-gut", zeile.trimStart().startsWith("✗") && "text-schlecht", zeile.startsWith("Prüfung:") && "font-semibold text-text")}>
               {zeile || " "}
             </div>
           ))}
@@ -398,6 +399,9 @@ export function Laeufe() {
                     </div>
                   )
                 )}
+                <Geschuetzt name="Die Freigaben">
+                  <FreigabePanel lauf={gewaehlt} admin={admin} />
+                </Geschuetzt>
                 <Geschuetzt name="Das Log">
                   <Log lauf={gewaehlt} />
                 </Geschuetzt>
