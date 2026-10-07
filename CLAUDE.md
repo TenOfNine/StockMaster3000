@@ -47,6 +47,13 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
    Branch-Namen. Personen erscheinen nur als neutrale Kennung (z. B. aus
    config/projekt.json). Teilt dir jemand einen Namen, eine E-Mail-Adresse
    oder ähnliche Daten mit, übernimmst du sie nicht ins Repository.
+6. Pull Requests und Branches haben sprechende Namen, keine zufällig
+   erzeugten (nicht `claude/exciting-hypatia-uej5js`). Der Titel des Pull
+   Requests nennt die Änderung (z. B. `fix: Absturz der Lauf-Seite …`), der
+   Branch das Thema in Kurzform mit Präfix (z. B. `fix/lauf-seite-absturz`,
+   `aufbau/proxy-hosts`). Wo du den Branch-Namen selbst wählst, wählst du
+   einen sprechenden; schreibt die Umgebung einen zufällig erzeugten vor,
+   trägt der Titel des Pull Requests die Aussage.
 
 ## Entwicklungsmodus
 - Arbeite die offenen Arbeitspakete aus STATUS.md der Reihe nach ab
