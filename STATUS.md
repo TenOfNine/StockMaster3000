@@ -1,8 +1,8 @@
 # Projektstatus
 
 - Phase: 2 (Startbetrieb-Vorbereitung). Phase 1 (Aufbau, AP1 bis AP11) abgeschlossen am 2026-10-06; AP12 nach Phase 2 verschoben (Entscheidung 5)
-- Startdatum des Spiels: erst nach Freigabe von AP12 (wird dann mit tools/init.py gesetzt, nie rückwirkend; Entscheidung 11)
-- Letzte Session: keine
+- Startdatum des Spiels: Spielstand, steht je Instanz in spiel.json im Datenverzeichnis (gesetzt in der Einrichtung → Spielstart bzw. mit tools/init.py nach Freigabe von AP12, nie rückwirkend; Entscheidungen 11 und 15)
+- Letzte Session: Spielstand, ergibt sich aus dem Journal im Datenverzeichnis
 
 ## Arbeitspakete Phase 1
 
@@ -21,9 +21,11 @@
 
 ## Arbeitspakete Phase 2
 
-- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md)
+- [ ] AP12 Testsession ohne Trades, Anlagerichtlinien, Freigabe und Initialisierung (AUFTRAG_PHASE1.md); je Instanz in der App: Testsession unter Claude-Läufe, Freigabe und Start unter Einrichtung → Spielstart
 - [x] W0 Klärung der offenen Punkte zur Web-UI (Entscheidungen 1 bis 12)
 - [ ] W1 bis W17 Web-UI (AUFTRAG_WEBUI.md); Stufe 1 (lesend) umgesetzt, Stand je Paket unten
+- [x] App-Autarkie (2026-10-07): Spielstand nur im Datenverzeichnis, Einstellungen und Secrets in der App,
+  Sessions im Container, Kurse mit Fallback-Kette, News über RSS (Abschnitt unten)
 - [x] Werkzeug-Ergänzungen vor dem Spielstart: Fälligkeiten (tools/termine.py),
   Session-Einträge und Journal-Vorlage in pruefe.py, Kalender bis 2028 mit
   NYSE-Frühschlüssen, Dateirechte atomar geschriebener Dateien (2026-10-06)
@@ -106,6 +108,36 @@ Technische Festlegungen Stufe 1:
   Debian-Paketquellen gesperrt. Der Docker-Rauchtest lief dort mit einem
   Test-Image ohne git; der vollständige Build läuft in der GitHub Action.
 
+## App-Autarkie (2026-10-07)
+
+Der Docker-Stack läuft autark; GitHub liefert nur das Framework. Betrieb: webui/BETRIEB.md und
+webui/PORTAINER.md.
+
+- Pfade: tools/pfade.py trennt Framework (Code, regeln.md, config/) und Datenverzeichnis
+  (`STOCKMASTER_DATA_DIR`, im Container /data). Spielstand wird nie relativ zum Repository gelesen.
+- Spielstand-Git: Das Datenverzeichnis ist ein eigenes Git-Repository ohne Remote; session.py und
+  `tools/datenverzeichnis.py commit` committen dort, `pruefe.py --historie` prüft diese Historie (auch
+  news/ nur anhängen) und warnt bei einem Remote. Leeres Volume: Erstinitialisierung aus
+  vorlagen/datenverzeichnis/. Altes Layout: `tools/migriere.py --von <alte-arbeitskopie>` mit
+  Herkunftsvermerk. Die Spielstand-Ordner sind aus dem Repository entfernt (frühere Commits unverändert).
+- App-Konfiguration (/data-app, getrennt vom Spielstand): Einstellungen, Secrets mit AES-256-GCM,
+  Master-Schlüssel 0600 (beim ersten Start erzeugt oder einmalig aus SM_SCHLUESSEL übernommen);
+  Datenbank-Passwörter erzeugt der DB-Container im Volume geheim. Der Portainer-Stack braucht nur noch
+  SM_HOSTNAME.
+- Dienst worker: einziger mit Internetzugang; Kurse (5 Min. bei offenem Markt, sonst stündlich, einmal
+  nach Schluss), News (15 Min.), Zeitplan, Claude-Sessions mit Live-Log, Verbindungstests; die API hat
+  kein Internet.
+- Kurse: Adapter mit Fallback-Kette Finnhub/Twelve Data → yfinance → letzter bekannter Kurs nur zur
+  Anzeige („veraltet“). Ursache von „Markt & Kurse ist leer“: Kurse entstanden bisher nur während
+  Sessions (data/historie/), und die Web-UI ruft absichtlich nichts ab; vor dem Spielstart gab es keine
+  Session, also keine Daten. Jetzt füllt der worker die Übersicht laufend.
+- News: tools/news.py (feedparser), Standard-Feeds in config/news.json, Änderungen in der App.
+- Claude: Optionen für Modell und Aufwand in config/claude.json, geprüft gegen `claude --help` der im
+  Image fest installierten Claude Code 2.1.292 (`--model`, `--effort low|medium|high|xhigh|max`).
+- Web-UI: neue Seite „Einrichtung“ (Admin mit Zwei-Faktor), bisherige Seite heißt „Roadmap & Status“,
+  neue Seite „Claude-Läufe“, Cockpit-Hinweis auf offene Pflichtschritte, „Markt & Kurse“ mit Quelle,
+  Zeitstempel und Verzögerung, News im Cockpit und je Wert, Sicherung (Export/Restore).
+
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
@@ -163,55 +195,107 @@ mit Claude Code (ohne Namen gemäß Entscheidung 4):
 14. App-Icon und Favicon: Vorschlag "Drei Profile",
     abgelegt als assets/icons/drei-profile.svg.
 
-## Offene Auslegungsfragen (Phase 1, konservativ umgesetzt, Freigabe erbeten)
+Auslegungsentscheidungen vom 2026-10-07 (Claude im Auftrag "App-Autarkie, Einrichtungsseite, Kurse und
+News"; innerhalb von regeln.md und config/profile.json, ohne Limits, Kosten oder Risikogrenzen zu ändern):
+
+15. Zum Spielstand gehören neben den im Auftrag genannten Ordnern auch spiel.json (Startdatum und
+    Freigabe; früher eine Zeile in STATUS.md) und news/. STATUS.md, regeln.md und config/ bleiben
+    Framework, weil sie Regeln und Projektstand beschreiben, nicht den Spielverlauf einer Instanz.
+16. Spielstart aus der Web-UI nur mit Freigabe nach AP12 durch eine Auftraggeber-Kennung (regeln.md
+    Abschnitt 2), Passwortbestätigung und Kursdaten für den Benchmark; Testsession und Claude-Test sind
+    empfohlen, nicht Pflicht, weil die Freigabe allein Sache der Auftraggeber ist.
+17. Kurse aus der Fallback-Kette werden mit der tatsächlich genutzten Quelle protokolliert. Ein Anbieter
+    wird nur für Ticker gefragt, die dort dasselbe Instrument sind (Indizes und Futures bleiben bei
+    yfinance); Tagesdaten kommen weiter aus yfinance, damit die Split-Rückrechnung einheitlich bleibt.
+18. Der „letzte bekannte Kurs“ ist nur Anzeige („veraltet“), wird nie protokolliert und nie gebucht
+    (regeln.md 1.4: ohne verlässlichen Kurs kein Handel).
+19. Hintergrundabrufe protokollieren ihre Kurse in data/kurse/ wie jede Abfrage über tools/kurse.py; sie
+    buchen nichts. Der worker committet sie höchstens stündlich lokal mit Präfix „daten:“, nie während
+    einer Session.
+20. Die Testsession (AP12) schreibt weder Journal noch Orders, damit der Spielstand vor dem Startdatum
+    leer bleibt; das Ergebnis steht im Lauf-Log.
+21. Der erste Administrator wird weiter per Kommandozeile angelegt (`admin-anlegen`, nur einmal). Es gibt
+    keinen Weg über Umgebungsvariablen, deshalb ist kein Erststart-Assistent nötig.
+22. Der Master-Schlüssel wird beim ersten Start automatisch erzeugt (ersetzt die frühere Festlegung „keine
+    automatische Schlüsselerzeugung“). Gibt es Zwei-Faktor-Geheimnisse ohne Schlüssel, erzeugt die App
+    keinen neuen, sondern verlangt einmalig SM_SCHLUESSEL, damit niemand ausgesperrt wird.
+23. Ausnahme zu Entscheidung 7: tools/ nutzt zusätzlich feedparser (ausdrücklich beauftragt); HTTP für
+    Kurs-APIs über die Standardbibliothek.
+24. Modell und Aufwand: Optionen in config/claude.json statt im Frontend; Unverträglichkeiten werden vor
+    dem Speichern angezeigt, und lehnt die CLI eine Kombination ab, bricht der Lauf mit deren Meldung ab
+    (kein stilles Zurückfallen auf Standardwerte).
+
+## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere
-Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
+Auslegung gewählt und im Code kommentiert. Am 2026-10-07 hat Claude im Auftrag
+alle Fragen entschieden: fachlich sinnvoll, mit dem größten Spielraum, den
+regeln.md erlaubt, ohne Limits, Kosten oder Risikogrenzen zu lockern. Ergebnis:
+Alle bisherigen Auslegungen bleiben, weil jede Alternative entweder Backdating
+(regeln.md 1.3), eine günstigere Annahme bei unklaren Daten (1.4) oder geringere
+Kosten (Abschnitte 4 und 5) bedeuten würde. Je Frage die Begründung:
 
 1. Faktor-Kosten (0,02/365) je Kalendertag, nicht je Handelstag
    (Wochenende: dreifach). Knock-out-Aufzinsung ebenfalls an jedem
    Kalendertagsende, auch am Kauftag.
+    Entschieden: bestätigt. regeln.md 4 rechnet die Aufzinsung ausdrücklich je Kalendertag; für den Faktor-Abschlag wäre „je Handelstag“ eine Kostenlockerung.
 2. Kursziel am Kauftag wird nicht ausgelöst (das Tageshoch kann vor dem
    Kauf gelegen haben); der Stop zählt am Kauftag gegen die ganze
    Tagesspanne (regeln.md 4).
+    Entschieden: bestätigt. Ein Kursziel aus Kursen vor dem Kauf auszulösen wäre Backdating; für Stop und Barriere schreibt regeln.md 4 die ganze Tagesspanne vor.
 3. Änderungen von Stop/Kursziel wirken ab der nächsten Tageskerze.
+    Entschieden: bestätigt. Tagesdaten zeigen nicht, wann ein Kurs im Tag lag; sofortige Wirkung könnte Kurse vor der Änderung nutzen.
 4. Vorgemerkte Orders (Market und Limit) nutzen nur Tageskerzen, die nach
    ihrer Erfassung beginnen. Eine während der Handelszeit erfasste, nicht
    sofort ausführbare Limit-Order gilt also erst ab dem nächsten
    Handelstag. Limit-Orders gelten bis zum Storno.
+    Entschieden: bestätigt. Folgt aus „kein Backdating“; Limits bis zum Storno ersparen tägliche Neuerfassung und kosten nichts.
 5. Gold/Brent: Die Tageskerze der Futures beginnt am Vorabend; als Beginn
    gilt konservativ 23:00 des Vortags.
+    Entschieden: bestätigt. Die Futures-Kerze beginnt real am Vorabend; 23:00 ist der ungünstigere der beiden möglichen Zeitpunkte.
 6. Devisenkurs: Ausführung zur Eröffnung mit EURUSD-Eröffnung, Ereignisse
    im Tagesverlauf und Bewertung mit EURUSD-Schluss desselben Tages.
+    Entschieden: bestätigt. Jeder Buchungszeitpunkt hat damit einen eindeutigen, protokollierten Devisenkurs aus derselben Tageskerze.
 7. Nachgebucht werden nur abgeschlossene Tage (bis gestern). Ereignisse von
    heute (z. B. Ausführung einer Abendorder zur heutigen Eröffnung) bucht
    die nächste Session.
+    Entschieden: bestätigt. Die heutige Kerze ist unvollständig; sie zu buchen hieße mit Daten zu rechnen, die sich noch ändern.
 8. Ein aktueller Kurs gilt bei offenem Markt höchstens 30 Minuten
    (config/projekt.json); älter: kein Handel.
+    Entschieden: bestätigt. Mit einem Echtzeit-Anbieter (Einrichtung → Kursdaten) ist die Grenze erreichbar; mehr Spielraum widerspräche „ohne verlässlichen Kurs kein Handel“.
 9. Mindestorder (100 EUR) gilt auch für Teilverkäufe; Komplettverkauf
    immer erlaubt.
+    Entschieden: bestätigt. Die Mindestorder gilt für jede Order; der Komplettverkauf bleibt immer möglich, Risikoabbau ist also nie blockiert.
 10. Einzelposition: gleiche Instrumente werden zusammengezählt (Aktie je
     Ticker, Zertifikate je Typ, Richtung und Basiswert). Alle Limits werden
     bei jedem Kauf nach der Order geprüft; ein bereits überschrittenes
     Limit blockiert damit jeden Kauf, der es nicht verbessert.
+    Entschieden: bestätigt. Zusammenzählen verhindert Umgehung durch Stückelung; Käufe, die ein überschrittenes Limit verbessern, bleiben möglich.
 11. Unbekannte Marktkapitalisierung eines Aktien-Basiswerts gilt als zu
     klein.
+    Entschieden: bestätigt. Fehlende Daten gelten nach regeln.md 1.4 als ungünstig.
 12. Dividende nur für Positionen, die vor Beginn des Ex-Tags eröffnet
     wurden und am Ex-Tag zum Schluss noch bestehen (Verkauf am Ex-Tag
     verliert die Dividende).
+    Entschieden: bestätigt. Entspricht der realen Ex-Tag-Logik.
 13. Splits werden vor allen Ereignissen des Split-Tags angewendet (die
     Tageskerze ist bereits angepasst), nicht erst zum Tagesschluss.
+    Entschieden: bestätigt. Die Tageskerze ist am Split-Tag bereits angepasst; sonst würden Stops fälschlich auslösen.
 14. Portfolio-Stopp: Prüfung zum Tagesschluss; Glattstellung aller
     Positionen zum Schlusskurs inklusive Spread und Gebühr.
+    Entschieden: bestätigt. regeln.md 7 nennt keine Prüfung im Tagesverlauf; Spread und Gebühr fallen bei jedem Verkauf an (Abschnitt 5).
 15. Drawdown: Endet Stufe 2 (nach Review, Drawdown unter der Hälfte der
     Stufe-2-Schwelle), gilt Stufe 1 weiter, solange der Drawdown nicht
     unter der Hälfte der Stufe-1-Schwelle liegt.
+    Entschieden: bestätigt. Folgt aus dem Wortlaut von Abschnitt 7 (jede Stufe endet unter der Hälfte ihrer eigenen Schwelle).
 16. Je Kauf und Verkauf ein eigener Journal-Eintrag; der Eintrag muss das
     Portfolio nennen und in der Journal-Datei der Person stehen, die die
     Session-Sperre hält. Stop und Kursziel sind beim Kauf Pflichtangaben
     (`keiner` ausdrücklich möglich).
+    Entschieden: bestätigt. Je Order ein Eintrag hält die Prüfspur eindeutig; „keiner“ als Stop bleibt erlaubt (Risiko dann mit 20 % bzw. 100 % angesetzt).
 17. Kauf-Limit auf den Basiswert: Long bei Kurs <= Limit, Short bei
     Kurs >= Limit.
+    Entschieden: bestätigt. Übliche Limit-Semantik: Long kauft bei fallendem, Short bei steigendem Basiswert.
 
 ## Auslegungsfragen Phase 2 (beide entschieden, siehe Entscheidungen 11 und 12)
 
@@ -261,7 +345,8 @@ Auslegung gewählt und im Code kommentiert. Bitte bestätigen oder ändern:
 
 ## Offene Auslegungsfragen (Phase 2, Freigabe erbeten)
 
-20. Profilauswahl (Entscheidung 13) und regeln.md v1.2 widersprechen
+20. Bleibt offen (2026-10-07): Die Klärung erfordert eine Änderung von
+    regeln.md, die Claude nicht vornimmt. Profilauswahl (Entscheidung 13) und regeln.md v1.2 widersprechen
     sich: Abschnitt 2 nennt "1.000 EUR je Portfolio (defensiv,
     ausgewogen, aggressiv)" und "eigenen drei Portfolios", Abschnitt 11
     den "Monatsvergleich der drei Profile". Die einmalige Freigabe zur

@@ -17,7 +17,7 @@ nachrechenbar, jede Änderung in Git nachvollziehbar.
 | Phase | Inhalt | Stand |
 | --- | --- | --- |
 | 1 Aufbau | Werkzeuge, Tests, GitHub Action, Initialisierung (AP1–AP11) | abgeschlossen (2026-10-06) |
-| 2 Startbetrieb | Testsession, Anlagerichtlinien, Freigabe, Spielstart (AP12); Web-UI Stufe 1 (lesend) umgesetzt, Stufe 2 offen | in Vorbereitung |
+| 2 Startbetrieb | Testsession, Anlagerichtlinien, Freigabe, Spielstart (AP12); autarker Docker-Stack mit Einrichtung, Claude-Sessions im Container, Kursen und News | in Vorbereitung |
 | 3 Bewertung | Profile gegen Benchmarks nach etwa drei Monaten | offen |
 | 4 Langzeitbetrieb | Quartals-Meta-Reviews | offen |
 
@@ -61,12 +61,22 @@ Weitere Eckpunkte:
    kontrollieren.
 3. Regeln, Strategien, Lessons, Ranking und letzte Einträge lesen;
    fällige Reviews zuerst erstellen.
-4. Marktüberblick: Kurse über das Kurswerkzeug, News und Termine über die
-   Web-Suche mit Quelle und Datum.
+4. Marktüberblick: Kurse über das Kurswerkzeug, News aus dem News-Speicher
+   und über die Web-Suche, jeweils mit Quelle und Datum.
 5. Je Portfolio entscheiden; für jede Order erst Journal, dann Buchung.
-6. Session-Eintrag, Bericht, Prüfung, Commit, Sperre lösen, Push.
+6. Session-Eintrag, Bericht, Prüfung, lokaler Commit im Datenverzeichnis,
+   Sperre lösen. Spielstand wird nie gepusht.
 
 Die vollständige Arbeitsanweisung steht in [CLAUDE.md](CLAUDE.md).
+
+## Framework und Spielstand
+
+Dieses Repository ist nur das **Framework**: Code, Regeln, Konfiguration,
+Vorlagen, Tests und Doku. Der **Spielstand** (Portfolios, Trades, Kurse,
+News, Journal, Reviews, Strategien) lebt in einem eigenen Datenverzeichnis
+(`STOCKMASTER_DATA_DIR`, im Container `/data`) mit eigenem, lokalem Git als
+Prüfspur, ohne Remote. Im Betrieb läuft alles im Docker-Stack; Sessions
+starten in der Web-UI oder per Zeitplan.
 
 ## Schnellstart
 
@@ -74,11 +84,14 @@ Voraussetzungen: Python 3.11 oder neuer, Git, Claude Code.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q            # Tests ohne Netzwerk
-python tools/pruefe.py         # unabhängige Kontrolle
+python -m pytest -q                                   # Tests ohne Netzwerk
+python tools/datenverzeichnis.py einrichten --ziel ~/stockmaster-daten
+export STOCKMASTER_DATA_DIR=~/stockmaster-daten
+python tools/pruefe.py                                # unabhängige Kontrolle
 ```
 
-Eine Session startet ein Auftraggeber in Claude Code mit einer Nachricht
+Im Docker-Betrieb startet ein Admin Sessions unter „Claude-Läufe“. Lokal
+startet ein Auftraggeber eine Session in Claude Code mit einer Nachricht
 wie:
 
 > Ich bin Auftraggeber `<kennung>`, starte eine Trading-Session.
@@ -92,29 +105,34 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 | `python tools/session.py start --person <kennung>` / `ende` / `status` | Session-Sperre |
 | `python tools/kurse.py aktuell <ticker...>` | aktuelle Kurse, protokolliert in `data/kurse/` |
 | `python tools/kurse.py historie <ticker> --von --bis` | Tagesdaten mit Dividenden und Splits |
+| `python tools/kurse.py markt [--historie]` | Marktübersicht für die Web-UI (Fallback-Kette, „veraltet“) |
+| `python tools/news.py abrufen` / `liste [--ticker X]` | News-Speicher über RSS |
+| `python tools/datenverzeichnis.py einrichten` / `commit -m` / `status` | Datenverzeichnis mit lokalem Git |
+| `python tools/migriere.py --von <alte-arbeitskopie>` | Spielstand aus dem alten Layout übernehmen |
 | `python tools/limits.py pruefen --profil ... --typ ...` | Kauforder gegen die Limits prüfen, ohne Buchung |
 | `python tools/buchen.py kaufen/verkaufen/aendern/storno ...` | Orders, nur mit Journal-ID |
 | `python tools/bewertung.py nachbuchen` / `bericht` / `review` | Nachbuchung, `ranking.md`, Pflicht-Review |
 | `python tools/pruefe.py [--historie]` | unabhängige Kontrolle |
 | `python tools/termine.py` | fällige Reviews (Woche, Monat, Quartal, Drawdown-Stufe 2) |
-| `python tools/init.py --startdatum JJJJ-MM-TT` | Spielstart, einmalig nach Freigabe |
+| `python tools/init.py --startdatum JJJJ-MM-TT --freigabe <kennung>` | Spielstart, einmalig nach Freigabe (AP12) |
 | `python tools/produkte.py ko/faktor ...` | Zertifikatsrechner, nur Anzeige |
 
 Die GitHub Action ([.github/workflows/pruefung.yml](.github/workflows/pruefung.yml))
-führt bei jedem Push die Tests und `pruefe.py --historie` aus.
+führt bei jedem Push die Tests und `pruefe.py --historie` gegen ein frisch
+initialisiertes und ein Demo-Datenverzeichnis aus.
 
 ## Repository-Struktur
 
     CLAUDE.md, regeln.md        Arbeitsanweisung und verbindliche Spielregeln
-    STATUS.md, lessons.md       Projektstand, Entscheidungen, Erkenntnisse
+    STATUS.md                   Projektstand, Entscheidungen
     KONZEPT.md                  Zweck, Rollen, Architektur, Risiken
     AUFTRAG_PHASE1.md           Aufbau der Werkzeuge (AP1–AP12)
     AUFTRAG_WEBUI.md            Plan der Web-UI (W0–W17)
     config/                     Limits, Kosten, Universum, Projektwerte
     tools/                      Python-Werkzeuge (rechnen, buchen, prüfen)
     tests/                      Tests ohne Netzwerk, inkl. Szenario-Tests
-    portfolios/ trades/ data/   Spielstand, nur über tools/ geschrieben
-    journal/ reviews/ strategie/  Begründungen, Reviews, Anlagerichtlinien
+    vorlagen/datenverzeichnis/  leere Vorlage des Datenverzeichnisses (Spielstand
+                                liegt nie im Repository, sondern im Volume)
     assets/icons/               App-Icon (drei Profile)
     webui/                      Web-UI: backend/ (FastAPI), frontend/ (React),
                                 deploy/ (Docker, Caddy), demo/ (Demo-Daten)
@@ -122,8 +140,9 @@ führt bei jedem Push die Tests und `pruefe.py --historie` aus.
 
 ## Web-UI
 
-Stufe 1 der Weboberfläche ist umgesetzt: **lesend**, per Docker, standardmäßig
-nur im Heimnetz erreichbar (HTTPS mit lokaler Zertifizierungsstelle).
+Die Weboberfläche läuft per Docker (Portainer-tauglich), standardmäßig nur
+im Heimnetz (HTTPS mit lokaler Zertifizierungsstelle). Einstellungen und
+Secrets werden in der App gepflegt; der Stack braucht nur `SM_HOSTNAME`.
 
 ![Cockpit](webui/docs/cockpit.png)
 
@@ -134,21 +153,25 @@ nur im Heimnetz erreichbar (HTTPS mit lokaler Zertifizierungsstelle).
 - **Entscheidungen:** Zeitachse und Trade-Akten mit These, Szenarien,
   Kursdiagramm (Einstieg, Stop, Ziel, Ausführungen), Limitprüfung zur
   Ausführung und Quellen; Session-Einträge mit verworfenen Alternativen.
-- **Analyse, Regelwerk, Einrichtung, Prüfung:** Ranking, Reviews und
-  Lessons, Kurse, Zertifikatsrechner, Regeln und Limits, Status und
+- **Analyse, Regelwerk, Roadmap & Status, Prüfung:** Ranking, Reviews und
+  Lessons, Markt & Kurse (Quelle, Zeitstempel, „veraltet“), News je Wert,
+  Zertifikatsrechner, Regeln und Limits, Arbeitspakete und
   Auslegungsfragen, `pruefe.py` per Knopfdruck, Git-Historie.
+- **Einrichtung (Admin):** Claude-Token, Modell und Aufwand, Kursanbieter
+  und Keys, News-Feeds, Zeitplan, Spielstart, Sicherung, Systemstatus.
+- **Claude-Läufe:** Trading-Sessions, Reviews und Testsession im Container
+  mit Live-Log und anschließender Prüfung.
 - **Sicherheit:** Anmeldung mit Argon2id, Zwei-Faktor (Pflicht für
   Admins), CSRF-Schutz, Sitzungs-Timeouts, Rate-Limits, Audit-Log,
   strikte Content-Security-Policy, Heimnetz-Schranke in Proxy und API.
 
 ![Trade-Akte](webui/docs/trade-akte.png)
 
-Die Web-UI rechnet und bucht nicht selbst; Kennzahlen, Bewertungen und
-Prüfungen kommen aus `tools/`. Start, Root-Zertifikat, Sicherung und
+Die Web-UI rechnet und bucht nicht selbst; Kennzahlen, Bewertungen,
+Kurse und Prüfungen kommen aus `tools/`. Start, Root-Zertifikat, Sicherung und
 Entwicklung: [webui/BETRIEB.md](webui/BETRIEB.md); Betrieb mit Portainer:
-[webui/PORTAINER.md](webui/PORTAINER.md). Ausbaustufe 2
-(Arbeitsbereiche, Claude-Läufe mit eigenem Pro-Abo, Schwerpunkt,
-Profilauswahl): [AUFTRAG_WEBUI.md](AUFTRAG_WEBUI.md).
+[webui/PORTAINER.md](webui/PORTAINER.md). Weitere Ausbaustufen
+(Arbeitsbereiche, Schwerpunkt, Profilauswahl): [AUFTRAG_WEBUI.md](AUFTRAG_WEBUI.md).
 
 ## Datenschutz
 

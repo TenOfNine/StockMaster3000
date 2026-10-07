@@ -9,9 +9,21 @@ aggressiv) mit je 1.000 EUR und entwickelst die bestmögliche Strategie.
 Deine Auftraggeber stehen in config/projekt.json. Alles ist Simulation,
 keine Anlageberatung.
 
+## Framework und Datenverzeichnis
+Das Repository ist nur das Framework (Code, Regeln, config/, Vorlagen, Doku).
+Der Spielstand liegt im Datenverzeichnis `$STOCKMASTER_DATA_DIR` (im Container
+`/data`), einem eigenen Git-Repository ohne Remote: portfolios/, trades/,
+data/, journal/, reviews/, strategie/, news/, lessons.md, ranking.md,
+spiel.json, session.lock. Alle Pfadangaben für Spielstand in dieser Datei
+beziehen sich darauf; die Werkzeuge finden es über die Umgebungsvariable.
+Spielstand wird nie nach GitHub gepusht.
+
 ## Modus bestimmen
-Lies zu Beginn jeder Unterhaltung STATUS.md.
-- Startdatum des Spiels noch nicht gesetzt: **Entwicklungsmodus**.
+Lies zu Beginn jeder Unterhaltung STATUS.md und `python tools/session.py
+status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
+über die Web-UI gestartet, nennt der Auftrag Art, Auftraggeber und Setup.
+- Startdatum des Spiels noch nicht gesetzt: **Entwicklungsmodus** (bzw. die
+  vom Auftrag verlangte Testsession ohne Trades).
 - Startdatum gesetzt und eine Trading-Session gewünscht:
   **Trading-Modus**.
 - Startdatum gesetzt und Arbeit an offenen Entwicklungspaketen gewünscht
@@ -24,10 +36,12 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
    Entscheidung in STATUS.md fest.
 2. Rechnen macht Code, Entscheiden machst du. Kurse, Buchungen,
    Zertifikatswerte, Zinsen, Limits und Kennzahlen kommen nur aus tools/.
-   Dateien in portfolios/, trades/ und data/ bearbeitest du nie von Hand.
+   Dateien in portfolios/, trades/, data/ und news/ bearbeitest du nie von
+   Hand.
 3. Kein Backdating: Orders gelten ab ihrer Erfassung.
 4. Antworte auf Deutsch, knapp und strukturiert. Commit-Nachrichten auf
-   Deutsch mit Präfix (aufbau:, session:, review:, fix:).
+   Deutsch mit Präfix (aufbau:, session:, review:, fix:; daten: nur für
+   automatische Kurs- und News-Abrufe des Hintergrunddienstes).
 5. Keine Namen oder personenbezogenen Daten im Repository: nicht in
    Dateien, Journal, Reviews, Code, Tests, Commit-Nachrichten oder
    Branch-Namen. Personen erscheinen nur als neutrale Kennung (z. B. aus
@@ -40,6 +54,8 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
   erledigte Arbeitspakete in STATUS.md ab, wenn ihre Abnahmekriterien
   erfüllt sind.
 - Schreibe Tests zusammen mit dem Code; Tests laufen ohne Netzwerk.
+- Spielstand gehört nie ins Framework-Repository; Tests und Prüfungen nutzen
+  ein eigenes Datenverzeichnis (`python tools/datenverzeichnis.py einrichten`).
 - Kleine, nachvollziehbare Commits je Arbeitspaket.
 - Vor dem Startdatum werden keine Spiel-Trades gebucht.
 - Wenn regeln.md für die Umsetzung nicht eindeutig ist: wähle die
@@ -49,20 +65,25 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
 ## Trading-Modus: Ablauf jeder Session
 1. Frage, welcher Auftraggeber (Kennung aus config/projekt.json) die
    Session startet, falls unklar.
-2. `git pull`, dann `python tools/session.py start --person <kennung>`.
+2. `python tools/session.py start --person <kennung>` (committet die Sperre
+   lokal im Datenverzeichnis; kein git pull, kein git push).
    Ist die Sperre durch jemand anderen belegt: abbrechen und Bescheid geben.
 3. `python tools/bewertung.py nachbuchen` und `python tools/pruefe.py`.
    Bei Fehlern im Prüfskript: erst klären, nicht handeln.
-4. Lies regeln.md, strategie/*.md, lessons.md, ranking.md, das letzte
-   Review und die Journal-Einträge der letzten Sessions.
+4. Lies regeln.md (Framework), strategie/*.md, lessons.md, ranking.md, das
+   letzte Review und die Journal-Einträge der letzten Sessions
+   (Datenverzeichnis).
 5. Ist ein Review fällig (erste Session einer neuen Kalenderwoche,
    Monats- oder Quartalswechsel, Drawdown-Stufe 2), erstelle es zuerst.
    Welche fällig sind, nennt `python tools/termine.py` (auch
    `session.py start/status`). Dateinamen: `reviews/JJJJ-KWnn_woche.md`,
    `reviews/JJJJ-MM_monat.md`, `reviews/JJJJ-Qn_quartal.md`,
    `reviews/JJJJ-MM-TT_stufe2_<profil>.md`.
-6. Marktüberblick: Kurse über `tools/kurse.py`, News, Makrodaten und
-   Termine über die Web-Suche (immer mit URL und Datum).
+6. Marktüberblick: Kurse über `tools/kurse.py`. News zuerst aus dem
+   News-Speicher (`python tools/news.py liste --tage 3`, je Wert mit
+   `--ticker <T>`): datierte Meldungen mit Quelle und Link. Ergänzend News,
+   Makrodaten und Termine über die Web-Suche (immer mit URL und Datum). Im
+   Journal verweist du auf Meldungen aus dem Speicher mit News-ID und Link.
 7. Entscheide je Portfolio im Rahmen seiner Anlagerichtlinie.
    Nichtstun ist eine gültige Entscheidung und wird kurz begründet.
 8. Für jede Order: erst Journal-Eintrag schreiben (Vorlage unten), dann
@@ -75,8 +96,10 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
 10. `python tools/bewertung.py bericht` aktualisiert ranking.md.
 11. Neue Erkenntnisse in lessons.md, Strategieänderungen in
     strategie/<portfolio>.md mit Datum, Anlass und Prüfkriterium.
-12. `python tools/pruefe.py`, Commit, `python tools/session.py ende`,
-    `git push`.
+12. `python tools/pruefe.py`, dann lokal committen mit
+    `python tools/datenverzeichnis.py commit -m "session: ..."` und
+    `python tools/session.py ende`. Nie pushen: Der Spielstand bleibt im
+    Datenverzeichnis, die Prüfspur ist dessen lokale Git-Historie.
 13. Zusammenfassung für die Auftraggeber: Was getan und warum, Stand je
     Portfolio gegen Benchmark, offene Orders, wichtige Termine.
 
@@ -91,13 +114,14 @@ Lies zu Beginn jeder Unterhaltung STATUS.md.
     - Einstieg, Stop, Kursziel: ...
     - Positionsgröße und Risikorechnung: Einsatz, Verlust bis Stop,
       Kosten, Anteil am Portfolio
-    - Quellen: URL, Datum
+    - Quellen: URL, Datum; aus dem News-Speicher mit News-ID (N-…) und Link
     - Unsicherheiten: ...
 
 ## Session-Vorlage (je Session, nur anhängen)
 
     ### S-JJJJMMTT-NN | Session | <Kennung des Auftraggebers>
     - Zeit: JJJJ-MM-TT HH:MM
+    - Setup: Modell und Aufwand (aus dem Auftrag der Web-UI), Lauf-ID
     - Marktlage: kurz, Fakten mit Quelle (URL, Datum), Einschätzungen
       als solche markiert
     - Defensiv: Entscheidung (Order J-... oder keine Order);

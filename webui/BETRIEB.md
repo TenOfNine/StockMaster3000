@@ -1,61 +1,54 @@
-# Web-UI: Betrieb
+# Betrieb
 
-Stufe 1 der Web-UI aus AUFTRAG_WEBUI.md: **lesend**. Sie zeigt das
-Spiel-Repository (Portfolios, Kennzahlen, Trade-Akten, Sessions, Reviews,
-Regeln, Status, Git-Historie) und führt nur lesende Werkzeuge aus
-(`tools/pruefe.py`, Zertifikatsrechner). Orders und Claude-Läufe gibt es in
-Stufe 1 nicht; Sessions laufen weiter über Claude Code.
+Der Docker-Stack läuft **autark**: Spielstand, Kurse, News, Journal, Reviews und Sessions leben nur
+in Volumes im Container; Einstellungen und Secrets werden in der App gepflegt (Einrichtung). GitHub
+liefert nur das Framework (Code, Regeln, Konfigurationsvorgaben, Vorlagen, Tests, Doku). Nach dem
+Deployment liest die App keine Daten aus dem GitHub-Repository und pusht nie Spielstand.
 
-> **Portainer:** Betrieb ohne Kommandozeile und ohne lokale Dateien: siehe [PORTAINER.md](PORTAINER.md).
+> **Portainer:** Betrieb ohne Kommandozeile: siehe [PORTAINER.md](PORTAINER.md).
 
 ## Aufbau
 
 | Dienst | Aufgabe | Netz |
 | --- | --- | --- |
 | `proxy` | Caddy: HTTPS mit lokaler CA, Heimnetz-Schranke, Sicherheits-Header, liefert die React-App aus | `edge` (veröffentlicht), `app` |
-| `api` | FastAPI: Anmeldung, Sitzungen, Benutzer, lesende Spiel-API; bindet das Spiel-Repository **nur lesend** ein | `app`, `data` (beide intern) |
-| `db` | PostgreSQL 16 mit eigener Anwendungsrolle ohne Superuser-Rechte | `data` (intern) |
+| `api` | FastAPI: Anmeldung, Benutzer, Spiel-API, Einrichtung, Sicherung; legt beim Start das Datenverzeichnis an | `app`, `data` (intern, kein Internet) |
+| `worker` | Hintergrunddienst: Kurse (tools/kurse.py), News (tools/news.py), Zeitplan, Claude-Sessions, Verbindungstests | `data`, `aus` (Internet) |
+| `db` | PostgreSQL 16 mit Anwendungsrolle ohne Superuser-Rechte; erzeugt beim ersten Start die Passwörter | `data` (intern) |
 
-Nur der Proxy veröffentlicht Ports. Alle Container laufen mit
-`cap_drop: ALL`, `no-new-privileges`, Ressourcenlimits und Healthchecks;
-`proxy` und `api` zusätzlich mit schreibgeschütztem Dateisystem und als
-eigener Benutzer. Geheimnisse liegen nur als Docker Secrets in `./secrets/`
-(nie im Image, nie im Repository).
+| Pfad im Container | Volume | Inhalt |
+| --- | --- | --- |
+| `/app/framework` | – (im Image, nur lesend) | tools/, config/, regeln.md, CLAUDE.md, STATUS.md, Vorlagen |
+| `/data` (`STOCKMASTER_DATA_DIR`) | `daten` | Spielstand mit eigenem lokalem Git ohne Remote |
+| `/data-app` (`STOCKMASTER_APP_DIR`) | `app_daten` | einstellungen.json, geheimnisse.json, master.key, Lauf-Logs, Zustand, Sicherungen |
+| `/geheim` | `geheim` | Datenbank-Passwörter (vom DB-Container erzeugt) |
+
+Alle Container laufen mit `cap_drop: ALL`, `no-new-privileges`, Ressourcenlimits und Healthchecks;
+`proxy`, `api` und `worker` zusätzlich mit schreibgeschütztem Dateisystem und als eigener Benutzer.
 
 ## Erster Start
 
-Voraussetzungen: Docker mit Compose v2, `openssl`, `python3` (nur für den
-Rauchtest bzw. Demo-Daten).
-
 ```bash
-bash webui/deploy/einrichten.sh     # erzeugt ./secrets/* und .env
-nano .env                           # SM_HOSTNAME und SPIEL_REPO prüfen
+cp .env.example .env          # nur SM_HOSTNAME prüfen; keine Geheimnisse
 docker compose up -d --build
-docker compose exec api python -m stockmaster admin-anlegen --email du@heimnetz.local --anzeigename "Dein Name"
+docker compose exec api python -m stockmaster admin-anlegen --email du@heimnetz.local --anzeigename "Admin"
 ```
 
-Der letzte Befehl gibt **einmalig** ein Einmalpasswort aus. Er verweigert
-die Ausführung, sobald ein Administrator existiert. Bei der ersten Anmeldung
-sind Passwortwechsel und Zwei-Faktor (TOTP, z. B. Aegis, 2FAS, Google
-Authenticator) Pflicht. Weitere Benutzer legt der Administrator in der UI an
-(Administration → Benutzer anlegen); auch sie erhalten ein Einmalpasswort.
+Der letzte Befehl gibt **einmalig** ein Einmalpasswort aus und verweigert die Ausführung, sobald ein
+Administrator existiert. Bei der ersten Anmeldung sind Passwortwechsel und Zwei-Faktor (TOTP) Pflicht.
+Danach führt das Cockpit zur **Einrichtung** (Claude, Kursdaten, News, Zeitplan, Spielstart).
 
-Die Web-UI ist danach unter `https://<SM_HOSTNAME>` erreichbar. Der Name
-muss im Heimnetz auflösbar sein (Router-DNS oder `/etc/hosts`, z. B.
-`192.168.1.20 stockmaster.local`).
+Beim ersten Start mit leeren Volumes erzeugt der Stack selbst: Datenbank-Passwörter (`/geheim`),
+Master-Schlüssel (`/data-app/master.key`, 0600) und das Datenverzeichnis aus
+`vorlagen/datenverzeichnis/` mit eigenem Git (`git -C /data log`).
+
+Die Web-UI ist unter `https://<SM_HOSTNAME>` erreichbar (Name im Heimnetz auflösbar machen).
 
 ### Root-Zertifikat im Heimnetz
 
-Caddy erzeugt eine eigene Zertifizierungsstelle. Damit Browser der
-Verbindung vertrauen, das Root-Zertifikat einmal auf jedem Gerät
-installieren:
-
-Im Heimnetz direkt im Browser: `https://<SM_HOSTNAME>/stockmaster-root.crt` (Browserwarnung beim
-ersten Aufruf einmalig bestätigen). Alternativ per Kommandozeile:
-
-```bash
-docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./stockmaster-root.crt
-```
+Caddy erzeugt eine eigene Zertifizierungsstelle. Das Root-Zertifikat einmal je Gerät installieren:
+`https://<SM_HOSTNAME>/stockmaster-root.crt` (Browserwarnung beim ersten Aufruf bestätigen) oder
+`docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./stockmaster-root.crt`.
 
 - Windows: Doppelklick → Zertifikat installieren → „Vertrauenswürdige Stammzertifizierungsstellen“.
 - macOS: Schlüsselbundverwaltung → System → Datei importieren → „Immer vertrauen“.
@@ -65,33 +58,102 @@ docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./stockmaster
 
 ## Erreichbarkeit
 
-Standard ist **nur Heimnetz**: Caddy beantwortet Anfragen aus
-nicht-privaten Adressbereichen mit 403, die API prüft dasselbe noch einmal
-(zweite Schranke). Am Router **keinen** Port freigeben. Für einen VPN-Bereich
-(z. B. Tailscale `100.64.0.0/10`) diesen in `.env` unter
-`SM_ZUSAETZLICHE_NETZE` ergänzen. Zugriff aus dem Internet ist nicht Teil
-von Stufe 1 (W17).
+Standard ist **nur Heimnetz**: Caddy beantwortet Anfragen aus nicht-privaten Adressbereichen mit 403,
+die API prüft dasselbe noch einmal (zweite Schranke). Am Router **keinen** Port freigeben. Für einen
+VPN-Bereich (z. B. Tailscale `100.64.0.0/10`) diesen unter `SM_ZUSAETZLICHE_NETZE` ergänzen.
 
 Der Proxy antwortet nur auf `SM_HOSTNAME`, `localhost` und die Einträge in `SM_ZUSAETZLICHE_HOSTS`
 (weitere Namen oder IP-Adressen, durch Leerzeichen oder Komma getrennt, ohne Port). Ein Aufruf per
 nicht eingetragener IP-Adresse zeigt nach der Zertifikatswarnung den Hinweis „Unbekannter Name oder unbekannte
 Adresse in der URL“ (HTTP 421), ein nicht eingetragener Name scheitert mit `ERR_SSL_PROTOCOL_ERROR`. Abhilfe:
-den Hostnamen verwenden (Hosts-Datei oder Router-DNS) oder die IP des Servers in `.env` unter
-`SM_ZUSAETZLICHE_HOSTS` eintragen. Die Angaben werden
-beim Start geprüft; ungültige verhindern den Start des Proxys. Die Heimnetz-Schranke gilt für alle Namen
-gleich. Bei mehreren IP-Adressen enthält das Zertifikat für Aufrufe ohne Namen nur die erste.
+den Hostnamen verwenden (Hosts-Datei oder Router-DNS) oder die IP des Servers unter
+`SM_ZUSAETZLICHE_HOSTS` eintragen. Die Angaben werden beim Start geprüft; ungültige verhindern den Start
+des Proxys. Bei mehreren IP-Adressen enthält das Zertifikat für Aufrufe ohne Namen nur die erste.
 
-Hinweis: Docker Desktop (macOS/Windows) übersetzt Quelladressen teilweise in
-die interne Gateway-Adresse; dort ist die Heimnetz-Schranke von Caddy nicht
-verlässlich. Für den Betrieb einen Linux-Rechner (z. B. Mini-PC, NAS) nutzen.
+Hinweis: Docker Desktop (macOS/Windows) übersetzt Quelladressen teilweise in die interne
+Gateway-Adresse; dort ist die Heimnetz-Schranke nicht verlässlich. Für den Betrieb einen Linux-Rechner
+(z. B. Mini-PC, NAS) nutzen.
 
-## Spiel-Repository
+## Umgebungsvariablen (minimal)
 
-`SPIEL_REPO` in `.env` zeigt auf das Repository, in dem Claude Code die
-Sessions ausführt (Standard: dieses Verzeichnis). Es wird nur lesend
-eingebunden; die UI zeigt immer den aktuellen Stand der Dateien. Nach einem
-`git pull` im Spiel-Repository ist nichts weiter zu tun. Ändern sich die
-Werkzeuge in `tools/`, die API neu starten: `docker compose restart api`.
+| Variable | Zweck |
+| --- | --- |
+| `SM_HOSTNAME` | Name im Heimnetz (Pflicht im Portainer-Stack) |
+| `SM_ZUSAETZLICHE_HOSTS`, `SM_ZUSAETZLICHE_NETZE`, `SM_HTTPS_PORT`, `SM_HTTP_PORT`, `TZ` | optional |
+| `STOCKMASTER_DATA_DIR`, `STOCKMASTER_APP_DIR`, `STOCKMASTER_FRAMEWORK_DIR` | im Image gesetzt (`/data`, `/data-app`, `/app/framework`) |
+
+Entfallen: `SPIEL_REPO`, `POSTGRES_ADMIN_PASSWORD`, `POSTGRES_APP_PASSWORD`, `SM_SCHLUESSEL`
+(`SM_SCHLUESSEL_DATEI`, `./secrets/`). Sind sie bei einem Update noch gesetzt, werden sie einmalig
+übernommen (ebenso `CLAUDE_CODE_OAUTH_TOKEN`, `FINNHUB_API_KEY`, `TWELVEDATA_API_KEY`); die
+Einrichtung zeigt dann, welche Variablen entfernt werden können. Danach gilt die App-Konfiguration.
+
+## Einstellungen und Secrets
+
+- **Speicherort:** `/data-app/einstellungen.json` (ohne Secrets) und `/data-app/geheimnisse.json`;
+  getrennt vom Spielstand, nie im Spielstand-Git.
+- **Verschlüsselung:** Jedes Secret einzeln mit AES-256-GCM; der Schlüssel wird per HKDF aus dem
+  Master-Schlüssel `/data-app/master.key` abgeleitet (32 Byte, beim ersten Start zufällig erzeugt,
+  Rechte 0600). Derselbe Master-Schlüssel verschlüsselt die Zwei-Faktor-Geheimnisse in der Datenbank.
+- **Ausgabe:** Die API liefert Secrets nie zurück, nur „gesetzt“ und die letzten vier Zeichen. Ändern
+  geht nur durch neues Eintragen; Audit-Einträge nennen nur, *dass* ein Secret geändert wurde.
+- **Logs:** Session-Logs schwärzen alle hinterlegten Secrets und Token-Muster. Ein Git-Hook im
+  Datenverzeichnis lehnt Commits ab, die ein Secret enthalten.
+- **Was das schützt:** Sicherungs-Exporte, Datenbank-Dumps, Kopien der Einstellungen und versehentlich
+  geteilte Dateien enthalten Secrets nur verschlüsselt bzw. gar nicht; der Master-Schlüssel ist nie Teil
+  eines Exports.
+- **Was das nicht schützt:** Wer Zugriff auf das Volume `app_daten` hat (Docker-Host, Portainer-Konsole,
+  Backup des Volumes), hat Schlüssel und verschlüsselte Werte zusammen und kann sie entschlüsseln. Während
+  eines Claude-Laufs steht das Token in der Umgebung dieses Prozesses (Claude Code braucht es dort). Den
+  Docker-Host und Portainer deshalb wie einen Tresor behandeln.
+- **Schlüssel verloren:** Secrets neu eintragen; Zwei-Faktor aller Benutzer zurücksetzen
+  (Administration → Zwei-Faktor zurücksetzen).
+
+## Datenverzeichnis und Prüfspur
+
+`/data` ist ein eigenes Git-Repository ohne Remote. Sessions committen dort lokal
+(`python tools/datenverzeichnis.py commit -m "session: ..."`), der Worker committet Kurs- und News-Abrufe
+höchstens stündlich („daten: …“), nie während einer Session. `python tools/pruefe.py --historie` prüft
+die Nur-Anhängen-Regeln über diese lokale Historie. Kein Code-Pfad pusht Spielstand.
+
+## Kurse und News
+
+- **Kurse:** Kette aus konfiguriertem Anbieter (Finnhub oder Twelve Data, Key in der Einrichtung) und
+  yfinance; der Worker ruft alle 5 Minuten bei offenem Markt (Xetra, NYSE) ab, sonst stündlich, einmal
+  nach Börsenschluss und täglich Tagesdaten. Liefert keine Quelle einen verlässlichen Kurs, zeigt „Markt &
+  Kurse“ den letzten bekannten Kurs mit Kennzeichnung „veraltet“ – nur zur Anzeige, nie für Buchungen.
+  Kontingente der Anbieter werden gezählt; ist eins erschöpft, übernimmt yfinance.
+- **News:** `tools/news.py` ruft die Feeds aus `config/news.json` und der Einrichtung alle 15 Minuten ab,
+  dedupliziert und speichert nur Titel, Kurztext und Link in `news/` (nur anhängen).
+
+## Claude-Sessions
+
+Der Worker startet Claude Code im Container (Arbeitsverzeichnis Framework, Datenverzeichnis per
+`--add-dir`), mit Token, Modell (`--model`) und Aufwand (`--effort`) aus der Einrichtung. Er setzt eine
+minimale Umgebung (kein `ANTHROPIC_API_KEY`), verwaltete Berechtigungen (keine Änderungen an
+portfolios/, trades/, data/, Framework; kein Lesen von `/data-app`) und ein Zeitlimit. Das Log ist live
+unter „Claude-Läufe“ zu sehen; danach gibt der Worker eine liegengebliebene Sperre frei, committet Reste
+und führt `pruefe.py` aus. Modell und Aufwand stehen am Lauf, im Audit-Log und im Session-Eintrag.
+Optionen für Modell und Aufwand: `config/claude.json` (gegen `claude --help` der installierten Version).
+
+## Sicherung und Wiederherstellung
+
+```bash
+# Spielstand inklusive lokalem Git (ohne Secrets) und Einstellungen
+docker compose exec api python -m stockmaster sicherung-export --datei /data-app/tmp/sicherung.tar.gz
+docker compose cp api:/data-app/tmp/sicherung.tar.gz .
+# mit Secrets (passwortverschlüsselt, Passwort aus SM_SICHERUNG_PASSWORT oder Abfrage)
+docker compose exec -it api python -m stockmaster sicherung-export --datei /data-app/tmp/s.tar.gz --mit-geheimnissen
+# Wiederherstellen (vorheriger Stand wird unter /data-app/sicherungen/ gesichert)
+docker compose exec api python -m stockmaster sicherung-import --datei /data-app/tmp/sicherung.tar.gz
+
+# Datenbank (Benutzer, Zwei-Faktor, Audit-Log, Läufe)
+docker compose exec -T db pg_dump -U postgres -Fc stockmaster > stockmaster-$(date +%F).dump
+docker compose exec -T db pg_restore -U postgres -d stockmaster --clean < stockmaster-JJJJ-MM-TT.dump
+```
+
+Die Web-UI bietet Export und Wiederherstellung unter Einrichtung → Sicherung (nur Admin, Zwei-Faktor,
+Passwortbestätigung). Für eine vollständige Wiederherstellung inklusive Zwei-Faktor zusätzlich
+`master.key` getrennt und sicher aufbewahren (`docker compose cp api:/data-app/master.key .`).
 
 ## Aktualisieren
 
@@ -100,71 +162,42 @@ git pull
 docker compose up -d --build
 ```
 
-Datenbank-Migrationen laufen beim Start des API-Containers automatisch.
-
-## Sicherung und Wiederherstellung
-
-Spieldaten liegen im Git-Repository (dort sichern bzw. pushen). Die
-Datenbank enthält nur Benutzer, Sitzungen und das Audit-Log.
-
-```bash
-# Sicherung
-docker compose exec -T db pg_dump -U postgres -Fc stockmaster > stockmaster-$(date +%F).dump
-cp -r secrets secrets-sicherung-$(date +%F)     # sicher und getrennt aufbewahren
-
-# Wiederherstellung
-docker compose exec -T db pg_restore -U postgres -d stockmaster --clean < stockmaster-JJJJ-MM-TT.dump
-```
-
-## Schlüssel und Passwörter
-
-- `secrets/sm_schluessel` bzw. `SM_SCHLUESSEL` wird beim Start geprüft (Base64, genau 32 Byte). Ist er
-  ungültig, startet die API nicht und das Log nennt den Grund (`Konfigurationsfehler: SM_SCHLUESSEL …`).
-  Neu erzeugen: `openssl rand -base64 32`.
-- `secrets/sm_schluessel` verschlüsselt die TOTP-Geheimnisse (AES-256-GCM).
-  Geht er verloren, müssen alle Benutzer Zwei-Faktor neu einrichten
-  (Administration → Zwei-Faktor zurücksetzen). Eine automatische Rotation
-  folgt mit Stufe 2.
-- Datenbankpasswörter ändern: neue Werte in `secrets/` schreiben, in der
-  Datenbank `ALTER ROLE ... PASSWORD ...` ausführen, `docker compose up -d`.
-- Ausgesperrter Administrator: zweiter Admin setzt Passwort bzw. Zwei-Faktor
-  zurück. Gibt es keinen: Konto in der Datenbank löschen und
-  `admin-anlegen` erneut ausführen.
+Datenbank-Migrationen laufen beim Start automatisch; Volumes bleiben erhalten.
 
 ## Registry-Spiegel
 
-Drosselt Docker Hub die Basis-Images (HTTP 429), in `.env`
-`REGISTRY=mirror.gcr.io/library` setzen. Die Images sind per Digest
-gepinnt; der Spiegel liefert dieselben Inhalte.
+Drosselt Docker Hub die Basis-Images (HTTP 429), in `.env` `REGISTRY=mirror.gcr.io/library` setzen.
 
 ## Entwicklung ohne Docker
 
 ```bash
-# Demo-Daten (simulierte Kurse, eigenes Git-Repository)
+# Demo-Datenverzeichnis (simulierte Kurse, eigenes lokales Git)
 python3 webui/demo/demo_daten.py --ziel /tmp/stockmaster-demo --tage 100
+export STOCKMASTER_DATA_DIR=/tmp/stockmaster-demo STOCKMASTER_APP_DIR=/tmp/stockmaster-app
 
 # Backend
 cd webui/backend && uv sync
-SM_REPO_PFAD=/tmp/stockmaster-demo SM_COOKIE_SICHER=false SM_ENTWICKLUNG=1 \
-  SM_DATENBANK_URL=sqlite:///./entwicklung.db uv run python -m stockmaster migrieren
-SM_REPO_PFAD=/tmp/stockmaster-demo SM_COOKIE_SICHER=false SM_ENTWICKLUNG=1 \
-  SM_DATENBANK_URL=sqlite:///./entwicklung.db uv run uvicorn stockmaster.main:app --reload
+SM_COOKIE_SICHER=false SM_ENTWICKLUNG=1 SM_DATENBANK_URL=sqlite:///./entwicklung.db uv run python -m stockmaster vorbereiten
+SM_COOKIE_SICHER=false SM_ENTWICKLUNG=1 SM_DATENBANK_URL=sqlite:///./entwicklung.db uv run uvicorn stockmaster.main:app --reload
+# Hintergrunddienst (optional, braucht Internet)
+SM_DATENBANK_URL=sqlite:///./entwicklung.db uv run python -m stockmaster worker
 
 # Frontend (zweites Terminal), Proxy auf 127.0.0.1:8000
 cd webui/frontend && pnpm install && pnpm dev
 ```
 
-`SM_ENTWICKLUNG=1` erlaubt einen festen Entwicklungsschlüssel und ist nur
-für die lokale Entwicklung gedacht.
+Werkzeuge ohne Web-UI: `python tools/datenverzeichnis.py einrichten --ziel ~/stockmaster-daten`, dann
+`export STOCKMASTER_DATA_DIR=~/stockmaster-daten` und z. B. `python tools/pruefe.py`.
 
 ## Tests
 
 | Bereich | Befehl |
 | --- | --- |
 | Werkzeuge | `python -m pytest -q` (Wurzel) |
+| Prüfskript | `python tools/datenverzeichnis.py einrichten --ziel /tmp/d && STOCKMASTER_DATA_DIR=/tmp/d python tools/pruefe.py --historie` |
 | Backend | `cd webui/backend && uv run pytest -q` |
 | Frontend | `cd webui/frontend && pnpm test` |
 | E2E (Browser) | `cd webui/frontend && pnpm build && pnpm e2e` |
-| Docker-Stack | `bash webui/deploy/rauchtest.sh` |
+| Docker-Stack | `bash webui/deploy/rauchtest.sh` (startet mit leeren Volumes) |
 
 Alle laufen auch in der GitHub Action.
