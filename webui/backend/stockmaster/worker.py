@@ -172,7 +172,7 @@ class Worker:
         vorgabe = appdaten.laden()["claude"]["voreinstellungen"][zweck]
         with neue_sitzung() as db:
             try:
-                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber)
+                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber, geplant=True)
             except HTTPException as exc:
                 return f"übersprungen: {exc.detail}"
             auftrag = auftraege.anlegen(db, art, {}, modell=vorgabe["modell"], aufwand=vorgabe["aufwand"],

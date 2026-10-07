@@ -880,6 +880,15 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
   const [bestaetigt, setBestaetigt] = useState(false);
   const [dialog, setDialog] = useState(false);
   const [passwort, setPasswort] = useState("");
+  const [vorziehenDialog, setVorziehenDialog] = useState(false);
+  const vorziehen = useAktion(
+    () => api<{ meldungen: string[] }>("/api/einrichtung/spielstart/vorziehen", { daten: { startdatum: s.vorziehen.ziel, passwort } }),
+    (e) => {
+      setVorziehenDialog(false);
+      setPasswort("");
+      return e.meldungen.slice(-1).join(" ") || "Startdatum vorgezogen.";
+    },
+  );
   const start = useAktion(
     () => api<{ meldungen: string[] }>("/api/einrichtung/spielstart", { daten: { startdatum, freigabe_durch: freigabe, freigabe_ap12_bestaetigt: bestaetigt, passwort } }),
     (e) => {
@@ -893,7 +902,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
       id="spielstart"
       titel="Spielstart"
       icon={<Rocket className="size-4" />}
-      untertitel="Legt die drei Portfolios mit je 1.000 EUR an (tools/init.py). Nur einmal möglich, nie rückwirkend; Voraussetzung ist die Freigabe nach AP12 durch einen Auftraggeber (regeln.md Abschnitt 2)."
+      untertitel="Legt die drei Portfolios mit je 1.000 EUR an (tools/init.py). Es gibt kein Enddatum; das Startdatum ist heute oder später und lässt sich, solange nichts gebucht wurde, vorziehen – nie rückwirkend. Voraussetzung ist die Freigabe nach AP12 durch einen Auftraggeber (regeln.md Abschnitt 2)."
       status={s.gestartet ? <Abzeichen ton="gut">gestartet {s.spiel.startdatum}</Abzeichen> : <Abzeichen ton="warnung">nicht gestartet</Abzeichen>}
     >
       <ul className="space-y-1.5">
@@ -913,10 +922,26 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
           {s.spiel.freigabe_ap12 && <> · Freigabe nach AP12: <Mono>{s.spiel.freigabe_ap12}</Mono></>}
           {s.spiel.initialisiert && <> · initialisiert {zeit(s.spiel.initialisiert)}</>}. Ein Neustart braucht die Zustimmung aller Auftraggeber und ist hier nicht vorgesehen.
         </Hinweisbox>
-      ) : (
+      ) : null}
+      {s.gestartet && s.vorziehen.ziel && (
+        <div className="space-y-2">
+          <p className="text-[13px] text-text-2">
+            {s.vorziehen.moeglich
+              ? `Es ist noch nichts gebucht: Das Startdatum lässt sich auf ${s.vorziehen.ziel} vorziehen, damit Trading-Läufe sofort handeln können. Rückwirkend geht es nie.`
+              : `Vorziehen auf ${s.vorziehen.ziel} ist nicht möglich: ${s.vorziehen.grund ?? ""}`}
+          </p>
+          {s.vorziehen.moeglich && (
+            <Knopf variante="primaer" onClick={() => setVorziehenDialog(true)}>
+              <Rocket className="size-4" /> Startdatum auf {s.vorziehen.ziel} vorziehen …
+            </Knopf>
+          )}
+          <Rueckmeldung meldung={vorziehen.meldung} />
+        </div>
+      )}
+      {!s.gestartet && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Feld id="s-datum" label="Startdatum" hinweis="Erster Xetra-Handelstag, heute oder später.">
+            <Feld id="s-datum" label="Startdatum" hinweis="Vorschlag: heute bzw. der nächste Xetra-Handelstag.">
               <Eingabe id="s-datum" type="date" value={startdatum} onChange={(e) => setStartdatum(e.target.value)} />
             </Feld>
             <Feld id="s-freigabe" label="Freigabe nach AP12 durch">
@@ -951,6 +976,28 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
             </Knopf>
             <Knopf type="submit" variante="primaer" laedt={start.isPending} disabled={!passwort}>
               Endgültig starten
+            </Knopf>
+          </div>
+        </form>
+      </Dialog>
+      <Dialog offen={vorziehenDialog} setOffen={setVorziehenDialog} titel="Startdatum vorziehen?" beschreibung={`Neues Startdatum ${s.vorziehen.ziel ?? ""}. Das geht nur, solange nichts gebucht oder bewertet wurde.`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            vorziehen.mutate();
+          }}
+          className="space-y-4"
+        >
+          <Feld id="v-pw" label="Eigenes Passwort zur Bestätigung">
+            <Eingabe id="v-pw" type="password" autoComplete="current-password" value={passwort} onChange={(e) => setPasswort(e.target.value)} autoFocus />
+          </Feld>
+          <Rueckmeldung meldung={vorziehen.meldung?.ok === false ? vorziehen.meldung : null} />
+          <div className="flex justify-end gap-2">
+            <Knopf type="button" variante="geist" onClick={() => setVorziehenDialog(false)}>
+              Abbrechen
+            </Knopf>
+            <Knopf type="submit" variante="primaer" laedt={vorziehen.isPending} disabled={!passwort}>
+              Vorziehen
             </Knopf>
           </div>
         </form>

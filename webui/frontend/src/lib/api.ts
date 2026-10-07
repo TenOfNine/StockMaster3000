@@ -176,6 +176,15 @@ export interface Ampel {
   text: string;
 }
 
+export interface LaufPlan {
+  automatik: boolean;
+  zeitzone: string;
+  auftraggeber: string;
+  naechste: { zeit: string; art: "trading" | "review" }[];
+  token_gesetzt: boolean;
+  letzte: { termin: string; ergebnis: string }[];
+}
+
 export interface ZeitplanTermin {
   wochentage: number[];
   uhrzeit: string;
@@ -220,6 +229,7 @@ export interface EinrichtungDaten {
     gestartet: boolean;
     spiel: { startdatum?: string; freigabe_ap12?: string; initialisiert?: string };
     vorschlag_startdatum: string;
+    vorziehen: { moeglich: boolean; grund: string | null; ziel: string | null };
     auftraggeber: string[];
   };
   pfade: { daten: string; app: string };

@@ -397,7 +397,7 @@ def _spiel(demo_repo, **felder):
     return alt
 
 
-def test_trading_ohne_richtlinien_abgelehnt(admin, demo_repo):
+def test_manueller_lauf_ohne_richtlinien_mit_hinweis(admin, demo_repo):
     from stockmaster.spiel import lesen
 
     _admin_token(admin)
@@ -406,11 +406,15 @@ def test_trading_ohne_richtlinien_abgelehnt(admin, demo_repo):
     vorlage.write_text("# Anlagerichtlinie Defensiv\n\nStand: Vorlage aus tools/init.py (2026-10-06).\n")
     try:
         lesen.zuruecksetzen()
-        antwort = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
-        assert antwort.status_code == 409 and "Anlagerichtlinien fehlen: defensiv" in antwort.json()["detail"]
+        hinweise = admin.get("/api/laeufe/vorpruefung", params={"art": "trading"}).json()["hinweise"]
+        assert any("Anlagerichtlinien fehlen (defensiv)" in h for h in hinweise)
+        assert admin.get("/api/laeufe/vorpruefung", params={"art": "review"}).json()["hinweise"] == []
         schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
         assert "richtlinien" in schritte
-        # Die Richtlinien-Session selbst ist erlaubt.
+        # Manuell startet jeder Lauf jederzeit; die Richtlinien-Session selbst sowieso.
+        ok = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
+        assert ok.status_code == 201, ok.text
+        admin.post(f"/api/laeufe/{ok.json()['id']}/abbrechen")
         ok = admin.post("/api/laeufe", json={"art": "richtlinien", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
         assert ok.status_code == 201, ok.text
         status = admin.get("/api/spiel/status").json()
@@ -421,21 +425,62 @@ def test_trading_ohne_richtlinien_abgelehnt(admin, demo_repo):
         lesen.zuruecksetzen()
 
 
-def test_trading_vor_startdatum_abgelehnt(admin, demo_repo):
+def test_manueller_lauf_vor_startdatum_mit_hinweis_geplanter_wird_uebersprungen(admin, demo_repo):
     from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
 
     _admin_token(admin)
     alt = _spiel(demo_repo, startdatum="2099-01-01")
     try:
         lesen.zuruecksetzen()
+        hinweise = admin.get("/api/laeufe/vorpruefung").json()["hinweise"]
+        assert any("2099-01-01" in h and "vorziehen" in h for h in hinweise)
+        # Manuell: jederzeit (der Lauf selbst bucht vor dem Startdatum nichts, das sperrt buchen.py).
         antwort = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
-        assert antwort.status_code == 409 and "beginnt erst am 2099-01-01" in antwort.json()["detail"]
-        # Testsession und Richtlinien sind vor dem Start möglich.
-        assert admin.post("/api/laeufe", json={"art": "testsession", "auftraggeber": "auftraggeber-a",
-                                                "bestaetigt": True}).status_code == 201
+        assert antwort.status_code == 201, antwort.text
+        admin.post(f"/api/laeufe/{antwort.json()['id']}/abbrechen")
+        # Geplant: übersprungen mit Grund, das schont das Abo-Kontingent.
+        meldung = Worker().geplanten_lauf_anlegen("trading", "auftraggeber-a")
+        assert meldung.startswith("übersprungen:") and "2099-01-01" in meldung
+        assert Worker().geplanten_lauf_anlegen("review", "auftraggeber-a").startswith("Lauf ")
     finally:
         (demo_repo / "spiel.json").write_text(__import__("json").dumps(alt))
         lesen.zuruecksetzen()
+
+
+def test_plan_und_automatik_schalten(admin):
+    _admin_token(admin)
+    plan = {"automatik": False, "zeitzone": "Europe/Berlin", "auftraggeber": "auftraggeber-a",
+            "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"},
+                        {"wochentage": [4], "uhrzeit": "21:30", "art": "review"}]}
+    assert admin.put("/api/einrichtung/zeitplan", json=plan).status_code == 200
+    aus = admin.get("/api/laeufe/plan").json()
+    assert aus["automatik"] is False and aus["naechste"] == [] and aus["token_gesetzt"] is True
+    assert admin.post("/api/einrichtung/zeitplan/automatik", json={"an": True}).json()["automatik"] is True
+    an = admin.get("/api/laeufe/plan").json()
+    assert an["automatik"] is True and 1 <= len(an["naechste"]) <= 5
+    zeiten = [t["zeit"] for t in an["naechste"]]
+    assert zeiten == sorted(zeiten) and all(t["art"] in ("trading", "review") for t in an["naechste"])
+    assert admin.post("/api/einrichtung/zeitplan/automatik", json={"an": False}).json()["automatik"] is False
+    assert admin.get("/api/laeufe/plan").json()["naechste"] == []
+
+
+def test_automatik_braucht_token_und_termine(admin):
+    plan = {"automatik": False, "zeitzone": "Europe/Berlin", "auftraggeber": "auftraggeber-a", "termine": []}
+    assert admin.put("/api/einrichtung/zeitplan", json=plan).status_code == 200
+    assert admin.post("/api/einrichtung/zeitplan/automatik", json={"an": True}).status_code == 422
+
+
+def test_naechste_termine_beruecksichtigt_wochentag_und_handelstag(app):
+    from stockmaster.auftraege import naechste_termine
+
+    plan = {"zeitzone": "Europe/Berlin",
+            "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"}]}
+    # Freitag 2026-10-09 10:30 Berlin: der Freitagstermin ist vorbei (Fenster 30 Min), nächster ist Montag.
+    naechste = naechste_termine(plan, datetime(2026, 10, 9, 8, 30, tzinfo=UTC), 2)
+    assert [t["zeit"][:16] for t in naechste] == ["2026-10-12T09:35", "2026-10-13T09:35"]
+    # Mitten im Fenster zählt der Termin noch (der Worker legt ihn dann an).
+    assert naechste_termine(plan, datetime(2026, 10, 9, 7, 45, tzinfo=UTC), 1)[0]["zeit"][:16] == "2026-10-09T09:35"
 
 
 def test_ap12_wird_je_instanz_abgeleitet(admin):

@@ -261,3 +261,44 @@ def test_spielstart_einmalig(frisch, client):
     pruefung = subprocess.run([sys.executable, str(WURZEL / "tools" / "pruefe.py"), "--historie"], cwd=frisch,
                               capture_output=True, text=True, env={**os.environ, "STOCKMASTER_DATA_DIR": str(frisch)})
     assert pruefung.returncode == 0, pruefung.stdout
+
+
+def test_startdatum_vorziehen_per_api(frisch, client):
+    from datetime import date, timedelta
+
+    import pyotp
+    from conftest import anmelden, benutzer_anlegen
+
+    from stockmaster import __main__ as cli
+    from stockmaster.einrichtung import naechster_handelstag
+
+    cli.einrichten()
+    cache = frisch / ".cache"
+    cache.mkdir()
+    (cache / "markt.json").write_text(json.dumps({"zeit": "2026-10-07T09:00:00+02:00", "erfolgreich": 1, "anzahl": 1,
+                                                  "eintraege": [{"ticker": "EUNL.DE", "kurs": "100", "veraltet": False}]}))
+    geheimnis = pyotp.random_base32()
+    benutzer_anlegen("admin3@example.org", ADMIN_PW, admin=True, totp=geheimnis)
+    anmelden(client, "admin3@example.org", ADMIN_PW, geheimnis)
+    liste = client.get("/api/einrichtung").json()["spielstart"]
+    heute_ziel = liste["vorschlag_startdatum"]
+    assert liste["vorziehen"]["moeglich"] is False  # noch nicht gestartet
+    spaeter = naechster_handelstag(date.today() + timedelta(days=7)).isoformat()
+    daten = {"startdatum": spaeter, "freigabe_durch": "auftraggeber-a", "freigabe_ap12_bestaetigt": True,
+             "passwort": ADMIN_PW}
+    assert client.post("/api/einrichtung/spielstart", json=daten).status_code == 200
+    vorher = client.get("/api/einrichtung").json()["spielstart"]["vorziehen"]
+    assert vorher == {"moeglich": True, "grund": None, "ziel": heute_ziel}
+    ziel = {"startdatum": heute_ziel, "passwort": ADMIN_PW}
+    assert client.post("/api/einrichtung/spielstart/vorziehen", json={**ziel, "passwort": "falsch"}).status_code == 403
+    # Nicht rückwirkend.
+    gestern = (date.today() - timedelta(days=1)).isoformat()
+    assert client.post("/api/einrichtung/spielstart/vorziehen", json={**ziel, "startdatum": gestern}).status_code == 422
+    antwort = client.post("/api/einrichtung/spielstart/vorziehen", json=ziel)
+    assert antwort.status_code == 200, antwort.text
+    spiel = json.loads((frisch / "spiel.json").read_text())
+    assert spiel["startdatum"] == heute_ziel and spiel["startdatum_vorher"][0]["datum"] == spaeter
+    log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=frisch, capture_output=True, text=True).stdout
+    assert log.startswith("aufbau: Startdatum auf")
+    assert client.get("/api/einrichtung").json()["spielstart"]["vorziehen"]["moeglich"] is False
+    assert client.post("/api/einrichtung/spielstart/vorziehen", json=ziel).status_code == 422
