@@ -85,6 +85,17 @@ def test_testsession_ohne_warnung_zum_session_eintrag(projekt, uhr, capsys):
     assert "WARNUNG" not in capsys.readouterr().out
 
 
+def test_nachbuchung_ist_eine_session_art_ohne_session_eintrag(projekt, uhr, capsys):
+    uhr.stellen("2026-10-12T00:30:00")
+    assert session.main(["start", "--person", "auftraggeber-a", "--art", "nachbuchung", "--ohne-git"]) == 0
+    assert "Nachbuchung von auftraggeber-a gestartet" in capsys.readouterr().out
+    assert lock(projekt)["art"] == "nachbuchung"
+    assert session.main(["status"]) == 0
+    assert "(automatische Nachbuchung)" in capsys.readouterr().out
+    assert session.main(["ende", "--ohne-git"]) == 0
+    assert "WARNUNG" not in capsys.readouterr().out and not (projekt / "session.lock").exists()
+
+
 def test_trading_session_warnt_weiter_ohne_session_eintrag(projekt, uhr, capsys):
     uhr.stellen("2026-10-12T10:00:00")
     assert session.main(["start", "--person", "auftraggeber-a", "--ohne-git"]) == 0

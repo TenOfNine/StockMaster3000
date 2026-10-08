@@ -105,3 +105,19 @@ def test_bericht_kennzahlen(lauf, quelle):
     assert "zu wenig Daten (3/60 Handelstage)" in text
     assert "| Portfoliowert | 1000,15 EUR |" in text
     assert "." not in text.split("| Portfoliowert")[1].split("\n")[0]  # Dezimalkomma statt Punkt
+
+
+def test_nachbuchung_unter_der_sperre_der_art_nachbuchung(projekt, quelle, uhr, capsys):
+    """Der Hintergrunddienst bucht nachts ohne Claude nach: Sperre (Art nachbuchung), Nachbuchung, Freigabe."""
+    import session
+
+    uhr.stellen("2026-10-15T00:30:00")
+    quelle.konstant("EUNL.DE", "2026-09-20", "2026-10-31", "100")
+    quelle.konstant("EURUSD=X", "2026-09-20", "2026-10-31", "1.10")
+    portfolio(verarbeitet_bis="2026-10-11")
+    assert bewertung.main(["nachbuchen"]) != 0  # ohne Sperre weiterhin abgelehnt
+    assert session.main(["start", "--person", "auftraggeber-a", "--art", "nachbuchung", "--ohne-git"]) == 0
+    assert bewertung.main(["nachbuchen"]) == 0
+    assert session.main(["ende", "--ohne-git"]) == 0
+    assert "WARNUNG" not in capsys.readouterr().out.split("Sperre von")[-1]
+    assert laden()["verarbeitet_bis"] == "2026-10-14" and not (projekt / "session.lock").exists()
