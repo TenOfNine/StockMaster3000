@@ -178,6 +178,41 @@ def demo_news(g, jetzt: datetime, start: date) -> None:
     g.text_anhaengen(g.pfad("news", f"{jetzt:%Y-%m}.jsonl"), "\n".join(zeilen) + "\n")
 
 
+DEMO_BEOBACHTUNG = {
+    "dax40": ("DAX 40", {"SAP.DE": ("SAP SE", 220.0), "SIE.DE": ("Siemens", 190.0), "ALV.DE": ("Allianz", 330.0),
+                         "BAS.DE": ("BASF", 44.0), "DBK.DE": ("Deutsche Bank", 17.0)}),
+    "sp500": ("S&P 500", {"AAPL": ("Apple", 230.0), "MSFT": ("Microsoft", 440.0), "NVDA": ("Nvidia", 120.0),
+                          "XOM": ("Exxon Mobil", 115.0), "PENNY": ("Demo-Wert unter 1 USD", 0.6)}),
+}
+
+
+def demo_beobachtung(ende: date, seed: int) -> None:
+    """Beobachtungsliste wie vom Hintergrunddienst, mit erfundenen Tageskerzen (kein Netzwerk)."""
+    import beobachtung
+
+    zufall = random.Random(seed + 1)
+
+    def kerzen(start: float) -> list[dict]:
+        tage, tag = [], ende
+        while len(tage) < 252:
+            if tag.weekday() < 5:
+                tage.append(tag)
+            tag -= timedelta(days=1)
+        kurs, reihe = start * 0.9, []
+        for tag in reversed(tage):
+            offen = kurs * (1 + zufall.gauss(0, 0.004))
+            kurs = max(0.01, kurs * (1 + zufall.gauss(0.0004, 0.014)))
+            reihe.append({"datum": tag, "open": offen, "high": max(offen, kurs) * 1.006, "low": min(offen, kurs) * 0.994,
+                          "close": kurs, "volume": zufall.uniform(0.6, 1.8) * 1_000_000})
+        return reihe
+
+    konfig = {"listen": {k: {"name": name, "ticker": list(werte), "namen": {t: n for t, (n, _) in werte.items()}}
+                         for k, (name, werte) in DEMO_BEOBACHTUNG.items()}}
+    startkurse = {t: start for _, werte in DEMO_BEOBACHTUNG.values() for t, (_, start) in werte.items()}
+    beobachtung.HOLEN = lambda tickers: {t: kerzen(startkurse[t]) for t in tickers}
+    beobachtung.aktualisieren(konfig)
+
+
 def strategie_text(profil: str) -> str:
     texte = {
         "defensiv": ("Kapitalerhalt mit leichter Mehrrendite gegen 30/70", "Breite ETFs und Qualitätsaktien, "
@@ -370,6 +405,7 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     # Marktübersicht und News wie vom Hintergrunddienst (Werte ohne simulierte Kurse erscheinen "veraltet").
     uhr.stellen(ende + timedelta(days=1), "10:00")
     still(kurse.markt)
+    demo_beobachtung(ende, seed)
     demo_news(g, uhr(), start)
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", "daten: Demo-Kurse und Demo-News")

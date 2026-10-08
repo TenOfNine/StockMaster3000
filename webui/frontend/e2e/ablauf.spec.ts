@@ -71,6 +71,21 @@ test("Benutzer sieht Cockpit, Portfolio, Trade-Akte und Prüfung", async ({ page
   await expect(page.getByText("Benchmark und Devisen")).toBeVisible();
   await expect(page.getByText("veraltet").first()).toBeVisible();
   await expect(page.getByText("Meldungen zu diesem Wert")).toBeVisible();
+
+  // Beobachtungsliste (Screener): Kandidaten, Tabelle, Suche und Filter; nicht handelbare Werte sind gekennzeichnet.
+  await page.getByRole("tab", { name: "Beobachtungsliste" }).click();
+  await expect(page.getByText("Stärkste Tagesbewegung nach oben")).toBeVisible();
+  await expect(page.getByText(/Gebucht wird zu protokollierten Kursen/)).toBeVisible();
+  await page.getByRole("button", { name: "Alle Werte" }).click();
+  const tabelle = page.getByRole("table");
+  await expect(tabelle).toContainText("Allianz");
+  await expect(tabelle).not.toContainText("Demo-Wert unter 1 USD");
+  await page.getByRole("checkbox", { name: "Nur handelbare Werte" }).uncheck();
+  await expect(tabelle).toContainText("Demo-Wert unter 1 USD");
+  await expect(tabelle.getByText("nicht handelbar")).toBeVisible();
+  await page.getByRole("searchbox", { name: "Suchen nach Kürzel oder Name" }).fill("nvidia");
+  await expect(tabelle.getByRole("row")).toHaveCount(2); // Kopfzeile und ein Treffer
+  await expect(tabelle).toContainText("NVDA");
 });
 
 test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets bleiben verborgen", async ({ page }) => {
@@ -100,7 +115,7 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   expect(await page.content()).not.toContain(token);
   await expect(page.getByText("Hintergrunddienst", { exact: true })).toBeVisible();
   // Systemstatus: Ohne laufenden Hintergrunddienst ist die Zeile rot, und das Banner darüber (wie der Punkt in der Navigation) auch.
-  await expect(page.locator('#system li[data-stufe="rot"]').filter({ hasText: "Hintergrunddienst" })).toBeVisible();
+  await expect(page.locator('#system li[data-stufe="rot"]').filter({ has: page.getByText("Hintergrunddienst", { exact: true }) })).toBeVisible();
   await expect(page.locator('#system [role="status"][data-stufe="rot"]')).toContainText("Gesamtstatus: Handlungsbedarf");
   await expect(page.locator('#system li[data-stufe="gruen"]').filter({ hasText: "Datenverzeichnis" })).toBeVisible();
 });

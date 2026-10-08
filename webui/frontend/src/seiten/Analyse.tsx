@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { AlertTriangle, BookOpenText, CandlestickChart, Clock, Lightbulb, Newspaper } from "lucide-react";
+import { AlertTriangle, BookOpenText, CandlestickChart, Clock, Lightbulb, ListFilter, Newspaper } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -9,10 +9,12 @@ import { Legende, NavDiagramm } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
 import { Markdown } from "@/components/Markdown";
 import { NewsListe } from "@/components/News";
-import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Seitenkopf, Skelett } from "@/components/ui";
+import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Reiter, ReiterInhalt, ReiterKnopf, ReiterLeiste, Seitenkopf, Skelett } from "@/components/ui";
 import { api, PROFILE, type Dokument, type Kennzahlen, type Kerze, type Lesson, type Markt, type MarktEintrag, type NavDaten, type NewsMeldung, type Review } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { datum, euro, faktor, prozent, relativ, zahl, zeit } from "@/lib/format";
+
+import { Beobachtungsliste } from "./Beobachtungsliste";
 
 // --------------------------------------------------------------------------
 // Ranking
@@ -309,103 +311,120 @@ export function Kurse() {
           ) : undefined
         }
       />
-      <Karte className="mb-4 overflow-hidden">
-        {markt.isPending ? (
-          <Skelett className="m-4 h-48" />
-        ) : !eintraege.length ? (
-          <Leer
-            icon={<CandlestickChart className="size-5" />}
-            titel="Noch keine Marktübersicht"
-            text="Der Hintergrunddienst hat noch keine Kurse abgerufen. In der Einrichtung unter Kursdaten eine Quelle wählen und „Jetzt abrufen“ drücken; der Systemstatus zeigt, ob der Dienst läuft."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px]">
-              <thead>
-                <tr className="text-left text-[11.5px] font-medium tracking-wide text-text-3 uppercase">
-                  <th className="px-4 py-2.5 font-medium">Wert</th>
-                  <th className="px-3 py-2.5 text-right font-medium">Kurs</th>
-                  <th className="px-3 py-2.5 text-right font-medium">ggü. Vortag</th>
-                  <th className="px-3 py-2.5 font-medium">Zeitstempel</th>
-                  <th className="px-4 py-2.5 font-medium">Quelle</th>
-                </tr>
-              </thead>
-              {GRUPPEN_MARKT.map((g) => {
-                const zeilen = eintraege.filter(g.passt);
-                if (!zeilen.length) return null;
-                return (
-                  <tbody key={g.titel}>
-                    <tr>
-                      <td colSpan={5} className="bg-flaeche-2 px-4 py-1.5 text-[11.5px] font-semibold text-text-3">
-                        {g.titel}
-                      </td>
+      <Reiter defaultValue="uebersicht">
+        <ReiterLeiste>
+          <ReiterKnopf value="uebersicht">
+            <CandlestickChart className="size-4" />
+            Übersicht
+          </ReiterKnopf>
+          <ReiterKnopf value="beobachtung">
+            <ListFilter className="size-4" />
+            Beobachtungsliste
+          </ReiterKnopf>
+        </ReiterLeiste>
+        <ReiterInhalt value="uebersicht">
+          <Karte className="mb-4 overflow-hidden">
+            {markt.isPending ? (
+              <Skelett className="m-4 h-48" />
+            ) : !eintraege.length ? (
+              <Leer
+                icon={<CandlestickChart className="size-5" />}
+                titel="Noch keine Marktübersicht"
+                text="Der Hintergrunddienst hat noch keine Kurse abgerufen. In der Einrichtung unter Kursdaten eine Quelle wählen und „Jetzt abrufen“ drücken; der Systemstatus zeigt, ob der Dienst läuft."
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
+                  <thead>
+                    <tr className="text-left text-[11.5px] font-medium tracking-wide text-text-3 uppercase">
+                      <th className="px-4 py-2.5 font-medium">Wert</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Kurs</th>
+                      <th className="px-3 py-2.5 text-right font-medium">ggü. Vortag</th>
+                      <th className="px-3 py-2.5 font-medium">Zeitstempel</th>
+                      <th className="px-4 py-2.5 font-medium">Quelle</th>
                     </tr>
-                    {zeilen.map((e) => (
-                      <Marktzeile key={e.ticker} e={e} aktiv={e.ticker === ticker} waehlen={() => setTicker(e.ticker)} />
-                    ))}
-                  </tbody>
-                );
-              })}
-            </table>
-          </div>
-        )}
-      </Karte>
-      {zusaetzlich.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          <span className="self-center text-[12px] text-text-3">Weitere gespeicherte Tagesdaten:</span>
-          {zusaetzlich.map((t) => (
-            <button key={t.ticker} onClick={() => setTicker(t.ticker)} className={cn("rounded-md border px-2 py-1 font-mono text-[12px]", ticker === t.ticker ? "border-akzent text-text" : "border-rand text-text-2 hover:border-rand-stark")}>
-              {t.ticker}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Karte>
-          <KarteKopf
-            titel={<span className="font-mono">{ticker ?? "–"}</span>}
-            icon={<CandlestickChart className="size-4" />}
-            untertitel={gewaehlt?.name ?? (statistik ? `Letzter Schluss ${datum(statistik.letzte.datum)}` : undefined)}
-          />
-          {gewaehlt?.veraltet && gewaehlt.grund && (
-            <p className="mx-5 mb-3 rounded-lg border border-warnung/30 bg-warnung-flaeche px-3 py-2 text-[12.5px] text-text-2">
-              <span className="font-medium text-text">Kein aktueller Kurs: </span>
-              {gewaehlt.grund}
-            </p>
-          )}
-          {statistik && (
-            <div className="grid grid-cols-2 gap-4 px-5 pb-3 sm:grid-cols-3">
-              <div>
-                <div className="text-[12px] text-text-3">Letzter Schluss</div>
-                <div className="zahl text-[18px] font-semibold text-text">{zahl(statistik.letzte.close)}</div>
+                  </thead>
+                  {GRUPPEN_MARKT.map((g) => {
+                    const zeilen = eintraege.filter(g.passt);
+                    if (!zeilen.length) return null;
+                    return (
+                      <tbody key={g.titel}>
+                        <tr>
+                          <td colSpan={5} className="bg-flaeche-2 px-4 py-1.5 text-[11.5px] font-semibold text-text-3">
+                            {g.titel}
+                          </td>
+                        </tr>
+                        {zeilen.map((e) => (
+                          <Marktzeile key={e.ticker} e={e} aktiv={e.ticker === ticker} waehlen={() => setTicker(e.ticker)} />
+                        ))}
+                      </tbody>
+                    );
+                  })}
+                </table>
               </div>
-              <div>
-                <div className="text-[12px] text-text-3">Zeitraum</div>
-                <Delta wert={statistik.gesamt} gross />
-              </div>
-              <div>
-                <div className="text-[12px] text-text-3">Spanne</div>
-                <div className="zahl text-[14px] font-medium text-text">
-                  {zahl(statistik.tief)} – {zahl(statistik.hoch)}
-                </div>
-              </div>
+            )}
+          </Karte>
+          {zusaetzlich.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              <span className="self-center text-[12px] text-text-3">Weitere gespeicherte Tagesdaten:</span>
+              {zusaetzlich.map((t) => (
+                <button key={t.ticker} onClick={() => setTicker(t.ticker)} className={cn("rounded-md border px-2 py-1 font-mono text-[12px]", ticker === t.ticker ? "border-akzent text-text" : "border-rand text-text-2 hover:border-rand-stark")}>
+                  {t.ticker}
+                </button>
+              ))}
             </div>
           )}
-          <div className="px-3 pb-4">
-            {!hatHistorie ? (
-              <Leer titel="Noch keine Tagesdaten" text="Tagesdaten (400 Tage) holt der Hintergrunddienst beim ersten Abruf und danach täglich nach US-Börsenschluss." />
-            ) : kerzen.data ? (
-              <Kerzendiagramm kerzen={kerzen.data} hoehe={420} />
-            ) : (
-              <Skelett className="h-[420px]" />
-            )}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <Karte>
+              <KarteKopf
+                titel={<span className="font-mono">{ticker ?? "–"}</span>}
+                icon={<CandlestickChart className="size-4" />}
+                untertitel={gewaehlt?.name ?? (statistik ? `Letzter Schluss ${datum(statistik.letzte.datum)}` : undefined)}
+              />
+              {gewaehlt?.veraltet && gewaehlt.grund && (
+                <p className="mx-5 mb-3 rounded-lg border border-warnung/30 bg-warnung-flaeche px-3 py-2 text-[12.5px] text-text-2">
+                  <span className="font-medium text-text">Kein aktueller Kurs: </span>
+                  {gewaehlt.grund}
+                </p>
+              )}
+              {statistik && (
+                <div className="grid grid-cols-2 gap-4 px-5 pb-3 sm:grid-cols-3">
+                  <div>
+                    <div className="text-[12px] text-text-3">Letzter Schluss</div>
+                    <div className="zahl text-[18px] font-semibold text-text">{zahl(statistik.letzte.close)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[12px] text-text-3">Zeitraum</div>
+                    <Delta wert={statistik.gesamt} gross />
+                  </div>
+                  <div>
+                    <div className="text-[12px] text-text-3">Spanne</div>
+                    <div className="zahl text-[14px] font-medium text-text">
+                      {zahl(statistik.tief)} – {zahl(statistik.hoch)}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="px-3 pb-4">
+                {!hatHistorie ? (
+                  <Leer titel="Noch keine Tagesdaten" text="Tagesdaten (400 Tage) holt der Hintergrunddienst beim ersten Abruf und danach täglich nach US-Börsenschluss." />
+                ) : kerzen.data ? (
+                  <Kerzendiagramm kerzen={kerzen.data} hoehe={420} />
+                ) : (
+                  <Skelett className="h-[420px]" />
+                )}
+              </div>
+            </Karte>
+            <Karte className="xl:self-start">
+              <KarteKopf titel="Meldungen zu diesem Wert" icon={<Newspaper className="size-4" />} untertitel="News-Speicher, Zuordnung über Feed oder Schlagwort" />
+              <div className="px-2 pb-2">{news.data ? <NewsListe meldungen={news.data.meldungen} leerText="Zu diesem Wert gibt es noch keine Meldungen." /> : <Skelett className="m-3 h-40" />}</div>
+            </Karte>
           </div>
-        </Karte>
-        <Karte className="xl:self-start">
-          <KarteKopf titel="Meldungen zu diesem Wert" icon={<Newspaper className="size-4" />} untertitel="News-Speicher, Zuordnung über Feed oder Schlagwort" />
-          <div className="px-2 pb-2">{news.data ? <NewsListe meldungen={news.data.meldungen} leerText="Zu diesem Wert gibt es noch keine Meldungen." /> : <Skelett className="m-3 h-40" />}</div>
-        </Karte>
-      </div>
+        </ReiterInhalt>
+        <ReiterInhalt value="beobachtung">
+          <Beobachtungsliste />
+        </ReiterInhalt>
+      </Reiter>
     </div>
   );
 }

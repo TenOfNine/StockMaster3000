@@ -897,6 +897,7 @@ def beobachtung_attrappe(werkzeug_attrappe, monkeypatch):
     attrappe = worker.werkzeug
     zustand = {"ausfall": None}
     speicher = einstellungen().daten_pfad / ".cache" / "beobachtung.json"  # das Datenverzeichnis gilt für alle Tests
+    vorher = speicher.read_bytes() if speicher.exists() else None
     speicher.unlink(missing_ok=True)
 
     def werkzeug(name, *argumente, **kw):
@@ -915,6 +916,8 @@ def beobachtung_attrappe(werkzeug_attrappe, monkeypatch):
     monkeypatch.setattr(worker, "werkzeug", werkzeug)
     yield zustand
     speicher.unlink(missing_ok=True)
+    if vorher is not None:
+        speicher.write_bytes(vorher)
 
 
 def _beobachtung_aufrufe(aufrufe):
