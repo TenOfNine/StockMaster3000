@@ -14,7 +14,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -28,6 +28,14 @@ from .modelle import AuditEintrag, Auftrag
 log = logging.getLogger("stockmaster.worker")
 TZ = ZoneInfo("Europe/Berlin")
 TESTARTEN = ("test_claude", "test_kurse", "test_feed", "kurse_jetzt", "news_jetzt")
+# Nachbuchung (Entscheidung 38): bewertung.py verarbeitet Tage bis gestern; deshalb nachts, wenn der Handelstag
+# (auch NYSE, Gold und Brent bis 22:00) zu Ende ist und die Tageskerzen vorliegen. Bei Fehlern stündlich erneut.
+NACHBUCHUNG_AB = (0, 30)
+NACHBUCHUNG_WIEDERHOLUNG_MINUTEN = 60
+# Beobachtungsliste (Entscheidung 38): Tageskerzen von rund 600 Werten, einmal je Handelstag nach dem Schluss von
+# Xetra und NYSE (22:00 Berlin), vor der Nachbuchung; bei Fehlern stündlich erneut.
+BEOBACHTUNG_AB = (23, 15)
+BEOBACHTUNG_WIEDERHOLUNG_MINUTEN = 60
 
 
 def _werkzeuge():
@@ -127,6 +135,38 @@ class Worker:
             self._merken(news_zeit=jetzt.isoformat())
         return meldungen
 
+    @staticmethod
+    def beobachtung_soll_tag(jetzt: datetime) -> date:
+        """Letzter Handelstag (Mo–Fr), dessen Tageskerzen nach `BEOBACHTUNG_AB` vorliegen sollten."""
+        lokal = jetzt.astimezone(TZ)
+        tag = lokal.date() if (lokal.hour, lokal.minute) >= BEOBACHTUNG_AB else lokal.date() - timedelta(days=1)
+        while tag.weekday() >= 5:
+            tag -= timedelta(days=1)
+        return tag
+
+    def beobachtung_aktualisieren(self, jetzt: datetime) -> str | None:
+        """Beobachtungsliste nach Handelsschluss auffrischen (tools/beobachtung.py, Quelle yfinance).
+
+        Läuft einmal je Handelstag ab 23:15 Uhr, nach einem Ausfall oder bei fehlendem Stand sofort. Der Stand liegt im
+        Zwischenspeicher (.cache), nicht im Spielstand; ein Fehlschlag lässt den alten Stand stehen.
+        """
+        soll = self.beobachtung_soll_tag(jetzt)
+        stand_da = (einstellungen().daten_pfad / ".cache" / "beobachtung.json").exists()
+        if stand_da and (self.zustand.get("beobachtung_tag") or "") >= soll.isoformat():
+            return None
+        if not self._faellig(self.zustand.get("beobachtung_versuch"), BEOBACHTUNG_WIEDERHOLUNG_MINUTEN, jetzt):
+            return None
+        self._merken(beobachtung_versuch=jetzt.isoformat())
+        try:
+            lauf = werkzeug("beobachtung", "aktualisieren", timeout=1800)
+            ok = lauf.returncode == 0
+            meldung = (lauf.stdout.splitlines() or ["ok"])[0] if ok else (_letzte_zeile(lauf) or "fehlgeschlagen")
+        except subprocess.TimeoutExpired:
+            ok, meldung = False, "Zeitüberschreitung beim Abruf."
+        self._merken(beobachtung_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok, "meldung": meldung[:300]},
+                     **({"beobachtung_tag": soll.isoformat()} if ok else {}))
+        return meldung if meldung.startswith("Beobachtungsliste") else f"Beobachtungsliste: {meldung}"
+
     def richtlinien_standard(self, jetzt: datetime) -> str | None:
         """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt."""
         if self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
@@ -139,6 +179,68 @@ class Worker:
             return "Standard-Anlagerichtlinien: " + _letzte_zeile(lauf)
         werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen", timeout=60)
         return "Standard-Anlagerichtlinien übernommen."
+
+    def _nachbuchung_rueckstand(self, gestern: date) -> list[str]:
+        """Aktive Portfolios, die noch nicht bis gestern verarbeitet sind (Kennungen)."""
+        g = _werkzeuge()["gemeinsam"]
+        offen = []
+        for profil in g.vorhandene_profile():
+            portfolio = g.portfolio_laden(profil)
+            if portfolio["status"] == "aktiv" and date.fromisoformat(portfolio["verarbeitet_bis"]) < gestern:
+                offen.append(profil)
+        return offen
+
+    def nachbuchen(self, jetzt: datetime) -> str | None:
+        """Nach Handelsschluss alle Tage bis gestern nachbuchen, ohne auf die nächste Session zu warten.
+
+        Der Ablauf ist derselbe wie beim Session-Start (regeln.md 6: vorgemerkte Market-Orders zur Eröffnung,
+        Limits, Barrieren, Stops, Tagesabschluss); der Code rechnet, Claude ist nicht beteiligt. bewertung.py
+        verlangt dafür eine Sperre: Der Dienst setzt sie als Art "nachbuchung" und gibt sie danach frei.
+        """
+        lokal = jetzt.astimezone(TZ)
+        if (lokal.hour, lokal.minute) < NACHBUCHUNG_AB or self.zustand.get("nachbuchung_tag") == lokal.date().isoformat():
+            return None
+        if not self._faellig(self.zustand.get("nachbuchung_versuch"), NACHBUCHUNG_WIEDERHOLUNG_MINUTEN, jetzt):
+            return None
+        if self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
+            return None  # eine Session bucht beim Start selbst nach; später erneut versuchen
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum"):
+            return None
+        gestern = lokal.date() - timedelta(days=1)
+        if not self._nachbuchung_rueckstand(gestern):
+            self._merken(nachbuchung_tag=lokal.date().isoformat())
+            return None
+        auftraggeber = g.projekt()["auftraggeber"]
+        person = appdaten.laden()["zeitplan"].get("auftraggeber")
+        person = person if person in auftraggeber else auftraggeber[0]
+        self._merken(nachbuchung_versuch=jetzt.isoformat())
+
+        def ergebnis(ok: bool, meldung: str, pruefung_ok: bool | None = None) -> str:
+            self._merken(nachbuchung_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok,
+                                               "meldung": meldung[:300], "pruefung_ok": pruefung_ok,
+                                               "bis": gestern.isoformat()})
+            if ok:
+                self._merken(nachbuchung_tag=lokal.date().isoformat())
+            return f"Nachbuchung: {meldung}"
+
+        start = werkzeug("session", "start", "--person", person, "--art", "nachbuchung", timeout=120)
+        if start.returncode != 0:
+            return ergebnis(False, "Sperre nicht möglich: " + _letzte_zeile(start))
+        try:
+            buchung = werkzeug("bewertung", "nachbuchen", timeout=900)
+            if buchung.returncode != 0:
+                return ergebnis(False, _letzte_zeile(buchung) or "Nachbuchung fehlgeschlagen.")
+            bericht = werkzeug("bewertung", "bericht", timeout=600)
+            pruefung = werkzeug("pruefe", timeout=300)
+            werkzeug("datenverzeichnis", "commit", "-m", f"session: Nachbuchung bis {gestern} (automatisch)", timeout=120)
+        finally:
+            werkzeug("session", "ende", timeout=120)
+        meldung = f"bis {gestern:%d.%m.%Y} gebucht"
+        if bericht.returncode != 0:
+            meldung += f"; Bericht: {_letzte_zeile(bericht)}"
+        meldung += "; Prüfung bestanden" if pruefung.returncode == 0 else f"; Prüfung mit Fehlern: {_letzte_zeile(pruefung)}"
+        return ergebnis(True, meldung, pruefung.returncode == 0)
 
     def committen(self, jetzt: datetime) -> str | None:
         """Abrufe höchstens stündlich lokal committen; nie während einer Session oder eines Laufs."""
@@ -425,7 +527,8 @@ class Worker:
             self.herzschlag("Wartung (Wiederherstellung)")
             return ["Wartung"]
         self.auftraege_bearbeiten()
-        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.committen):
+        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.beobachtung_aktualisieren,
+                        self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht

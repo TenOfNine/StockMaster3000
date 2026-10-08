@@ -116,3 +116,97 @@ def test_heimnetz_schranke(app, monkeypatch):
         assert extern.get("/api/health").status_code == 403
     with TestClient(anwendung, client=("192.168.1.20", 5000)) as intern:
         assert intern.get("/api/health").status_code == 200
+
+
+def _eintrag(kurs=100.0, **zahlen):
+    basis = {"name": None, "listen": ["dax40"], "waehrung": "EUR", "handelbar": True, "grund": None,
+             "datum": "2026-10-09", "kurs": kurs, "tage": 252, "rendite_1t": 0.01, "rendite_5t": 0.02,
+             "rendite_20t": 0.03, "rendite_60t": 0.04, "abstand_hoch": -0.05, "abstand_tief": 0.3,
+             "sma20_abstand": 0.01, "sma50_abstand": 0.02, "gap_1t": 0.0, "volumen_relativ_1t": 1.0,
+             "volatilitaet_20t": 0.25}
+    return {**basis, **zahlen}
+
+
+BEOBACHTUNG_STAND = {
+    "zeit": "2026-10-12T23:20:00+02:00", "quelle": "yfinance", "anzahl": 6, "mit_daten": 5, "aktuell": 5,
+    "listen": {"dax40": {"name": "DAX 40", "anzahl": 3, "mit_daten": 3}, "sp500": {"name": "S&P 500", "anzahl": 2,
+                                                                                 "mit_daten": 2}},
+    "ohne_daten": ["X.DE"], "veraltet": [],
+    "eintraege": {"SAP.DE": _eintrag(name="SAP SE", rendite_1t=0.03, volumen_relativ_1t=2.5),
+                  "SIE.DE": _eintrag(name="Siemens", rendite_1t=-0.02, volumen_relativ_1t=None),
+                  "BAS.DE": _eintrag(0.5, name="BASF", rendite_1t=0.09, handelbar=False, grund="Kurs unter 1 EUR"),
+                  "AAPL": _eintrag(name="Apple", listen=["sp500"], waehrung="USD", rendite_1t=0.01),
+                  "MSFT": _eintrag(name="Microsoft", listen=["sp500"], waehrung="USD", rendite_1t=0.04)},
+}
+
+
+def _mit_beobachtung(monkeypatch, stand):
+    from stockmaster.spiel import lesen
+
+    original = lesen._cache_json
+    monkeypatch.setattr(lesen, "_cache_json", lambda name: stand if name == "beobachtung.json" else original(name))
+
+
+def test_beobachtung_ohne_daten(nutzer, monkeypatch):
+    _mit_beobachtung(monkeypatch, {})
+    daten = nutzer.get("/api/spiel/beobachtung").json()
+    assert daten["zeit"] is None and daten["eintraege"] == [] and daten["gesamt"] == 0
+    assert [k["id"] for k in daten["kennzahlen"]][:2] == ["kurs", "rendite_1t"]
+    assert nutzer.get("/api/spiel/beobachtung/kandidaten").json() == {"zeit": None, "bloecke": []}
+
+
+def test_beobachtung_sortieren_filtern_blaettern(nutzer, monkeypatch):
+    _mit_beobachtung(monkeypatch, BEOBACHTUNG_STAND)
+    daten = nutzer.get("/api/spiel/beobachtung").json()
+    assert [e["ticker"] for e in daten["eintraege"]] == ["MSFT", "SAP.DE", "AAPL", "SIE.DE"]  # BAS.DE nicht handelbar
+    assert daten["gesamt"] == 4 and daten["anzahl"] == 6 and daten["mit_daten"] == 5 and daten["ohne_daten"] == ["X.DE"]
+    assert [(x["id"], x["name"]) for x in daten["listen"]] == [("dax40", "DAX 40"), ("sp500", "S&P 500")]
+    assert daten["kennzahlen"][1] == {"id": "rendite_1t", "titel": "1 Tag", "art": "prozent"}
+
+    auf = nutzer.get("/api/spiel/beobachtung", params={"aufsteigend": "true"}).json()
+    assert [e["ticker"] for e in auf["eintraege"]] == ["SIE.DE", "AAPL", "SAP.DE", "MSFT"]
+    alle = nutzer.get("/api/spiel/beobachtung", params={"nur_handelbar": "false"}).json()
+    assert alle["gesamt"] == 5 and alle["eintraege"][0]["ticker"] == "BAS.DE"
+    assert alle["eintraege"][0]["grund"] == "Kurs unter 1 EUR"
+    sp = nutzer.get("/api/spiel/beobachtung", params={"liste": "sp500"}).json()
+    assert [e["ticker"] for e in sp["eintraege"]] == ["MSFT", "AAPL"]
+    for nadel, erwartet in (("sie", ["SIE.DE"]), ("MICRO", ["MSFT"]), (".de", ["SAP.DE", "SIE.DE"])):
+        treffer = nutzer.get("/api/spiel/beobachtung", params={"suche": nadel}).json()
+        assert [e["ticker"] for e in treffer["eintraege"]] == erwartet
+    seite = nutzer.get("/api/spiel/beobachtung", params={"anzahl": 2, "offset": 1}).json()
+    assert [e["ticker"] for e in seite["eintraege"]] == ["SAP.DE", "AAPL"] and seite["gesamt"] == 4
+
+
+def test_beobachtung_werte_ohne_kennzahl_stehen_am_ende(nutzer, monkeypatch):
+    _mit_beobachtung(monkeypatch, BEOBACHTUNG_STAND)
+    daten = nutzer.get("/api/spiel/beobachtung", params={"sortiert": "volumen_relativ_1t"}).json()
+    assert [e["ticker"] for e in daten["eintraege"]] == ["SAP.DE", "MSFT", "AAPL", "SIE.DE"]  # SIE.DE hat keinen Wert
+    daten = nutzer.get("/api/spiel/beobachtung", params={"sortiert": "volumen_relativ_1t", "aufsteigend": "true"}).json()
+    assert daten["eintraege"][-1]["ticker"] == "SIE.DE"
+
+
+def test_beobachtung_eingaben_werden_geprueft(nutzer, monkeypatch):
+    _mit_beobachtung(monkeypatch, BEOBACHTUNG_STAND)
+    assert nutzer.get("/api/spiel/beobachtung", params={"sortiert": "gibt_es_nicht"}).status_code == 404
+    assert nutzer.get("/api/spiel/beobachtung", params={"liste": "nasdaq"}).status_code == 404
+    assert nutzer.get("/api/spiel/beobachtung", params={"liste": "../x"}).status_code == 422
+    assert nutzer.get("/api/spiel/beobachtung", params={"anzahl": 500}).status_code == 422
+    assert nutzer.get("/api/spiel/beobachtung", params={"offset": -1}).status_code == 422
+    assert nutzer.get("/api/spiel/beobachtung/kandidaten", params={"liste": "nasdaq"}).status_code == 404
+    assert nutzer.get("/api/spiel/beobachtung/kandidaten", params={"anzahl": 0}).status_code == 422
+
+
+def test_beobachtung_kandidaten(nutzer, monkeypatch):
+    _mit_beobachtung(monkeypatch, BEOBACHTUNG_STAND)
+    daten = nutzer.get("/api/spiel/beobachtung/kandidaten", params={"anzahl": 2}).json()
+    assert daten["zeit"] == BEOBACHTUNG_STAND["zeit"] and len(daten["bloecke"]) == 8
+    oben = daten["bloecke"][0]
+    assert oben["titel"] == "Stärkste Tagesbewegung nach oben" and oben["kennzahl"] == "rendite_1t"
+    assert [w["ticker"] for w in oben["werte"]] == ["MSFT", "SAP.DE"]  # BAS.DE nicht handelbar
+    sp = nutzer.get("/api/spiel/beobachtung/kandidaten", params={"liste": "sp500", "anzahl": 1}).json()
+    assert [w["ticker"] for w in sp["bloecke"][0]["werte"]] == ["MSFT"]
+
+
+def test_beobachtung_nur_angemeldet(client):
+    assert client.get("/api/spiel/beobachtung").status_code == 401
+    assert client.get("/api/spiel/beobachtung/kandidaten").status_code == 401

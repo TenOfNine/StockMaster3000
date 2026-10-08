@@ -89,7 +89,7 @@ def werkzeuge() -> dict[str, ModuleType]:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
                        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
-                                    "datenverzeichnis", "news", "richtlinien")}
+                                    "datenverzeichnis", "news", "richtlinien", "beobachtung")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -99,7 +99,7 @@ def zuruecksetzen() -> None:
     """Für Tests: Werkzeuge neu laden (anderes Repository)."""
     for name in list(sys.modules):
         if name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine", "buchen", "pruefe", "init",
-                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien"):
+                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien", "beobachtung"):
             del sys.modules[name]
     _module.clear()
 
@@ -710,6 +710,54 @@ def markt() -> dict:
         eintraege.append({**e, **{k: _num(e.get(k)) for k in ("kurs", "vortag", "veraenderung")}})
     return {"zeit": stand.get("zeit"), "quelle_konfiguriert": stand.get("quelle_konfiguriert"),
             "erfolgreich": stand.get("erfolgreich", 0), "anzahl": stand.get("anzahl", 0), "eintraege": eintraege}
+
+
+def beobachtung(liste: str | None = None, suche: str | None = None, sortiert: str = "rendite_1t",
+                aufsteigend: bool = False, anzahl: int = 50, offset: int = 0, nur_handelbar: bool = True) -> dict:
+    """Beobachtungsliste (Screener) aus dem Zwischenspeicher, den der Hintergrunddienst nach Handelsschluss füllt.
+
+    Die Kennzahlen stammen aus tools/beobachtung.py; hier wird nur gefiltert, sortiert und geschnitten. Werte ohne die
+    gewählte Kennzahl stehen am Ende.
+    """
+    modul = werkzeuge()["beobachtung"]
+    if sortiert not in modul.KENNZAHLEN:
+        raise NichtGefunden("Unbekannte Kennzahl.")
+    stand = _cache_json("beobachtung.json")
+    kennzahlen = [{"id": k, "titel": titel, "art": art} for k, (titel, art) in modul.KENNZAHLEN.items()]
+    if not stand.get("eintraege"):
+        return {"zeit": None, "quelle": None, "anzahl": 0, "mit_daten": 0, "aktuell": 0, "listen": [], "ohne_daten": [],
+                "veraltet": [], "gesamt": 0, "eintraege": [], "kennzahlen": kennzahlen}
+    if liste is not None and liste not in stand["listen"]:
+        raise NichtGefunden("Unbekannte Liste.")
+    nadel = (suche or "").strip().lower()
+    zeilen = []
+    for ticker, e in stand["eintraege"].items():
+        if liste is not None and liste not in e["listen"]:
+            continue
+        if nur_handelbar and not e.get("handelbar"):
+            continue
+        if nadel and nadel not in ticker.lower() and nadel not in (e.get("name") or "").lower():
+            continue
+        zeilen.append((ticker, e))
+    mit = modul.sortieren(zeilen, sortiert, not aufsteigend)
+    ohne = sorted((z for z in zeilen if z[1].get(sortiert) is None), key=lambda z: z[0])
+    sichtbar = (mit + ohne)[offset:offset + anzahl]
+    return {"zeit": stand.get("zeit"), "quelle": stand.get("quelle"), "anzahl": stand.get("anzahl", 0),
+            "mit_daten": stand.get("mit_daten", 0), "aktuell": stand.get("aktuell", 0),
+            "listen": [{"id": k, **v} for k, v in stand["listen"].items()],
+            "ohne_daten": stand.get("ohne_daten", []), "veraltet": stand.get("veraltet", []),
+            "gesamt": len(zeilen), "kennzahlen": kennzahlen,
+            "eintraege": [{"ticker": t, **e} for t, e in sichtbar]}
+
+
+def beobachtung_kandidaten(anzahl: int = 8, liste: str | None = None) -> dict:
+    """Auffällige Werte in mehreren Kategorien (tools/beobachtung.py kandidaten)."""
+    stand = _cache_json("beobachtung.json")
+    if not stand.get("eintraege"):
+        return {"zeit": None, "bloecke": []}
+    if liste is not None and liste not in stand["listen"]:
+        raise NichtGefunden("Unbekannte Liste.")
+    return {"zeit": stand.get("zeit"), "bloecke": werkzeuge()["beobachtung"].kandidaten(stand, anzahl, liste)}
 
 
 def news(ticker: str | None = None, anzahl: int = 50, tage: int = 30) -> dict:

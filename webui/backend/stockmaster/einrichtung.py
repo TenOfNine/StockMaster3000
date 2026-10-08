@@ -161,6 +161,92 @@ def _feed_detail(feed: dict) -> dict:
             "seit": feed["seit"], "anzahl": feed["in_folge"], "url": feed["url"]}
 
 
+NACHBUCHUNG_UHR = "00:30"  # lokale Zeit, wie worker.NACHBUCHUNG_AB
+
+
+def _nachbuchung_ampel() -> dict:
+    """Wie weit die Portfolios verbucht sind. Die Nachbuchung läuft nachts um 00:30 Uhr (Entscheidung 38)."""
+    titel = "Nachbuchung"
+    g = _werkzeuge()["gemeinsam"]
+    try:
+        if not g.spiel_lesen().get("startdatum"):
+            return _ampel("nachbuchung", titel, "gruen", "Das Spiel ist noch nicht gestartet, es gibt nichts zu buchen.")
+        stand = [g.portfolio_laden(p) for p in g.vorhandene_profile()]
+    except Exception as exc:  # noqa: BLE001 - der Status darf nie an einer unlesbaren Datei scheitern
+        return _ampel("nachbuchung", titel, "gelb", f"Stand der Portfolios nicht lesbar ({type(exc).__name__}).")
+    aktiv = [p for p in stand if p["status"] == "aktiv"]
+    if not aktiv:
+        return _ampel("nachbuchung", titel, "gruen", "Keine aktiven Portfolios.")
+    jetzt = datetime.now(TZ)
+    bis = min(date.fromisoformat(p["verarbeitet_bis"]) for p in aktiv)
+    rueckstand = ((jetzt.date() - timedelta(days=1)) - bis).days
+    letzte = appdaten.zustand_lesen("planer").get("nachbuchung_ergebnis") or {}
+    text = f"Verbucht bis {bis:%d.%m.%Y}"
+    stufe = "gruen"
+    if rueckstand <= 0:
+        text += " (gestern)."
+    elif jetzt.hour < 3:
+        text += f"; die automatische Nachbuchung läuft um {NACHBUCHUNG_UHR} Uhr."
+    else:
+        stufe = "rot" if rueckstand >= 3 else "gelb"
+        text += f": {rueckstand} {'Tag' if rueckstand == 1 else 'Tage'} im Rückstand."
+        text += " Der Hintergrunddienst versucht es stündlich, spätestens bucht die nächste Session nach."
+    details = []
+    if letzte:
+        text += f" Letzte automatische Nachbuchung {_alter_text(_zeit(letzte.get('zeit')))}: {letzte.get('meldung', '')}"
+        if not letzte.get("ok"):
+            stufe = "rot" if stufe == "rot" else "gelb"
+        elif letzte.get("pruefung_ok") is False:
+            stufe = "rot" if stufe == "rot" else "gelb"
+            details.append({"titel": "Prüfung nach der Nachbuchung", "text": letzte.get("meldung", ""),
+                            "hinweis": "pruefe.py meldet Fehler im Spielstand: Prüfung und Audit ansehen, bevor die "
+                                       "nächste Session startet.", "seit": None, "anzahl": 0, "url": None})
+    return _ampel("nachbuchung", titel, stufe, text, details, link="#zeitplan")
+
+
+BEOBACHTUNG_UHR = "23:15"  # lokale Zeit, wie worker.BEOBACHTUNG_AB
+BEOBACHTUNG_ALT_TAGE = 4  # Wochenende plus ein Feiertag
+BEOBACHTUNG_DETAILS_IM_STATUS = 10
+
+
+def _beobachtung_ampel() -> dict:
+    """Stand der Beobachtungsliste (Screener). Der Abruf läuft einmal je Handelstag nach 23:15 Uhr (Entscheidung 38)."""
+    titel = "Beobachtungsliste"
+    stand = _cache("beobachtung.json")
+    letzte = appdaten.zustand_lesen("planer").get("beobachtung_ergebnis") or {}
+    zeit = _zeit(stand.get("zeit"))
+    fehler = bool(letzte) and not letzte.get("ok")
+    if not stand.get("eintraege") or not zeit:
+        if fehler:
+            return _ampel("beobachtung", titel, "rot",
+                           f"Noch keine Daten; der letzte Abruf ist fehlgeschlagen: {letzte.get('meldung', '')} "
+                           "Der Hintergrunddienst versucht es stündlich.")
+        return _ampel("beobachtung", titel, "gelb", "Noch kein Abruf; der Hintergrunddienst holt die Tageskerzen "
+                                                    "beim nächsten Durchlauf und danach nach jedem Handelsschluss.")
+    anzahl, mit_daten = int(stand.get("anzahl", 0)), int(stand.get("mit_daten", 0))
+    veraltet, ohne = stand.get("veraltet", []), stand.get("ohne_daten", [])
+    alt = datetime.now(UTC) - zeit > timedelta(days=BEOBACHTUNG_ALT_TAGE)
+    luecke = anzahl > 0 and mit_daten < 0.8 * anzahl
+    stufe = "gelb" if alt or luecke or fehler or veraltet else "gruen"
+    text = f"{_alter_text(zeit)}: {mit_daten} von {anzahl} Werten mit Tagesdaten ({stand.get('quelle', 'yfinance')})."
+    if veraltet:
+        text += f" {len(veraltet)} davon mit altem Stand (Abruf lückenhaft)."
+    if alt:
+        text += (f" Überfällig: erwartet wird ein Abruf je Handelstag nach {BEOBACHTUNG_UHR} Uhr "
+                 "(Hintergrunddienst prüfen).")
+    if fehler:
+        text += f" Letzter Abruf {_alter_text(_zeit(letzte.get('zeit')))} fehlgeschlagen: {letzte.get('meldung', '')}"
+    details = []
+    if ohne:
+        zeigen = ohne[:BEOBACHTUNG_DETAILS_IM_STATUS]
+        details.append({"titel": f"{len(ohne)} Werte ohne Kursdaten",
+                        "text": ", ".join(zeigen) + (" …" if len(ohne) > len(zeigen) else ""),
+                        "hinweis": "Kürzel in config/beobachtung.json prüfen (Indexwechsel, Umbenennung, Delisting) "
+                                   "oder aus der Liste nehmen: python tools/beobachtung.py pruefen.",
+                        "seit": None, "anzahl": len(ohne), "url": None})
+    return _ampel("beobachtung", titel, stufe, text, details)
+
+
 def systemstatus() -> list[dict]:
     e = einstellungen()
     status = []
@@ -233,7 +319,10 @@ def systemstatus() -> list[dict]:
                             "anzahl": 0, "url": None})
         status.append(_ampel("news", "Letzter News-Abruf", stufe, text, details, link="#news"))
 
-    info = appdaten.geheimnis_info("claude_token")
+    status.append(_beobachtung_ampel())
+    status.append(_nachbuchung_ampel())
+
+    info =appdaten.geheimnis_info("claude_token")
     test = appdaten.laden()["claude"].get("letzter_test") or {}
     if not info["gesetzt"]:
         status.append(_ampel("claude", "Claude-Verbindung", "rot", "Kein Claude-Token hinterlegt.", link="#claude"))

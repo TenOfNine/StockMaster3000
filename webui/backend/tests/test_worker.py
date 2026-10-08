@@ -3,8 +3,9 @@
 import json
 import os
 import stat
+import subprocess
 import textwrap
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -774,3 +775,223 @@ def test_offene_freigaben_werden_beim_dienststart_geschlossen(admin):
     with neue_sitzung() as db:
         assert db.get(Freigabe, fid).status == "abgebrochen"
     assert admin.get("/api/freigaben", params={"offen": "true"}).json() == []
+
+
+# --------------------------------------------------------------------------
+# Automatische Nachbuchung nach Handelsschluss (Entscheidung 38)
+
+UTC_0030 = datetime(2026, 10, 11, 22, 30, tzinfo=UTC)  # 00:30 Uhr deutsche Zeit am 12.10.2026 (Sommerzeit)
+NACHBUCHUNG_ABLAUF = [("session", "start"), ("bewertung", "nachbuchen"), ("bewertung", "bericht"), ("pruefe",),
+                      ("datenverzeichnis", "commit"), ("session", "ende")]
+
+
+def _namen(aufrufe, ab=0):
+    return [tuple(a[:2]) if a[0] in ("session", "bewertung", "datenverzeichnis") else (a[0],) for a in aufrufe[ab:]]
+
+
+def test_nachbuchung_nachts_mit_sperre_bericht_pruefung_und_commit(app, werkzeug_attrappe):
+    from datetime import timedelta
+
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.nachbuchen(UTC_0030 - timedelta(minutes=20)) is None and werkzeug_attrappe == []  # erst ab 00:30
+    meldung = w.nachbuchen(UTC_0030)
+    assert meldung == "Nachbuchung: bis 11.10.2026 gebucht; Prüfung bestanden"
+    assert _namen(werkzeug_attrappe) == NACHBUCHUNG_ABLAUF
+    start = werkzeug_attrappe[0]
+    assert start[2:5] == ("--person", start[3], "--art") and start[5] == "nachbuchung"
+    assert werkzeug_attrappe[4] == ("datenverzeichnis", "commit", "-m", "session: Nachbuchung bis 2026-10-11 (automatisch)")
+    assert w.zustand["nachbuchung_tag"] == "2026-10-12" and w.zustand["nachbuchung_ergebnis"]["ok"] is True
+    assert w.zustand["nachbuchung_ergebnis"]["pruefung_ok"] is True
+    # Pro Tag einmal.
+    werkzeug_attrappe.clear()
+    assert w.nachbuchen(UTC_0030 + timedelta(hours=3)) is None and werkzeug_attrappe == []
+
+
+def test_nachbuchung_wiederholt_nach_fehler_und_gibt_die_sperre_frei(app, werkzeug_attrappe, monkeypatch):
+    from datetime import timedelta
+
+    from stockmaster import worker
+    from stockmaster.worker import Worker
+
+    attrappe = worker.werkzeug
+    ausfall = {"an": True}
+
+    def werkzeug(name, *argumente, **kw):
+        ergebnis = attrappe(name, *argumente, **kw)
+        if ausfall["an"] and (name, *argumente[:1]) == ("bewertung", "nachbuchen"):
+            ergebnis.returncode, ergebnis.stdout = 1, "Fehler: Keine Tagesdaten für ^GSPC"
+        return ergebnis
+
+    monkeypatch.setattr(worker, "werkzeug", werkzeug)
+    w = Worker()
+    assert w.nachbuchen(UTC_0030) == "Nachbuchung: Fehler: Keine Tagesdaten für ^GSPC"
+    assert _namen(werkzeug_attrappe) == [("session", "start"), ("bewertung", "nachbuchen"), ("session", "ende")]
+    assert w.zustand["nachbuchung_ergebnis"]["ok"] is False and "nachbuchung_tag" not in w.zustand
+    werkzeug_attrappe.clear()
+    assert w.nachbuchen(UTC_0030 + timedelta(minutes=30)) is None and werkzeug_attrappe == []  # erst nach einer Stunde
+    ausfall["an"] = False
+    assert w.nachbuchen(UTC_0030 + timedelta(minutes=61)).startswith("Nachbuchung: bis 11.10.2026 gebucht")
+    assert w.zustand["nachbuchung_tag"] == "2026-10-12" and w.zustand["nachbuchung_ergebnis"]["ok"] is True
+
+
+def test_nachbuchung_meldet_pruefung_mit_fehlern_und_bucht_trotzdem(app, werkzeug_attrappe, monkeypatch):
+    from stockmaster import worker
+    from stockmaster.worker import Worker
+
+    attrappe = worker.werkzeug
+
+    def werkzeug(name, *argumente, **kw):
+        ergebnis = attrappe(name, *argumente, **kw)
+        if name == "pruefe":
+            ergebnis.returncode, ergebnis.stdout = 1, "FEHLER [Cash] Cash stimmt nicht"
+        return ergebnis
+
+    monkeypatch.setattr(worker, "werkzeug", werkzeug)
+    w = Worker()
+    assert "Prüfung mit Fehlern: FEHLER [Cash] Cash stimmt nicht" in w.nachbuchen(UTC_0030)
+    assert w.zustand["nachbuchung_ergebnis"]["pruefung_ok"] is False and w.zustand["nachbuchung_tag"] == "2026-10-12"
+    assert _namen(werkzeug_attrappe)[-2:] == [("datenverzeichnis", "commit"), ("session", "ende")]
+
+
+def test_nachbuchung_nicht_waehrend_session_oder_lauf_und_ohne_rueckstand(app, werkzeug_attrappe, monkeypatch):
+    from stockmaster import auftraege
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    monkeypatch.setattr(auftraege, "session_sperre_aktiv", lambda: {"person": "auftraggeber-a", "start": "x"})
+    assert w.nachbuchen(UTC_0030) is None and werkzeug_attrappe == [] and "nachbuchung_versuch" not in w.zustand
+    monkeypatch.setattr(auftraege, "session_sperre_aktiv", lambda: None)
+    monkeypatch.setattr(w, "_nachbuchung_rueckstand", lambda gestern: [])
+    assert w.nachbuchen(UTC_0030) is None and werkzeug_attrappe == []
+    assert w.zustand["nachbuchung_tag"] == "2026-10-12"  # nichts zu tun gilt als erledigt
+
+
+def test_nachbuchung_gehoert_zur_schleife(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    w.einmal(UTC_0030)
+    assert ("bewertung", "nachbuchen") in [tuple(a[:2]) for a in werkzeug_attrappe]
+
+
+# --------------------------------------------------------------------------
+# Beobachtungsliste nach Handelsschluss (Entscheidung 38)
+
+BEOBACHTUNG_ZEILE = "Beobachtungsliste: 590 von 603 Werten aktualisiert (yfinance), 0 mit altem Stand, 13 ohne Daten."
+
+
+def _um(tag, uhr):
+    """Berliner Ortszeit (Sommerzeit, UTC+2) als UTC-Zeitpunkt."""
+    stunde, minute = map(int, uhr.split(":"))
+    return datetime(2026, 10, tag, stunde, minute, tzinfo=UTC) - timedelta(hours=2)
+
+
+@pytest.fixture
+def beobachtung_attrappe(werkzeug_attrappe, monkeypatch):
+    """Das Werkzeug 'beobachtung' schreibt wie das echte den Zwischenspeicher; `ausfall` schaltet Fehler zu."""
+    from stockmaster import worker
+    from stockmaster.config import einstellungen
+
+    attrappe = worker.werkzeug
+    zustand = {"ausfall": None}
+    speicher = einstellungen().daten_pfad / ".cache" / "beobachtung.json"  # das Datenverzeichnis gilt für alle Tests
+    speicher.unlink(missing_ok=True)
+
+    def werkzeug(name, *argumente, **kw):
+        ergebnis = attrappe(name, *argumente, **kw)
+        if name == "beobachtung":
+            if zustand["ausfall"] == "zeit":
+                raise subprocess.TimeoutExpired("beobachtung", 1800)
+            if zustand["ausfall"]:
+                ergebnis.returncode, ergebnis.stdout = 1, "Fehler: Keine Kursdaten erhalten (Quelle nicht erreichbar?)"
+            else:
+                ergebnis.stdout = BEOBACHTUNG_ZEILE + "\n  Ohne Daten (Kürzel prüfen oder aus der Liste nehmen): X.DE"
+                speicher.parent.mkdir(parents=True, exist_ok=True)
+                speicher.write_text("{}", encoding="utf-8")
+        return ergebnis
+
+    monkeypatch.setattr(worker, "werkzeug", werkzeug)
+    yield zustand
+    speicher.unlink(missing_ok=True)
+
+
+def _beobachtung_aufrufe(aufrufe):
+    return [a for a in aufrufe if a[0] == "beobachtung"]
+
+
+def test_beobachtung_einmal_je_handelstag_nach_dem_schluss(app, werkzeug_attrappe, beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.beobachtung_aktualisieren(_um(12, "23:20")) == BEOBACHTUNG_ZEILE
+    assert _beobachtung_aufrufe(werkzeug_attrappe) == [("beobachtung", "aktualisieren")]
+    assert w.zustand["beobachtung_tag"] == "2026-10-12" and w.zustand["beobachtung_ergebnis"]["ok"] is True
+    assert w.zustand["beobachtung_ergebnis"]["meldung"] == BEOBACHTUNG_ZEILE
+    werkzeug_attrappe.clear()
+    for zeit in (_um(12, "23:50"), _um(13, "00:40"), _um(13, "12:00"), _um(13, "23:14")):
+        assert w.beobachtung_aktualisieren(zeit) is None  # vor 23:15 des nächsten Tages gilt der Stand von gestern
+    assert werkzeug_attrappe == []
+    assert w.beobachtung_aktualisieren(_um(13, "23:16")) == BEOBACHTUNG_ZEILE
+    assert w.zustand["beobachtung_tag"] == "2026-10-13"
+
+
+def test_beobachtung_am_wochenende_nur_nachholen_nie_neu(app, werkzeug_attrappe, beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.beobachtung_aktualisieren(_um(16, "23:20")) is not None  # Freitag
+    werkzeug_attrappe.clear()
+    for zeit in (_um(17, "10:00"), _um(17, "23:30"), _um(18, "23:30"), _um(19, "10:00")):  # Sa, Sa abends, So, Mo früh
+        assert w.beobachtung_aktualisieren(zeit) is None
+    assert werkzeug_attrappe == []
+    assert w.beobachtung_aktualisieren(_um(19, "23:20")) is not None  # Montag nach Schluss
+    assert w.zustand["beobachtung_tag"] == "2026-10-19"
+
+
+def test_beobachtung_bei_fehlendem_stand_sofort_und_nach_ausfall_nachholen(app, werkzeug_attrappe, beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.beobachtung_aktualisieren(_um(15, "14:00")) == BEOBACHTUNG_ZEILE  # Donnerstag mittags, noch ohne Stand
+    assert w.zustand["beobachtung_tag"] == "2026-10-14"  # Mittwochs-Kerzen; der Donnerstag folgt abends
+    assert w.beobachtung_aktualisieren(_um(15, "23:20")) is not None
+    assert w.zustand["beobachtung_tag"] == "2026-10-15"
+    # Dienst lag zwei Tage still: beim Start wird nachgeholt, obwohl 23:15 nicht ist.
+    assert w.beobachtung_aktualisieren(_um(20, "09:00")) is not None
+    assert w.zustand["beobachtung_tag"] == "2026-10-19"
+
+
+def test_beobachtung_fehler_stuendlich_wiederholen_und_alten_stand_nicht_ueberschreiben(app, werkzeug_attrappe,
+                                                                                         beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    beobachtung_attrappe["ausfall"] = True
+    meldung = w.beobachtung_aktualisieren(_um(12, "23:20"))
+    assert meldung == "Beobachtungsliste: Fehler: Keine Kursdaten erhalten (Quelle nicht erreichbar?)"
+    assert w.zustand["beobachtung_ergebnis"]["ok"] is False and "beobachtung_tag" not in w.zustand
+    werkzeug_attrappe.clear()
+    assert w.beobachtung_aktualisieren(_um(12, "23:50")) is None and werkzeug_attrappe == []  # erst nach einer Stunde
+    assert w.beobachtung_aktualisieren(_um(13, "00:21")) is not None  # zweiter Fehlversuch
+    beobachtung_attrappe["ausfall"] = None
+    assert w.beobachtung_aktualisieren(_um(13, "01:22")) == BEOBACHTUNG_ZEILE
+    assert w.zustand["beobachtung_tag"] == "2026-10-12" and w.zustand["beobachtung_ergebnis"]["ok"] is True
+
+
+def test_beobachtung_zeitueberschreitung_ist_ein_fehlversuch(app, werkzeug_attrappe, beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    beobachtung_attrappe["ausfall"] = "zeit"
+    assert w.beobachtung_aktualisieren(_um(12, "23:20")) == "Beobachtungsliste: Zeitüberschreitung beim Abruf."
+    assert w.zustand["beobachtung_ergebnis"]["ok"] is False
+    assert w.beobachtung_aktualisieren(_um(12, "23:30")) is None  # kein Dauerfeuer
+
+
+def test_beobachtung_gehoert_zur_schleife(app, werkzeug_attrappe, beobachtung_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert BEOBACHTUNG_ZEILE in w.einmal(_um(12, "23:20"))
