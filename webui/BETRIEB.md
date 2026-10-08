@@ -171,6 +171,15 @@ Befehlsersetzung, Pfade außerhalb von Spielstand und Framework und Umgebungsvar
 für Claude schreibgeschützt. Alle Anfragen samt Ausgang stehen am Lauf; wer entschieden hat, steht im Audit-Log.
 Nachsehen im Container `worker`: `grep -B1 "Freigabe" /data-app/laeufe/<Lauf-ID>.log`.
 
+### Vorgaben je Portfolio
+
+Einrichtung → „Vorgaben je Portfolio“: weicher Text der Auftraggeber an Claude, getrennt je Portfolio, nur
+Administratoren ändern, alle Angemeldeten sehen ihn im Portfolio (Reiter Anlagerichtlinie). Jede Änderung ist
+eine Version im Verlauf; sie liegt in `einstellungen.json` (also in der Sicherung, nicht im Spielstand) und gilt
+ab dem nächsten gestarteten Trading-Lauf. Der Prompt stellt klar, dass die Vorgaben nachrangig zu regeln.md, den
+Limits und den Prüfungen sind; das Lauf-Log nennt die verwendeten Versionen, der Audit-Eintrag
+`einrichtung_vorgabe` die Änderung (ohne Text).
+
 ## Sicherung und Wiederherstellung
 
 ```bash

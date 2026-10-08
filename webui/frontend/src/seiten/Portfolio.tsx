@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Ergebnis } from "@/components/Bausteine";
 import { DrawdownDiagramm, NavDiagramm } from "@/components/diagramme/NavDiagramm";
 import { Markdown } from "@/components/Markdown";
+import { VorgabenKarte } from "@/components/Vorgaben";
 import {
   Abzeichen,
   Auslastungsbalken,
@@ -133,6 +134,7 @@ export function Portfolio() {
         </ReiterInhalt>
         <ReiterInhalt value="limits">{d && <Limits d={d} />}</ReiterInhalt>
         <ReiterInhalt value="strategie">
+          <VorgabenKarte profil={profil} />
           <Karte className="p-6 sm:p-8">{d?.strategie ? <Markdown text={d.strategie} /> : <Leer titel="Noch keine Anlagerichtlinie" text={`strategie/${profil}.md fehlt.`} />}</Karte>
         </ReiterInhalt>
       </Reiter>

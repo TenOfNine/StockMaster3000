@@ -462,7 +462,8 @@ class Worker:
         log_datei.parent.mkdir(parents=True, exist_ok=True)
         with open(log_datei, "a", encoding="utf-8") as datei:
             datei.write(f"Lauf {auftrag_id}: {auftrag.art}, Modell {auftrag.modell}, Aufwand "
-                        f"{auftrag.aufwand or 'Standard'}, Auftraggeber {auftrag.auftraggeber}\n")
+                        f"{auftrag.aufwand or 'Standard'}, Auftraggeber {auftrag.auftraggeber}"
+                        + (f", Vorgaben: {claude_lauf.vorgaben_versionen()}" if auftrag.art == "trading" else "") + "\n")
 
         def abbrechen() -> bool:
             with neue_sitzung() as db:

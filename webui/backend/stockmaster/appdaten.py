@@ -47,6 +47,10 @@ UMGEBUNG = {
 UEBERFLUESSIG = ("SM_SCHLUESSEL", "SM_SCHLUESSEL_DATEI", "SPIEL_REPO", "SM_REPO_PFAD",
                  *[name for namen in UMGEBUNG.values() for name in namen])
 
+VORGABEN_PROFILE = ("defensiv", "ausgewogen", "aggressiv")
+VORGABEN_MAX_ZEICHEN = 4000
+VORGABEN_HISTORIE_MAX = 300
+
 STANDARD = {
     "version": 1,
     "claude": {
@@ -61,6 +65,9 @@ STANDARD = {
                  "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"},
                              {"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "21:30", "art": "trading"}]},
     "migration": {"aus_umgebung": []},
+    # Vorgaben der Auftraggeber je Portfolio (Entscheidung 39): weicher Text, sofort wirksam, jede Änderung eine Version.
+    "vorgaben": {"profile": {p: {"text": "", "version": 0, "zeit": None, "von": None} for p in VORGABEN_PROFILE},
+                 "historie": []},
 }
 
 _sperre = threading.RLock()
@@ -180,6 +187,27 @@ def bereich_speichern(bereich: str, werte: dict) -> dict:
         gespeichert[bereich] = {**gespeichert.get(bereich, {}), **copy.deepcopy(werte)}
         _json_schreiben(app_pfad("einstellungen.json"), gespeichert)
         return laden()
+
+
+def vorgaben_aendern(profil: str, text: str, von: str) -> dict | None:
+    """Neue Version der Vorgabe eines Portfolios; None, wenn der Text unverändert ist.
+
+    Gilt sofort: Der nächste Lauf liest den Text beim Start. Die Historie behält die letzten Versionen mit Text,
+    Zeitpunkt und Kennung (nie Name) des Administrators.
+    """
+    if profil not in VORGABEN_PROFILE:
+        raise KeyError(profil)
+    with _sperre:
+        vorgaben = laden()["vorgaben"]
+        aktuell = vorgaben["profile"][profil]
+        if text == aktuell["text"]:
+            return None
+        eintrag = {"profil": profil, "version": aktuell["version"] + 1, "text": text,
+                   "zeit": datetime.now(UTC).isoformat(timespec="seconds"), "von": von}
+        profile = {**vorgaben["profile"], profil: {k: eintrag[k] for k in ("text", "version", "zeit", "von")}}
+        bereich_speichern("vorgaben", {"profile": profile,
+                                       "historie": (vorgaben["historie"] + [eintrag])[-VORGABEN_HISTORIE_MAX:]})
+        return eintrag
 
 
 def alles_ersetzen(daten: dict) -> None:

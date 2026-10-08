@@ -94,6 +94,12 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
    `python tools/richtlinien.py standard` die Standard-Anlagerichtlinien
    (config/richtlinien/), liest sie und handelst in ihrem Rahmen. Eigene
    Richtlinien entstehen bei Bedarf in einer Richtlinien-Session (siehe unten).
+   Der Lauf-Prompt nennt zusätzlich die Vorgaben der Auftraggeber je Portfolio
+   (Web-UI, Einrichtung → Vorgaben je Portfolio). Sie gelten ab sofort und
+   ergänzen die Anlagerichtlinie, sind aber nachrangig gegenüber regeln.md,
+   config/profile.json, dieser Datei und den Prüfungen der Werkzeuge; sie
+   betreffen nur Handelsentscheidungen. Widerspricht eine Vorgabe den Regeln,
+   gilt die Regel, und du nennst den Konflikt im Session-Eintrag.
 5. Ist ein Review fällig (erste Session nach Ablauf eines 7-, 28- oder
    91-Tage-Zeitraums seit dem Starttag, Drawdown-Stufe 2), erstelle es zuerst.
    Welche fällig sind, nennt `python tools/termine.py` (auch
@@ -174,6 +180,8 @@ und `session.py ende`.
       erwogene Alternativen und warum verworfen; Begründung
     - Ausgewogen: wie oben
     - Aggressiv: wie oben
+    - Vorgaben der Auftraggeber: je Portfolio Version und wie berücksichtigt
+      (oder "keine"); Konflikte mit den Regeln benennen
     - Offene Punkte und Termine für die nächste Session: ...
 
 Die Nummer NN zählt Session-Einträge eines Tages getrennt von den
