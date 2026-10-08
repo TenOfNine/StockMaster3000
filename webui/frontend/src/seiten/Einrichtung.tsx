@@ -914,7 +914,7 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
       id="zeitplan"
       titel="Sessions & Zeitplan"
       icon={<CalendarClock className="size-4" />}
-      untertitel="Sessions laufen im Container. Automatisch nur an Handelstagen (Xetra oder NYSE), nie parallel zu einer Session-Sperre."
+      untertitel="Sessions laufen im Container. Automatisch nur an Handelstagen (Xetra oder NYSE), nie parallel zu einer Session-Sperre. Unabhängig davon bucht der Hintergrunddienst jede Nacht um 00:30 Uhr alle Tage bis gestern nach (vorgemerkte Orders, Stops, Tagesabschluss)."
       status={automatik ? <Abzeichen ton="gut">Automatik an</Abzeichen> : <Abzeichen>Automatik aus</Abzeichen>}
     >
       <Schalter an={automatik} setAn={setAutomatik} label="Sessions automatisch starten" beschreibung="Mit den Voreinstellungen aus dem Bereich Claude; manueller Start jederzeit unter Claude-Läufe." />
@@ -1235,7 +1235,7 @@ function betroffene(liste: Ampel[]): string {
 }
 
 export function SystemBereich({ d }: { d: EinrichtungDaten }) {
-  const reihenfolge = useMemo(() => ["daten", "git", "kurse", "news", "claude", "worker"], []);
+  const reihenfolge = useMemo(() => ["daten", "git", "kurse", "news", "beobachtung", "nachbuchung", "claude", "worker"], []);
   const liste = [...d.systemstatus].sort((a, b) => reihenfolge.indexOf(a.id) - reihenfolge.indexOf(b.id));
   const gesamt = gesamtstufe(liste);
   const banner = BANNER[gesamt];

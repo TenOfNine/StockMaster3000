@@ -168,6 +168,52 @@ export interface Markt {
   eintraege: MarktEintrag[];
 }
 
+/** Kennzahlen eines Werts der Beobachtungsliste (Anteile als Brüche, 0,0123 = 1,23 %); fehlende Historie ist null. */
+export interface BeobachtungWert {
+  ticker: string;
+  name: string | null;
+  listen: string[];
+  waehrung: string | null;
+  handelbar: boolean;
+  grund: string | null;
+  veraltet?: boolean;
+  datum: string;
+  kurs: number;
+  tage: number;
+  rendite_1t: number | null;
+  rendite_5t: number | null;
+  rendite_20t: number | null;
+  rendite_60t: number | null;
+  abstand_hoch: number | null;
+  abstand_tief: number | null;
+  sma20_abstand: number | null;
+  sma50_abstand: number | null;
+  gap_1t: number | null;
+  volumen_relativ_1t: number | null;
+  volatilitaet_20t: number | null;
+}
+
+export type BeobachtungKennzahl = Exclude<keyof BeobachtungWert, "ticker" | "name" | "listen" | "waehrung" | "handelbar" | "grund" | "veraltet" | "datum" | "tage">;
+
+export interface Beobachtung {
+  zeit: string | null;
+  quelle: string | null;
+  anzahl: number;
+  mit_daten: number;
+  aktuell: number;
+  listen: { id: string; name: string; anzahl: number; mit_daten: number }[];
+  ohne_daten: string[];
+  veraltet: string[];
+  gesamt: number;
+  kennzahlen: { id: BeobachtungKennzahl; titel: string; art: "preis" | "prozent" | "prozent_abs" | "faktor" }[];
+  eintraege: BeobachtungWert[];
+}
+
+export interface BeobachtungKandidaten {
+  zeit: string | null;
+  bloecke: { titel: string; kennzahl: BeobachtungKennzahl; werte: BeobachtungWert[] }[];
+}
+
 export interface GeheimnisInfo {
   gesetzt: boolean;
   letzte4: string | null;

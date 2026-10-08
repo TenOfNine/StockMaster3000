@@ -122,6 +122,16 @@ die Nur-Anhängen-Regeln über diese lokale Historie. Kein Code-Pfad pusht Spiel
   nach Börsenschluss und täglich Tagesdaten. Liefert keine Quelle einen verlässlichen Kurs, zeigt „Markt &
   Kurse“ den letzten bekannten Kurs mit Kennzeichnung „veraltet“ – nur zur Anzeige, nie für Buchungen.
   Kontingente der Anbieter werden gezählt; ist eins erschöpft, übernimmt yfinance.
+- **Beobachtungsliste:** `tools/beobachtung.py` holt Tageskerzen von rund 600 Aktien und ETFs
+  (`config/beobachtung.json`, yfinance) und rechnet Kennzahlen für den Screener. Der Worker ruft sie je
+  Handelstag ab 23:15 Uhr ab (bei fehlendem Stand sofort, bei Fehlern stündlich); der Stand liegt in
+  `/data/.cache/beobachtung.json`. Anzeige: „Markt & Kurse“ → Beobachtungsliste. Von Hand, mit Netzwerk:
+  `docker compose exec worker python /app/framework/tools/beobachtung.py aktualisieren`; Werte ohne Daten nennt
+  derselbe Aufruf mit `pruefen`. Die Listen pflegen die Auftraggeber (Indexwechsel, Umbenennungen).
+- **Nachbuchung:** Der Worker bucht jede Nacht ab 00:30 Uhr bis gestern nach (Sperre der Art `nachbuchung`,
+  danach Bericht, Prüfung und lokaler Commit „session: Nachbuchung …“), damit vorgemerkte Orders nicht bis zur
+  nächsten Session liegen. Status: Einrichtung → Systemstatus → „Nachbuchung“. Bei Fehlern wiederholt er
+  stündlich; eine laufende Session oder ein laufender Lauf geht vor.
 - **News:** `tools/news.py` ruft die Feeds aus `config/news.json` und der Einrichtung alle 15 Minuten ab,
   dedupliziert und speichert nur Titel, Kurztext und Link in `news/` (nur anhängen).
 

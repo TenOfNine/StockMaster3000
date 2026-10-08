@@ -375,6 +375,55 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Worker mit CLI-Attrappe (erlauben, ablehnen, Zeitablauf und Wiederholung, harte Sperre, Abbruch, Rechte,
     Dienststart), Oberfläche und E2E; zusätzlich ein Lauf mit der echten CLI (erlaubt: awk liefert 42; Verbot: curl
     ohne Anfrage; Sperre: Umleitung, Datei nicht angelegt).
+38. Automatische Nachbuchung und Beobachtungsliste (2026-10-08; Rückmeldung eines Auftraggebers: vorgemerkte Orders
+    wurden nicht ausgeführt, und der StockMaster solle „sämtliche Aktien und ETFs“ analysieren, schien sich aber nur
+    auf die Werte in „Markt & Kurse“ zu beziehen; Entscheidung des Auftraggebers: feste, breite Liste mit yfinance und
+    Nachbuchung nach Handelsschluss automatisch): **Umgesetzt.** Ursachen: (a) Eine Market-Order außerhalb der
+    Handelszeit wird zur Eröffnung des nächsten Handelstags gebucht, aber erst bei der Nachbuchung (regeln.md
+    Abschnitt 6), und die lief nur beim Session-Start; der Hintergrunddienst rief sie nie auf. (b) Die Marktübersicht
+    zeigt nur Basiswerte, EUR/USD, den Benchmark-ETF und Werte aus Positionen und Orders; es gab keinen Blick auf das
+    übrige Universum. Maßnahmen:
+    1. **Nachbuchung nachts.** Der Worker bucht ab 00:30 Uhr deutscher Zeit nach: `session start --art nachbuchung`,
+       `bewertung nachbuchen`, `bewertung bericht`, `pruefe`, lokaler Commit „session: Nachbuchung bis … (automatisch)“,
+       `session ende`. 00:30 Uhr, weil `bewertung.py` nur Kalendertage bis gestern verarbeitet und der Handelstag
+       (NYSE, Gold, Brent bis 22:00 Uhr) dann abgeschlossen ist: Eine Order, die am Abend des 8.10. vorgemerkt wird,
+       wird zur Eröffnung am 9.10. ausgeführt und um 00:30 Uhr am 10.10. gebucht. Die neue Sperrart `nachbuchung`
+       (nur der Dienst setzt sie) verlangt keinen Session-Eintrag und erlaubt keine Orders; Person ist der
+       Auftraggeber des Zeitplans, sonst der erste in config/projekt.json. Nie während einer Session oder eines
+       Laufs; bei Fehlern jede Stunde erneut, die Sperre wird immer freigegeben. Der Systemstatus zeigt die Zeile
+       „Nachbuchung“ (Verbucht bis …, Rückstand gelb, ab drei Tagen rot, Prüfung mit Fehlern gelb). Sessions buchen
+       weiterhin selbst nach, falls noch etwas offen ist.
+    2. **Beobachtungsliste mit Screener.** `tools/beobachtung.py` rechnet aus Tagesdaten (yfinance, ein Jahr) Kennzahlen
+       für die Listen in `config/beobachtung.json` (DAX 40, S&P 500, Nasdaq-100-Zusätze, 12 ETFs an Xetra, 32 ETFs in
+       den USA; 603 Werte): Renditen über 1, 5, 20 und 60 Tage, Abstand zum 52-Wochen-Hoch und -Tief, Abstand zu den
+       20- und 50-Tage-Schnitten, Eröffnungslücke, Volumen gegen den 20-Tage-Schnitt und Schwankung. Der Befehl
+       `kandidaten` nennt je Kategorie die auffälligsten Werte (Tages- und Trendbewegung, Nähe zum Hoch, Volumen bei
+       steigendem Kurs, Lücke), `liste`, `werte` und `pruefen` zeigen mehr. Der Worker aktualisiert den Stand je Handelstag
+       ab 23:15 Uhr (nach Xetra und NYSE, vor der Nachbuchung; bei fehlendem Stand sofort; bei Fehlern stündlich); er liegt im
+       Zwischenspeicher (`.cache/`), nicht im Spielstand. Die Web-UI zeigt ihn im Reiter „Beobachtungsliste“ unter
+       „Markt & Kurse“ (Kandidaten, sortierbare Tabelle, Suche, Listenwahl), der Systemstatus als Zeile
+       „Beobachtungsliste“. CLAUDE.md (Schritt 6) und der Lauf-Prompt verlangen den Screener und nennen die geprüften
+       Kandidaten im Journal, auch bei Nichtstun.
+    Die Kennzahlen sind Orientierung und keine Kurse im Sinne von regeln.md Abschnitt 5: Gebucht wird nur zu
+    protokollierten Kursen aus `tools/kurse.py`, die Limits prüft `buchen.py` wie bisher.
+    **Konservative Auslegungen, bitte bestätigen:** (1) regeln.md nennt die Nachbuchung in Abschnitt 2 („beim nächsten
+    Session-Start“) und in Abschnitt 6 („Beim Session-Start …“). Der automatische Ablauf ist derselbe, regeln.md ist
+    nicht geändert. Vorschlag für den Wortlaut, den die Auftraggeber selbst einfügen: „Die Nachbuchung erfolgt
+    automatisch nachts durch den Hintergrunddienst (Sperre der Art nachbuchung) und spätestens beim Session-Start.“
+    (2) Der Euro Stoxx 50 fehlt in den Listen: Werte ohne Xetra-Notierung (.PA, .AS, …) sind nach regeln.md Abschnitt 3
+    nicht handelbar. (3) Der Mindestkurs von 1 EUR/USD wird je Wert geprüft; Werte darunter bleiben in der Liste,
+    sind aber als „nicht handelbar“ gekennzeichnet und fehlen in den Kandidaten. (4) Zu den Werten der Liste gibt es
+    keinen eigenen News-Feed; News bleiben bei Basiswerten, Positionen und Orders und kommen für Kandidaten aus der
+    Web-Suche.
+    **Grenzen:** yfinance ist inoffiziell (keine Zusicherung, kann drosseln oder Spalten ändern); der Abruf läuft in
+    Blöcken zu 80 Werten, ein ausgefallener Block lässt nur seine Werte fehlen (sie behalten den alten Stand mit dem
+    Kennzeichen „alter Stand“), ohne jede Antwort bleibt der bisherige Stand. Die Listen sind der Wissensstand vom
+    Herbst 2025 und nicht gegen echte Daten geprüft (Yahoo ist aus der Entwicklungsumgebung nicht erreichbar):
+    Indexwechsel und Umbenennungen sind nicht eingearbeitet; `python tools/beobachtung.py pruefen` und der
+    Systemstatus nennen Werte ohne Kursdaten, die Auftraggeber pflegen die Listen. Der Abruf selbst ist nur mit
+    synthetischen Antworten (beide Spaltenreihenfolgen, Einzelwert, Teilausfall) getestet, nicht gegen das echte
+    yfinance. Tests: Werkzeuge 234 (30 neue für den Screener, Session-Art, Nachbuchung unter der neuen Sperre),
+    Backend 286 (Worker-Takt von Nachbuchung und Abruf, Systemstatus, API), Oberfläche 34 und E2E.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

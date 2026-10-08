@@ -115,6 +115,22 @@ def markt() -> dict:
     return lesen.markt()
 
 
+@router.get("/beobachtung")
+def beobachtung(liste: Annotated[str | None, Query(pattern=r"^[a-z0-9_]{1,30}$")] = None,
+                suche: Annotated[str | None, Query(max_length=40)] = None,
+                sortiert: Annotated[str, Query(pattern=r"^[a-z0-9_]{1,30}$")] = "rendite_1t",
+                aufsteigend: bool = False, nur_handelbar: bool = True,
+                anzahl: Annotated[int, Query(ge=1, le=200)] = 50, offset: Annotated[int, Query(ge=0, le=5000)] = 0) -> dict:
+    """Beobachtungsliste mit Kennzahlen (Screener); gefüllt vom Hintergrunddienst nach Handelsschluss."""
+    return _404(lesen.beobachtung, liste, suche, sortiert, aufsteigend, anzahl, offset, nur_handelbar)
+
+
+@router.get("/beobachtung/kandidaten")
+def beobachtung_kandidaten(liste: Annotated[str | None, Query(pattern=r"^[a-z0-9_]{1,30}$")] = None,
+                           anzahl: Annotated[int, Query(ge=1, le=30)] = 8) -> dict:
+    return _404(lesen.beobachtung_kandidaten, anzahl, liste)
+
+
 @router.get("/news")
 def news(ticker: Annotated[str | None, Query(max_length=20)] = None,
          anzahl: Annotated[int, Query(ge=1, le=200)] = 50, tage: Annotated[int, Query(ge=1, le=365)] = 30) -> dict:

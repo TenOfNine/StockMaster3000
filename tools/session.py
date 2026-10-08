@@ -48,9 +48,10 @@ def person_pruefen(name: str) -> str:
     return person
 
 
-ARTEN = ("trading", "testsession", "richtlinien", "review")
+ARTEN = ("trading", "testsession", "richtlinien", "review", "nachbuchung")
 # Diese Arten schreiben keine Orders und keine Session-Einträge: keine Warnung zum fehlenden Session-Eintrag.
-OHNE_SESSION_EINTRAG = ("testsession", "richtlinien", "review")
+# nachbuchung: der Hintergrunddienst bucht nachts alle Tage bis gestern nach (bewertung.py braucht dafür eine Sperre).
+OHNE_SESSION_EINTRAG = ("testsession", "richtlinien", "review", "nachbuchung")
 
 
 def starten(name: str, git: bool = True, art: str = "trading") -> list[str]:
@@ -80,7 +81,7 @@ def starten(name: str, git: bool = True, art: str = "trading") -> list[str]:
             raise
         meldungen.append("Sperre im lokalen Spielstand-Git committet.")
     bezeichnung = {"testsession": "Testsession", "richtlinien": "Richtlinien-Session",
-                   "review": "Review-Session"}.get(art, "Session")
+                   "review": "Review-Session", "nachbuchung": "Nachbuchung"}.get(art, "Session")
     meldungen.insert(0, f"{bezeichnung} von {person} gestartet ({g.iso(g.jetzt())}).")
     return meldungen + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
@@ -118,7 +119,7 @@ def status() -> list[str]:
         return [start, "Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""
     art = {"testsession": " (Testsession)", "richtlinien": " (Richtlinien-Session)",
-           "review": " (Review-Session)"}.get(sperre.get("art"), "")
+           "review": " (Review-Session)", "nachbuchung": " (automatische Nachbuchung)"}.get(sperre.get("art"), "")
     return [start, f"Session von {sperre['person']} seit {sperre['start']}{zusatz}{art}."] + \
         [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
 
@@ -130,8 +131,8 @@ def main(argv=None) -> int:
     p.add_argument("--person", required=True, help="Kennung des Auftraggebers aus config/projekt.json")
     p.add_argument("--art", choices=ARTEN, default="trading",
                    help="testsession: Probelauf ohne Orders und Journal (AP12); richtlinien: Anlagerichtlinien "
-                        "ausformulieren (AP12 Punkt 2); review: nur Reviews und Bericht; alle ohne Warnung "
-                        "zum Session-Eintrag")
+                        "ausformulieren (AP12 Punkt 2); review: nur Reviews und Bericht; nachbuchung: nächtliche "
+                        "Nachbuchung des Hintergrunddienstes; alle ohne Warnung zum Session-Eintrag")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei anlegen (für Tests)")
     p = unter.add_parser("ende", help="Session beenden (Sperre entfernen und committen)")
     p.add_argument("--ohne-git", action="store_true", help="nur die Datei entfernen (für Tests)")

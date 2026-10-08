@@ -78,10 +78,15 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
 2. `python tools/session.py start --person <kennung>` (committet die Sperre
    lokal im Datenverzeichnis; kein git pull, kein git push). Für Testsession,
    Anlagerichtlinien und reine Reviews gilt `--art testsession`, `--art richtlinien`
-   bzw. `--art review` (ohne Session-Eintrag und ohne Orders).
+   bzw. `--art review` (ohne Session-Eintrag und ohne Orders). Die Art
+   `nachbuchung` setzt nur der Hintergrunddienst für die automatische
+   Nachbuchung.
    Ist die Sperre durch jemand anderen belegt: abbrechen und Bescheid geben.
 3. `python tools/bewertung.py nachbuchen` und `python tools/pruefe.py`.
-   Bei Fehlern im Prüfskript: erst klären, nicht handeln.
+   Bei Fehlern im Prüfskript: erst klären, nicht handeln. Der
+   Hintergrunddienst bucht nachts um 00:30 Uhr automatisch bis gestern nach
+   (Sperre der Art `nachbuchung`, nie von dir gesetzt); ist schon alles
+   gebucht, bleibt für diesen Schritt nichts zu tun.
 4. Lies regeln.md (Framework), strategie/*.md, lessons.md, ranking.md, das
    letzte Review und die Journal-Einträge der letzten Sessions
    (Datenverzeichnis). Sind Anlagerichtlinien noch die Vorlage
@@ -101,6 +106,17 @@ status` (Startdatum aus spiel.json im Datenverzeichnis). Wurde die Session
    Makrodaten und Termine über die Web-Suche (immer mit URL und Datum). Im
    Journal verweist du auf Meldungen aus dem Speicher mit News-ID, Link und
    Herausgeber (bei Google News ist der Link nur eine Weiterleitung).
+   Die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ,
+   regeln.md Abschnitt 3) deckt der Screener ab: `python tools/beobachtung.py
+   kandidaten` nennt aus rund 600 Werten (config/beobachtung.json) die
+   auffälligen nach Kategorien, `liste --sortiert <kennzahl>` und `werte
+   <ticker>` zeigen mehr. Die Kennzahlen stammen aus Tagesschlusskursen, die
+   der Hintergrunddienst nach Handelsschluss holt (kein `aktualisieren` in
+   der Session, kein Netzwerk nötig); sie sind Orientierung, keine Kurse im
+   Sinne von regeln.md Abschnitt 5. Einen Kandidaten prüfst du mit
+   `python tools/kurse.py aktuell <ticker>`, News und Limits; gebucht wird nur
+   zu protokollierten Kursen. Im Journal nennst du, welche Kandidaten du
+   geprüft hast, auch wenn du nichts tust.
 7. Entscheide je Portfolio im Rahmen seiner Anlagerichtlinie.
    Nichtstun ist eine gültige Entscheidung und wird kurz begründet.
 8. Für jede Order: erst Journal-Eintrag schreiben (Vorlage unten), dann

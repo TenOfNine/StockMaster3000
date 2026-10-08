@@ -28,7 +28,8 @@ def test_ueberblick_ohne_secrets(admin):
     assert daten["geheimnisse"]["claude_token"]["gesetzt"] is False
     assert {m["wert"] for m in daten["optionen"]["claude"]["modelle"]} >= {"opus", "sonnet", "haiku"}
     assert {a["wert"] for a in daten["optionen"]["claude"]["aufwand"]} >= {"low", "medium", "high"}
-    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "claude", "worker"}
+    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "beobachtung", "nachbuchung", "claude",
+                                                       "worker"}
     schritte = [s["schritt"] for s in daten["pflichtschritte"]]
     assert schritte == ["kursdaten", "claude"]  # Demo-Spiel ist gestartet
 
@@ -171,6 +172,77 @@ def test_news_status_ohne_abruf_und_mit_altem_format(admin, monkeypatch):
     leer = admin.get("/api/einrichtung").json()
     assert leer["news_status"] == {"zeit": None, "neu": 0, "anzahl_feeds": 0, "fehlerhaft": 0, "feeds": []}
     assert next(s for s in leer["systemstatus"] if s["id"] == "news")["stufe"] == "rot"
+
+
+def test_systemstatus_nachbuchung(admin, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from stockmaster import appdaten, einrichtung, worker
+
+    assert einrichtung.NACHBUCHUNG_UHR == "{:02d}:{:02d}".format(*worker.NACHBUCHUNG_AB)
+    gestern = (datetime.now(einrichtung.TZ) - timedelta(days=1)).date()
+
+    def zeile(bis, letzte=None, stunde=12):
+        class Uhr(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.now(tz).replace(hour=stunde, minute=0)
+
+        monkeypatch.setattr(einrichtung, "datetime", Uhr)
+        g = einrichtung._werkzeuge()["gemeinsam"]
+        monkeypatch.setattr(g, "portfolio_laden", lambda p: {"status": "aktiv", "verarbeitet_bis": bis.isoformat()})
+        monkeypatch.setattr(g, "vorhandene_profile", lambda: ["defensiv"])
+        monkeypatch.setattr(appdaten, "zustand_lesen", lambda name: {"nachbuchung_ergebnis": letzte} if letzte else {})
+        return einrichtung._nachbuchung_ampel()
+
+    aktuell = zeile(gestern)
+    assert aktuell["stufe"] == "gruen" and aktuell["text"] == f"Verbucht bis {gestern:%d.%m.%Y} (gestern)."
+    ein_tag = zeile(gestern - timedelta(days=1))
+    assert ein_tag["stufe"] == "gelb" and "1 Tag im Rückstand" in ein_tag["text"] and ein_tag["link"] == "#zeitplan"
+    assert zeile(gestern - timedelta(days=1), stunde=1)["stufe"] == "gruen"  # um 00:30 läuft sie erst
+    assert zeile(gestern - timedelta(days=3))["stufe"] == "rot"
+    gut = {"zeit": "2026-10-12T00:31:00+00:00", "ok": True, "pruefung_ok": True,
+           "meldung": "bis 11.10.2026 gebucht; Prüfung bestanden"}
+    assert zeile(gestern, gut)["stufe"] == "gruen" and "Prüfung bestanden" in zeile(gestern, gut)["text"]
+    schlecht = {**gut, "ok": False, "meldung": "Fehler: Keine Tagesdaten für ^GSPC", "pruefung_ok": None}
+    assert zeile(gestern, schlecht)["stufe"] == "gelb" and "Keine Tagesdaten" in zeile(gestern, schlecht)["text"]
+    mit_fehlern = {**gut, "pruefung_ok": False, "meldung": "bis 11.10.2026 gebucht; Prüfung mit Fehlern: FEHLER [Cash]"}
+    ergebnis = zeile(gestern, mit_fehlern)
+    assert ergebnis["stufe"] == "gelb" and ergebnis["details"][0]["titel"] == "Prüfung nach der Nachbuchung"
+
+
+def test_systemstatus_beobachtungsliste(admin, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from stockmaster import appdaten, einrichtung, worker
+
+    assert einrichtung.BEOBACHTUNG_UHR == "{:02d}:{:02d}".format(*worker.BEOBACHTUNG_AB)
+
+    def zeile(stand, letzte=None):
+        monkeypatch.setattr(einrichtung, "_cache", lambda name: stand if name == "beobachtung.json" else {})
+        monkeypatch.setattr(appdaten, "zustand_lesen", lambda name: {"beobachtung_ergebnis": letzte} if letzte else {})
+        return einrichtung._beobachtung_ampel()
+
+    def stand(vor=timedelta(hours=2), anzahl=603, mit_daten=590, **zusatz):
+        return {"zeit": (datetime.now(UTC) - vor).isoformat(), "quelle": "yfinance", "anzahl": anzahl,
+                "mit_daten": mit_daten, "veraltet": [], "ohne_daten": ["X.DE"], "eintraege": {"SAP.DE": {}}, **zusatz}
+
+    leer = zeile({})
+    assert leer["id"] == "beobachtung" and leer["stufe"] == "gelb" and "Noch kein Abruf" in leer["text"]
+    fehler = {"zeit": "2026-10-12T23:16:00+02:00", "ok": False, "meldung": "Fehler: Keine Kursdaten erhalten"}
+    ohne_daten = zeile({}, fehler)
+    assert ohne_daten["stufe"] == "rot" and "Keine Kursdaten erhalten" in ohne_daten["text"]
+    gut = zeile(stand())
+    assert gut["stufe"] == "gruen" and "590 von 603 Werten" in gut["text"]
+    assert gut["details"][0]["titel"] == "1 Werte ohne Kursdaten" and gut["details"][0]["text"] == "X.DE"
+    assert zeile(stand(vor=timedelta(days=6)))["stufe"] == "gelb"  # überfällig
+    assert "Überfällig" in zeile(stand(vor=timedelta(days=6)))["text"]
+    assert zeile(stand(mit_daten=300))["stufe"] == "gelb"  # große Lücke
+    assert zeile(stand(veraltet=["SIE.DE"]))["stufe"] == "gelb"
+    nach_fehler = zeile(stand(), fehler)
+    assert nach_fehler["stufe"] == "gelb" and "fehlgeschlagen" in nach_fehler["text"]
+    viele = zeile(stand(ohne_daten=[f"T{i}.DE" for i in range(25)]))
+    assert viele["details"][0]["text"].endswith(" …") and viele["details"][0]["anzahl"] == 25
 
 
 def test_zeitplan_validiert(admin):
