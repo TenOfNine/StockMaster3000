@@ -96,7 +96,14 @@ def prompt(art: str, auftrag) -> str:
                 "gestartet oder liegt das Startdatum (`python tools/session.py status`) in der Zukunft, lehnen die "
                 "Werkzeuge Orders ab: Dann nur Marktüberblick und Session-Eintrag, keine Order versuchen. "
                 "Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
-                "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle.")
+                "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle. "
+                "Für die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ) nutze den Screener: "
+                "`python tools/beobachtung.py kandidaten` nennt auffällige Werte aus rund 600 Aktien und ETFs "
+                "(Kennzahlen aus Tagesdaten, vom Hintergrunddienst nach Handelsschluss aktualisiert; `aktualisieren` "
+                "nicht aufrufen). Die Kennzahlen sind nur Orientierung: Prüfe Kandidaten mit "
+                "`python tools/kurse.py aktuell <ticker>` und News; gebucht wird nur zu protokollierten Kursen. "
+                "Nenne im Journal die geprüften Kandidaten, auch wenn du nichts tust. Der Hintergrunddienst bucht "
+                "nachts automatisch nach; ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung.")
     if art == "review":
         return ("Erstelle nur die fälligen Reviews und den Bericht (CLAUDE.md, Schritte 2 bis 5, 10 bis 12), "
                 "ohne Orders: `python tools/buchen.py` nicht aufrufen. Starte die Sperre mit "
