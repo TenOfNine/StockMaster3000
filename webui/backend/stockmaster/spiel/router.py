@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from .. import appdaten
 from ..auth import DB, Angemeldet, angemeldet, begrenzen
 from . import lesen
 
@@ -113,6 +114,13 @@ def kurs_ticker() -> list[dict]:
 @router.get("/markt")
 def markt() -> dict:
     return lesen.markt()
+
+
+@router.get("/vorgaben")
+def vorgaben() -> dict:
+    """Vorgaben der Auftraggeber je Portfolio (nur lesen; ändern dürfen nur Administratoren in der Einrichtung)."""
+    return {"profile": {profil: {k: e[k] for k in ("text", "version", "zeit")}
+                        for profil, e in appdaten.laden()["vorgaben"]["profile"].items()}}
 
 
 @router.get("/beobachtung")

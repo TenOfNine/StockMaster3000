@@ -423,7 +423,7 @@ def ueberblick(db: DB) -> dict:
     quellen = kursquellen()
     news = news_konfig_wirksam()
     return {
-        "einstellungen": {k: v for k, v in app.items() if k != "migration"},
+        "einstellungen": {k: v for k, v in app.items() if k not in ("migration", "vorgaben")},
         "geheimnisse": {name: appdaten.geheimnis_info(name) for name in appdaten.GEHEIMNISSE},
         "optionen": {
             "claude": claude_optionen.optionen(),
@@ -809,6 +809,51 @@ def automatik_schalten(daten: AutomatikDaten, request: Request, db: DB, admin: A
     audit(db, admin.id, "einrichtung_automatik", request, meta={"automatik": daten.an})
     db.commit()
     return {"ok": True, "automatik": daten.an}
+
+
+# --------------------------------------------------------------------------
+# Vorgaben der Auftraggeber je Portfolio (Entscheidung 39)
+
+VORGABEN_HISTORIE_ANZEIGE = 100
+STEUERZEICHEN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
+
+
+class VorgabeDaten(Streng):
+    text: str = Field(max_length=appdaten.VORGABEN_MAX_ZEICHEN * 2)
+
+    @field_validator("text")
+    @classmethod
+    def _text(cls, wert: str) -> str:
+        wert = wert.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if STEUERZEICHEN.search(wert):
+            raise ValueError("Der Text enthält Steuerzeichen.")
+        if len(wert) > appdaten.VORGABEN_MAX_ZEICHEN:
+            raise ValueError(f"Höchstens {appdaten.VORGABEN_MAX_ZEICHEN} Zeichen.")
+        return wert
+
+
+def vorgaben_ueberblick() -> dict:
+    vorgaben = appdaten.laden()["vorgaben"]
+    return {"profile": vorgaben["profile"], "max_zeichen": appdaten.VORGABEN_MAX_ZEICHEN,
+            "historie": list(reversed(vorgaben["historie"]))[:VORGABEN_HISTORIE_ANZEIGE]}
+
+
+@router.get("/vorgaben")
+def vorgaben_lesen() -> dict:
+    return vorgaben_ueberblick()
+
+
+@router.put("/vorgaben/{profil}")
+def vorgabe_speichern(profil: Literal["defensiv", "ausgewogen", "aggressiv"], daten: VorgabeDaten, request: Request,
+                      db: DB, admin: Admin2FA) -> dict:
+    """Neue Version der Vorgabe; gilt ab dem nächsten Lauf. Unveränderter Text legt keine Version an."""
+    begrenzen(f"vorgaben:{admin.id}", 30, 60)
+    eintrag = appdaten.vorgaben_aendern(profil, daten.text, admin.kennung)
+    if eintrag:
+        audit(db, admin.id, "einrichtung_vorgabe", request, ziel=profil,
+              meta={"version": eintrag["version"], "zeichen": len(daten.text)})
+        db.commit()
+    return {"ok": True, "geaendert": eintrag is not None, **vorgaben_ueberblick()}
 
 
 # --------------------------------------------------------------------------
