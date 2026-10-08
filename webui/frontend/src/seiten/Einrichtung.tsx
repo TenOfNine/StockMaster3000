@@ -19,14 +19,15 @@ import {
   PlugZap,
   RefreshCw,
   Rocket,
+  ScrollText,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, Seitenkopf, Skelett } from "@/components/ui";
-import { api, ApiFehler, rohAnfrage, type Ampel, type AmpelDetail, type EigenerFeed, type EinrichtungDaten, type GeheimnisInfo, type NewsFeedStatus, type NewsStatus, type TestErgebnis, type Voreinstellung, type ZeitplanTermin } from "@/lib/api";
+import { Abzeichen, Dialog, Eingabe, Feld, Fehleranzeige, Karte, KarteKopf, Knopf, Leer, Mono, PROFIL_FARBE, PROFIL_NAME, Seitenkopf, Skelett } from "@/components/ui";
+import { api, ApiFehler, PROFILE, rohAnfrage, type Ampel, type AmpelDetail, type EigenerFeed, type EinrichtungDaten, type GeheimnisInfo, type NewsFeedStatus, type NewsStatus, type Profil, type TestErgebnis, type Voreinstellung, type VorgabenDaten, type ZeitplanTermin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { relativ, zeit } from "@/lib/format";
@@ -36,6 +37,7 @@ const BEREICHE = [
   { id: "kursdaten", titel: "Kursdaten", icon: <LineChart className="size-4" /> },
   { id: "news", titel: "News", icon: <Newspaper className="size-4" /> },
   { id: "zeitplan", titel: "Sessions & Zeitplan", icon: <CalendarClock className="size-4" /> },
+  { id: "vorgaben", titel: "Vorgaben je Portfolio", icon: <ScrollText className="size-4" /> },
   { id: "spielstart", titel: "Spielstart", icon: <Rocket className="size-4" /> },
   { id: "sicherung", titel: "Sicherung", icon: <ArchiveRestore className="size-4" /> },
   { id: "system", titel: "Systemstatus", icon: <Activity className="size-4" /> },
@@ -65,6 +67,7 @@ function useAktion<E = unknown, V = void>(ausfuehren: (v: V) => Promise<E>, erfo
       setMeldung({ ok: true, ...(typeof ergebnis === "string" ? { text: ergebnis } : ergebnis) });
       void client.invalidateQueries({ queryKey: ["einrichtung"] });
       void client.invalidateQueries({ queryKey: ["ueberblick"] });
+      void client.invalidateQueries({ queryKey: ["vorgaben"] });
     },
     onError: (f) => setMeldung({ ok: false, text: fehlerText(f) }),
   });
@@ -181,7 +184,7 @@ export function Einrichtung() {
     <div className="einblenden">
       <Seitenkopf
         titel="Einrichtung"
-        untertitel="Alles, was diese Instanz braucht: Claude, Kursdaten, News, Zeitplan, Spielstart und Sicherung. Gespeichert wird in der App (App-Verzeichnis im Volume), nicht im Stack und nicht im Spielstand."
+        untertitel="Alles, was diese Instanz braucht: Claude, Kursdaten, News, Zeitplan, Vorgaben je Portfolio, Spielstart und Sicherung. Gespeichert wird in der App (App-Verzeichnis im Volume), nicht im Stack und nicht im Spielstand."
       />
       {!d ? (
         <Skelett className="h-[600px] rounded-2xl" />
@@ -227,6 +230,7 @@ export function Einrichtung() {
             <KursBereich d={d} />
             <NewsBereich d={d} />
             <ZeitplanBereich d={d} />
+            <VorgabenBereich />
             <SpielstartBereich d={d} />
             <SicherungBereich />
             <SystemBereich d={d} />
@@ -966,6 +970,126 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
         </Link>
       </div>
       <Rueckmeldung meldung={speichern.meldung} />
+    </Bereich>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Vorgaben der Auftraggeber je Portfolio (Entscheidung 39)
+
+const VORGABE_BEISPIEL: Record<Profil, string> = {
+  defensiv: "Beispiel: Kapitalerhalt hat Vorrang. Nur handeln, wenn der mögliche Verlust bis zum Stop klein bleibt; Nichtstun kurz begründen.",
+  ausgewogen: "Beispiel: Nur mit konkretem Katalysator und Zeithorizont einsteigen; Gewinne nach Plan realisieren.",
+  aggressiv:
+    "Beispiel: Kein Trade ist besser als ein Verlust-Trade, aber Nichtstun ist nie neutral. Prüfe in jeder Session die Screener-Kandidaten und handle, sobald du nach Kosten einen plausiblen kleinen Gewinn siehst. Kein Zwangstrade: Ohne solchen Kandidaten begründe das Nichtstun mit den geprüften Werten.",
+};
+
+export function VorgabenBereich() {
+  const client = useQueryClient();
+  const abfrage = useQuery({ queryKey: ["vorgaben"], queryFn: () => api<VorgabenDaten>("/api/einrichtung/vorgaben") });
+  const [profil, setProfil] = useState<Profil>("aggressiv");
+  const [entwuerfe, setEntwuerfe] = useState<Partial<Record<Profil, string>>>({});
+  const d = abfrage.data;
+  const gespeichert = d?.profile[profil];
+  const text = entwuerfe[profil] ?? gespeichert?.text ?? "";
+  const geaendert = !!d && text.trim() !== gespeichert?.text;
+  const speichern = useAktion(
+    (p: Profil) => api<VorgabenDaten & { geaendert: boolean }>(`/api/einrichtung/vorgaben/${p}`, { methode: "PUT", daten: { text } }),
+    (e) => {
+      client.setQueryData<VorgabenDaten>(["vorgaben"], { profile: e.profile, max_zeichen: e.max_zeichen, historie: e.historie });
+      void client.invalidateQueries({ queryKey: ["vorgaben-lesen"] });
+      setEntwuerfe((alt) => ({ ...alt, [profil]: undefined }));
+      return e.geaendert ? `Gespeichert als Version ${e.profile[profil].version}; gilt ab dem nächsten Lauf.` : "Keine Änderung gegenüber der aktuellen Version.";
+    },
+  );
+  if (abfrage.isError) return <Fehleranzeige fehler={abfrage.error} erneut={() => void abfrage.refetch()} />;
+  const verlauf = d?.historie ?? [];
+  return (
+    <Bereich
+      id="vorgaben"
+      titel="Vorgaben je Portfolio"
+      icon={<ScrollText className="size-4" />}
+      untertitel="Weiche Textvorgaben der Auftraggeber an Claude, getrennt je Portfolio. Sie gelten ab dem nächsten Lauf und ergänzen die Anlagerichtlinie; die Regeln (regeln.md), die Limits und alle Prüfungen bleiben unberührt."
+      status={gespeichert && gespeichert.version > 0 ? <Abzeichen ton="gut">Version {gespeichert.version}</Abzeichen> : <Abzeichen>keine Vorgabe</Abzeichen>}
+    >
+      <Hinweisbox>
+        Die Vorgaben stehen im Lauf-Prompt und sind <span className="font-medium text-text">nachrangig</span>: Widerspricht eine Vorgabe den Regeln oder Limits, gilt die Regel, und Claude nennt den Konflikt im Session-Eintrag. Claude zitiert die Vorgaben dort
+        auch – bitte keine Namen oder personenbezogenen Daten eintragen.
+      </Hinweisbox>
+      {!d ? (
+        <Skelett className="h-48" />
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Portfolio">
+            {PROFILE.map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={profil === p}
+                onClick={() => setProfil(p)}
+                className={cn("inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] font-medium", profil === p ? "border-akzent bg-flaeche-3 text-text" : "border-rand text-text-2 hover:border-rand-stark")}
+              >
+                <span className="size-2 rounded-full" style={{ background: PROFIL_FARBE[p] }} aria-hidden />
+                {PROFIL_NAME[p]}
+                {d.profile[p].text && <span className="text-[11.5px] text-text-3">v{d.profile[p].version}</span>}
+              </button>
+            ))}
+          </div>
+          <Feld
+            id="vorgabe-text"
+            label={`Vorgabe für ${PROFIL_NAME[profil]}`}
+            hinweis={
+              gespeichert && gespeichert.version > 0
+                ? `Version ${gespeichert.version}, geändert ${relativ(gespeichert.zeit)} von ${gespeichert.von ?? "–"}. Leer lassen, um die Vorgabe zu entfernen.`
+                : "Noch keine Vorgabe. Leer lassen, wenn es keine geben soll."
+            }
+          >
+            <textarea
+              id="vorgabe-text"
+              value={text}
+              onChange={(e) => setEntwuerfe({ ...entwuerfe, [profil]: e.target.value })}
+              maxLength={d.max_zeichen * 2}
+              rows={7}
+              placeholder={VORGABE_BEISPIEL[profil]}
+              className="w-full rounded-lg border border-rand bg-flaeche-2 px-3 py-2 text-sm text-text placeholder:text-text-3 hover:border-rand-stark focus:border-akzent focus:ring-2 focus:ring-akzent/25 focus:outline-none"
+            />
+          </Feld>
+          <div className="flex flex-wrap items-center gap-3">
+            <Knopf variante="primaer" disabled={!geaendert || text.trim().length > d.max_zeichen} onClick={() => speichern.mutate(profil)} laedt={speichern.isPending}>
+              Speichern
+            </Knopf>
+            <Knopf variante="geist" disabled={entwuerfe[profil] === undefined} onClick={() => setEntwuerfe({ ...entwuerfe, [profil]: undefined })}>
+              Änderungen verwerfen
+            </Knopf>
+            <span className={cn("zahl ml-auto text-[12px]", text.trim().length > d.max_zeichen ? "text-schlecht" : "text-text-3")}>
+              {text.trim().length} / {d.max_zeichen} Zeichen
+            </span>
+          </div>
+          <Rueckmeldung meldung={speichern.meldung} />
+          <details className="rounded-xl border border-rand bg-flaeche-2/50 px-4 py-3">
+            <summary className="cursor-pointer text-[13px] font-medium text-text">Verlauf ({verlauf.length} {verlauf.length === 1 ? "Änderung" : "Änderungen"})</summary>
+            {verlauf.length === 0 ? (
+              <p className="mt-2 text-[12.5px] text-text-3">Noch keine Änderungen.</p>
+            ) : (
+              <ol className="mt-3 space-y-3">
+                {verlauf.map((v) => (
+                  <li key={`${v.profil}-${v.version}`} className="rounded-lg border border-rand bg-flaeche p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-text-3">
+                      <span>
+                        <span className="font-medium text-text">{PROFIL_NAME[v.profil]}</span> · Version {v.version} · {zeit(v.zeit)} · {v.von ?? "–"}
+                      </span>
+                      <Knopf klein variante="geist" onClick={() => { setProfil(v.profil); setEntwuerfe({ ...entwuerfe, [v.profil]: v.text }); }}>
+                        In den Editor übernehmen
+                      </Knopf>
+                    </div>
+                    <p className="mt-1.5 max-h-40 overflow-y-auto text-[12.5px] whitespace-pre-wrap text-text-2">{v.text || "(Vorgabe entfernt)"}</p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </details>
+        </>
+      )}
     </Bereich>
   );
 }

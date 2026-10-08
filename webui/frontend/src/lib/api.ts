@@ -168,6 +168,25 @@ export interface Markt {
   eintraege: MarktEintrag[];
 }
 
+/** Vorgabe der Auftraggeber für ein Portfolio (weicher Text, jede Änderung eine Version). */
+export interface Vorgabe {
+  text: string;
+  version: number;
+  zeit: string | null;
+  von: string | null;
+}
+
+export interface VorgabenDaten {
+  profile: Record<Profil, Vorgabe>;
+  max_zeichen: number;
+  /** Alle Fassungen, neueste zuerst. */
+  historie: (Vorgabe & { profil: Profil })[];
+}
+
+export interface VorgabenLesen {
+  profile: Record<Profil, Pick<Vorgabe, "text" | "version" | "zeit">>;
+}
+
 /** Kennzahlen eines Werts der Beobachtungsliste (Anteile als Brüche, 0,0123 = 1,23 %); fehlende Historie ist null. */
 export interface BeobachtungWert {
   ticker: string;

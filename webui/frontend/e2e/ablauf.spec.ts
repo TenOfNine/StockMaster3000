@@ -95,7 +95,7 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   await expect(page.getByText("Einrichtung noch nicht abgeschlossen")).toBeVisible();
   await page.getByRole("link", { name: /Claude verbinden/ }).last().click();
   await expect(page.getByRole("heading", { name: "Einrichtung", exact: true })).toBeVisible();
-  for (const bereich of ["Claude", "Kursdaten", "News", "Sessions & Zeitplan", "Spielstart", "Sicherung", "Systemstatus"]) {
+  for (const bereich of ["Claude", "Kursdaten", "News", "Sessions & Zeitplan", "Vorgaben je Portfolio", "Spielstart", "Sicherung", "Systemstatus"]) {
     await expect(page.getByRole("heading", { name: bereich, exact: true })).toBeVisible();
   }
   // Anmeldung über den Container: Dialog öffnet sich; ohne Hintergrunddienst wartet er auf den Link.
@@ -118,6 +118,19 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   await expect(page.locator('#system li[data-stufe="rot"]').filter({ has: page.getByText("Hintergrunddienst", { exact: true }) })).toBeVisible();
   await expect(page.locator('#system [role="status"][data-stufe="rot"]')).toContainText("Gesamtstatus: Handlungsbedarf");
   await expect(page.locator('#system li[data-stufe="gruen"]').filter({ hasText: "Datenverzeichnis" })).toBeVisible();
+
+  // Vorgaben je Portfolio: speichern (neue Version, Verlauf); im Portfolio sind sie nur lesbar.
+  const vorgabe = "E2E: Traden, sobald nach Kosten ein kleiner Gewinn sichtbar ist.";
+  await page.getByLabel("Vorgabe für Aggressiv").fill(vorgabe);
+  await page.locator("#vorgaben").getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page.getByText("Gespeichert als Version 1; gilt ab dem nächsten Lauf.")).toBeVisible();
+  await page.getByText(/Verlauf \(1 Änderung\)/).click();
+  await expect(page.locator("#vorgaben li").filter({ hasText: vorgabe })).toBeVisible();
+  await page.goto("/portfolios/aggressiv");
+  await page.getByRole("tab", { name: /Anlagerichtlinie/ }).click();
+  await expect(page.getByText("Vorgaben der Auftraggeber", { exact: true })).toBeVisible();
+  await expect(page.getByText(vorgabe)).toBeVisible();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
 });
 
 test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({ page, browser }) => {
