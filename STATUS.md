@@ -424,6 +424,36 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     synthetischen Antworten (beide Spaltenreihenfolgen, Einzelwert, Teilausfall) getestet, nicht gegen das echte
     yfinance. Tests: Werkzeuge 234 (30 neue für den Screener, Session-Art, Nachbuchung unter der neuen Sperre),
     Backend 286 (Worker-Takt von Nachbuchung und Abruf, Systemstatus, API), Oberfläche 34 und E2E.
+39. Vorgaben der Auftraggeber je Portfolio (2026-10-08; Frage eines Auftraggebers: ob sich die Regeln der drei Portfolios
+    in der Web-UI anpassen lassen, etwa „das aggressive Portfolio soll immer traden, sobald es irgendwo einen kleinen
+    Gewinn sieht; kein Trade ist besser als Verlust, aber Nichtstun ist nie grundsätzlich neutral“; Entscheidungen des
+    Auftraggebers: vorerst nur weiche Textvorgaben, keine Mindestschwelle für „kleinen Gewinn“, Änderungen gelten sofort
+    und erscheinen in einem Verlauf, nur Administratoren ändern): **Umgesetzt.** Einrichtung → „Vorgaben je Portfolio“:
+    je Portfolio ein Freitext (bis 4000 Zeichen). Jede Änderung ist eine Version (Text, Zeitpunkt, Kennung des
+    Administrators, nie Name) im Verlauf der App-Konfiguration (`einstellungen.json`, damit in der Sicherung; die
+    letzten 300 Fassungen); ein unveränderter Text legt keine Version an, eine alte Fassung lässt sich in den Editor
+    übernehmen und neu speichern. Schreiben dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag
+    `einrichtung_vorgabe` mit Version und Länge, ohne Text); lesen dürfen alle Angemeldeten (Reiter Anlagerichtlinie
+    im Portfolio, ohne Verfasser). Wirkung: Der Prompt eines Trading-Laufs enthält die Vorgaben zwischen den Marken
+    `VORGABE-BEGINN` und `VORGABE-ENDE` (Marken im Text werden entschärft) mit der Anweisung, dass sie die
+    Anlagerichtlinie ergänzen, **nachrangig** gegenüber regeln.md, config/profile.json, CLAUDE.md und den Prüfungen der
+    Werkzeuge sind, nichts erlauben, was dort verboten ist, und nur Handelsentscheidungen betreffen (nie Rechte,
+    Werkzeuge, Dateien oder Freigaben). Widerspricht eine Vorgabe den Regeln, gilt die Regel, und Claude nennt den
+    Konflikt im Session-Eintrag; dort trägt er je Portfolio Version und Umgang in der neuen Zeile „Vorgaben der
+    Auftraggeber“ ein. Das Lauf-Log nennt die Versionen. Die Vorgaben gelten ab dem nächsten gestarteten Lauf; ein
+    laufender Lauf behält seinen Stand. **Konservative Auslegungen, bitte bestätigen:** (1) Die Vorgaben ändern keine
+    Zahl-Limits: Hebel, Exposure, Cash-Quote und Positionsgröße bleiben in regeln.md Abschnitt 7 bzw.
+    config/profile.json. (2) CLAUDE.md nennt Nichtstun eine gültige Entscheidung und verlangt Kapitalerhalt vor Rendite;
+    eine Vorgabe kann die Anforderungen an die Begründung des Nichtstuns erhöhen („mit den geprüften Screener-Kandidaten
+    begründen“), aber keinen Zwangstrade erzwingen. Die Platzhalter-Beispiele im Editor sind so formuliert. (3) Die
+    Vorgaben stehen in der App-Konfiguration, nicht im Spielstand: Das Journal zitiert sie (mit Version), die
+    Prüfspur im Datenverzeichnis enthält also, was Claude erhalten hat, aber nicht den Verlauf der Texte selbst.
+    Grenzen: Eine Vorgabe ist eine Anweisung an ein Sprachmodell und keine Prüfung; ob sie befolgt wurde, zeigt nur der
+    Session-Eintrag. Eine Vorgabe wie „immer traden“ ohne Einschränkung steht im Konflikt mit der Haltung in CLAUDE.md
+    (Kapitalerhalt, Nichtstun ist gültig, Kosten von 1 EUR je Order plus 0,10 % Spread je Seite, Zertifikate 0,20 %); Claude
+    folgt dann der Regel und meldet den Konflikt. Tests: Backend (Versionen, Verlauf und Begrenzung, Audit ohne
+    Text, Rechte, Eingaben, Prompt mit Entschärfung der Marken), Oberfläche (Editor, Entwürfe je Portfolio, Verlauf,
+    Lese-Karte) und E2E.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
