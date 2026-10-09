@@ -88,9 +88,10 @@ Cockpit → Hinweis „Einrichtung noch nicht abgeschlossen“ → führt direkt
    „Lauf stoppen“).
 5. **Anlagerichtlinien:** Die Standard-Richtlinien (config/richtlinien) gelten automatisch ab Spielstart; wer
    sie anpassen will, startet unter Claude-Läufe den Lauf „Anlagerichtlinien ausformulieren (AP12)“. Vorher bietet sich die Testsession an (Art „Testsession ohne Trades“).
-6. **Spielstart:** nach der Freigabe (AP12) einmalig, mit Bestätigung; das Spiel beginnt in diesem Moment
-   (Starttag heute). Es gibt weder ein festes Start- noch ein Enddatum; ein früher gesetztes, noch
-   unberührtes Startdatum lässt sich auf heute vorziehen.
+6. **Spielstart:** Der erste Trading-Lauf (manuell oder geplant) startet das Spiel selbst (Starttag heute,
+   Standard-Anlagerichtlinien, Audit-Eintrag); alternativ einmalig von Hand mit Bestätigung. Es gibt weder ein
+   festes Start- noch ein Enddatum und keine Zeitfenster: Läufe starten jederzeit, geplante Läufe werden nie
+   übersprungen. Ein früher gesetztes, noch unberührtes Startdatum lässt sich auf heute vorziehen.
 7. **Sicherung** und 8. **Systemstatus** (Ampel je Bereich).
 
 ## Update einer bestehenden Installation (Migration)
@@ -165,7 +166,7 @@ Die Datenbank (Benutzer, Zwei-Faktor, Audit-Log) zusätzlich mit `pg_dump` siche
 | Claude-Test: „Token ungültig oder abgelaufen“ | Einrichtung → Claude → *Neu anmelden* (oder Token manuell neu erzeugen und eintragen). |
 | Anmeldung: „Der Code wurde abgelehnt“ | Code abgelaufen, schon benutzt oder unvollständig kopiert; *Neu starten* und den neuen Link verwenden. |
 | Anmeldung: „Claude Code hat keinen Anmeldelink ausgegeben“ | Das Ausgabeformat der CLI hat sich geändert; Token manuell erzeugen und eintragen, Fehler melden. |
-| Startdialog zeigt „Anlagerichtlinien fehlen“ oder „Das Startdatum ist …“ | Nur ein Hinweis, der Lauf startet trotzdem. Er kann dann nicht handeln: erst den Lauf „Anlagerichtlinien ausformulieren“ ausführen bzw. in der Einrichtung das Startdatum auf heute vorziehen (regeln.md 2 und 11). Geplante Trading-Läufe werden in diesem Fall mit Grund übersprungen. |
+| Geplanter Lauf zeigt „wartet“ | Eine andere Session ist gerade aktiv (Sperre). Der Termin wird nicht übersprungen: Er startet automatisch, sobald die Sperre frei ist (Prüfung alle 5 Minuten, Aufgabe nach 24 Stunden mit Vermerk). Hängt die Sperre, unter „Claude-Läufe“ den laufenden Lauf stoppen. |
 | Im Log: „Freigabe abgelehnt: Keine Entscheidung innerhalb von 3 Minuten“ | Niemand hat die Anfrage unter „Claude-Läufe“ entschieden (der Hinweis „n Freigaben offen“ steht in der Kopfzeile). Der Lauf geht ohne diesen Befehl weiter; Claude soll ihn nicht wiederholen. Die Wartezeit stellt `SM_FREIGABE_WARTEZEIT_SEKUNDEN` ein. |
 | Im Log: „Nicht freigebbar: …“ | Der Befehl liest nicht nur (z. B. Umleitung in eine Datei, Befehlsersetzung, fremder Pfad) und wird nie zur Entscheidung vorgelegt. Claude muss ihn anders formulieren; der Spielstand bleibt schreibgeschützt. |
 | Lauf endet mit „Kontingent erschöpft“ | Das Pro-Abo-Kontingent ist aufgebraucht; nach dem Zurücksetzen erneut starten. |

@@ -332,7 +332,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
 32. Das Ergebnis eines Claude-Laufs wird vollständig gespeichert und als Markdown angezeigt (vorher
     gekürzt auf 2.000 Zeichen). Die Erlaubnisliste der Läufe kennt `git -C <pfad> log/status/diff/show`;
     `git push`, `remote`, `config` und `reset` sind auch mit `-C` verboten.
-33. Läufe lassen sich jederzeit manuell und geplant starten und stoppen; es gibt kein festes Enddatum
+33. (Teile ersetzt durch Entscheidung 41: Vorprüfung, Überspringen und Startdatum-Sperre entfallen.) Läufe lassen sich jederzeit manuell und geplant starten und stoppen; es gibt kein festes Enddatum
     (regeln.md: „Kein festes Enddatum“) und kein zwingendes Startdatum für die App:
     - **Manuell** startet jeder Lauf immer (Admin, Bestätigung, Token, höchstens ein Lauf, Session-Sperre).
       Der Startdialog zeigt nur Hinweise (`GET /api/laeufe/vorpruefung`): Spiel nicht gestartet,
@@ -514,7 +514,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Auftraggeber“ ein. Das Lauf-Log nennt die Versionen. Die Vorgaben gelten ab dem nächsten gestarteten Lauf; ein
     laufender Lauf behält seinen Stand. **Konservative Auslegungen, bitte bestätigen:** (1) Die Vorgaben ändern keine
     Zahl-Limits: Hebel, Exposure, Cash-Quote und Positionsgröße bleiben in regeln.md Abschnitt 7 bzw.
-    config/profile.json. (2) CLAUDE.md nennt Nichtstun eine gültige Entscheidung und verlangt Kapitalerhalt vor Rendite;
+    config/profile.json. (2) [ersetzt durch Entscheidung 42] CLAUDE.md nannte Nichtstun eine gültige Entscheidung und verlangt Kapitalerhalt vor Rendite;
     eine Vorgabe kann die Anforderungen an die Begründung des Nichtstuns erhöhen („mit den geprüften Screener-Kandidaten
     begründen“), aber keinen Zwangstrade erzwingen. Die Platzhalter-Beispiele im Editor sind so formuliert. (3) Die
     Vorgaben stehen in der App-Konfiguration, nicht im Spielstand: Das Journal zitiert sie (mit Version), die
@@ -551,6 +551,48 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Internet gestellt werden. Tests: Anmeldung ohne Code (auch mit vorhandenem TOTP), Administrator ohne Zwei-Faktor,
     Anlegen mit gültigem, falschem und fehlendem Code, andere Admin-Aktionen ohne Code mit Passwortprüfung, E2E.
 
+
+41. Keine Zeitfenster und Datumsmechanik mehr (Umbau v2, Stufe B, Punkt 2). **Umgesetzt.** Als „Zeitfenster“ wurde
+    ausgelegt: alles, was einen Lauf oder eine Order wegen Datum, Wochentag, Uhrzeit oder Startdatum verhindert oder
+    einschränkt. Entfernt sind: die Startdatum-Sperre in `buchen.py` (`portfolio_pruefen`), die Vorprüfung und die
+    Hinweise im Startdialog (`GET /api/laeufe/vorpruefung`, `hinweise()`), die Prompt-Passage „nur recherchieren“, das
+    Überspringen geplanter Trading-Termine (kein Handelstag, Startdatum in der Zukunft, Richtlinien offen), das
+    30-Minuten-Fenster, die Pflichtschritte „Spiel starten“ und „Anlagerichtlinien“ der Einrichtung und der Abschnitt
+    „Modus bestimmen“ in CLAUDE.md (Entwicklung und Trading trennt nur noch der Auftrag). **Bleibt:** Kein Backdating
+    (regeln.md 1.3), Handelszeiten als Ausführungsbedingung (außerhalb vorgemerkt, nächste Gelegenheit), Kursalter,
+    Review-Rhythmus nach Spielzeit, die Wochentage und Uhrzeiten des Zeitplans selbst (der Zeitplan ist eine Einstellung
+    der Auftraggeber, keine Sperre). **Auslegungen:** (1) Ein geplanter Lauf wird nie übersprungen. Ist eine Session
+    aktiv (Sperre), wird er sichtbar zurückgestellt (`zeitplan_offen`, Status „wartet“ im Plan, Cockpit und Laufseite)
+    und alle fünf Minuten erneut versucht. (2) Nachholfenster: Fiel der Worker aus, wird ein verpasster Termin bis
+    120 Minuten danach nachgeholt; ein wartender Termin gibt nach 24 Stunden mit sichtbarem Vermerk auf (sonst
+    stauen sich Läufe beim nächsten Termin). Beides sind Betriebsgrenzen, keine Handelssperren. (3) Ist das Spiel beim
+    Start eines Trading-Laufs nicht initialisiert, startet der Lauf es selbst: Startdatum heute, Standard-
+    Anlagerichtlinien, Audit-Eintrag, Auslöser `lauf` in `spiel.json` (`init.py --freigabe <auftraggeber> --ausloeser
+    lauf`). Die Freigabe nach AP12 erteilt damit der Auftraggeber, der den Lauf startet bzw. den Zeitplan eingerichtet
+    hat. (4) Nachbuchung und Standard-Richtlinien warten nicht mehr auf das Startdatum. **Ersetzt** die Regeln der
+    Entscheidung 33 zu Vorprüfung, Überspringen und Startdatum. Tests: Werkzeuge (Order am Starttag und davor
+    Startdatum nicht gesetzt), Backend (wartender Lauf, Nachholen, Aufgeben nach 24 h, Selbststart, Prompt), Oberfläche
+    und E2E.
+42. Handeln hat Vorrang vor Cash (Umbau v2, Stufe B, Punkt 3; Auftrag der Auftraggeber vom 2026-10-09). **Umgesetzt.**
+    CLAUDE.md (Rolle, Schritt 7 und 9, Session-Vorlage, Haltung), `config/richtlinien/*.md` (Standard-Richtlinie
+    Version 2), regeln.md 10 und 12 (v1.4) und die Prompts verlangen: Handeln ist der Normalfall, Cash die Ausnahme,
+    Nichthandeln ist nicht neutral (Cash bringt 2 %). Verzicht auf eine Order nur, wenn (a) keine Order alle harten
+    Limits einhält und einen positiven Szenario-Erwartungswert nach Kosten hat, (b) Drawdown-Stufe 2 oder Portfolio-
+    Stopp gilt oder (c) kein verlässlicher Kurs vorliegt. Beweislast je Session und Portfolio: eine Order (Journal-ID)
+    oder die belegte Ausnahme mit Zahlen (Verlust bis Stop gegen Limit, Erwartungswert nach Kosten, geprüfte
+    Kandidaten) in der neuen Pflichtzeile „Handlung oder Ausnahme“; zusätzlich die Zeile „Cashquote“ (Zielwert: die
+    Mindest-Cashquote des Profils). Kosten bleiben Teil der Abwägung (kein Churning). **Ersetzt** Entscheidung 39,
+    Auslegung 2 (Nichtstun gültig, Kapitalerhalt vor Rendite); Vorgaben der Auftraggeber bleiben nachrangig gegenüber den
+    Regeln, die Platzhaltertexte im Editor sind angepasst. **Prüfung:** `pruefe.py` und das Cockpit warnen (nie Fehler)
+    bei einer durchschnittlichen Cashquote über Mindestquote plus 25 Punkten in den letzten fünf NAV-Tagen (Cockpit und
+    `pruefe.py`, nur aktive Portfolios) und bei Sessions ohne Order und ohne belegte Ausnahme; die Session-Warnung gilt
+    erst für Sessions ab `handeln.pflicht_ab` (2026-10-09) in `config/projekt.json`, damit die Historie unverändert
+    bleibt. Schwellen stehen in `config/projekt.json` (`handeln`). **Migration:** Der Worker aktualisiert unveränderte ältere Standard-Richtlinien
+    selbst (Version im Kopf; Historie-Zeile „Standard-Update“); angepasste Richtlinien bleiben stehen und werden im
+    Befund genannt. **Auslegungen:** (1) „Verlässlicher Kurs“ heißt: Kurs aus `tools/kurse.py`, nicht älter als 30
+    Minuten während der Handelszeit, protokolliert; fehlt er, ist (c) erfüllt. (2) Für die Pflichtzeile gilt nur die Order bzw. Ausnahme
+    der jeweiligen Session. (3) Die harten Limits und Kosten bleiben unverändert.
+    Grenze: Eine Anweisung an ein Sprachmodell ist keine Prüfung; die Warnungen machen Abweichungen sichtbar.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

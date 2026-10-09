@@ -77,6 +77,9 @@ News, Journal, Reviews, Strategien) lebt in einem eigenen Datenverzeichnis
 (`STOCKMASTER_DATA_DIR`, im Container `/data`) mit eigenem, lokalem Git als
 Prüfspur, ohne Remote. Im Betrieb läuft alles im Docker-Stack; Sessions
 starten in der Web-UI oder per Zeitplan.
+Sessions sind an kein Datum und keine Uhrzeit gebunden; der erste
+Trading-Lauf startet das Spiel selbst, geplante Läufe werden nie
+übersprungen. Handeln hat Vorrang vor Cash (regeln.md 12).
 
 ## Schnellstart
 
