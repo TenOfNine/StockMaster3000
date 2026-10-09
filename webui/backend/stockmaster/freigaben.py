@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import select, update
 
 from . import freigabe_regeln
-from .auftraege import Admin2FA
+from .auftraege import AdminPflicht
 from .auth import DB, Angemeldet, Streng, audit, begrenzen
 from .config import einstellungen
 from .db import jetzt_utc, neue_sitzung, utc
@@ -138,7 +138,7 @@ def liste(db: DB, _benutzer: Angemeldet, lauf: Annotated[str | None, Query(max_l
 
 
 @router.post("/{freigabe_id}/entscheidung")
-def entscheiden(freigabe_id: str, daten: Entscheidung, request: Request, db: DB, admin: Admin2FA) -> dict:
+def entscheiden(freigabe_id: str, daten: Entscheidung, request: Request, db: DB, admin: AdminPflicht) -> dict:
     begrenzen(f"freigabe:{admin.id}", 60, 60)
     zeile = db.get(Freigabe, freigabe_id)
     if zeile is None:

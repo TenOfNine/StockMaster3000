@@ -40,7 +40,7 @@ Betrieb und Tests: webui/BETRIEB.md.
 | --- | --- | --- |
 | W1 Grundgerüst und Docker | Compose mit proxy, api, db; interne Netze, Secrets, Healthchecks, Härtung; Caddy mit lokaler CA und Heimnetz-Schranke; Rauchtest (webui/deploy/rauchtest.sh) | Dienste worker und redis kommen mit W8/W9 |
 | W2 Datenbank und RLS | Schema und Alembic-Migration (Benutzer, Sitzungen, Audit-Log), PostgreSQL mit Anwendungsrolle ohne Superuser- und BYPASSRLS-Recht | RLS-Policies folgen mit den mandantenbezogenen Tabellen (Arbeitsbereiche, W5); in Stufe 1 gibt es nur eigene Sitzungen |
-| W3 Authentifizierung | erfüllt: Admin-Erstanlage per CLI (nur einmal), Login, serverseitige Sitzungen, CSRF und Origin-Prüfung, TOTP, Sperre bei Fehlversuchen, Passwortwechsel | Rate-Limits im Prozess statt Redis (ein API-Prozess) |
+| W3 Authentifizierung | erfüllt: Admin-Erstanlage per CLI (nur einmal), Login (nur Passwort seit Entscheidung 40), serverseitige Sitzungen, CSRF und Origin-Prüfung, TOTP nur beim Anlegen von Benutzern, Sperre bei Fehlversuchen, Passwortwechsel | Rate-Limits im Prozess statt Redis (ein API-Prozess) |
 | W4 Benutzerverwaltung | erfüllt: Admin-Router (anlegen, sperren, Passwort und Zwei-Faktor zurücksetzen, Admin-Rolle), Kennung je Benutzer, Matrixtest | – |
 | W7 Lesedienst | erfüllt für ein Spiel-Repository: Portfolios, Trades, NAV, Limits, Journal (J und S), Reviews, Strategie, Lessons, Ranking, STATUS.md, config, Git-Log | je Arbeitsbereich mit W5 |
 | W8 Werkzeug-Ausführung | nur lesend: tools/pruefe.py in eigenem Prozess mit Zeitlimit, Zertifikatsrechner über tools/produkte.py | Positivliste im Worker mit W8 |
@@ -134,9 +134,80 @@ webui/PORTAINER.md.
 - News: tools/news.py (feedparser), Standard-Feeds in config/news.json, Änderungen in der App.
 - Claude: Optionen für Modell und Aufwand in config/claude.json, geprüft gegen `claude --help` der im
   Image fest installierten Claude Code 2.1.292 (`--model`, `--effort low|medium|high|xhigh|max`).
-- Web-UI: neue Seite „Einrichtung“ (Admin mit Zwei-Faktor), bisherige Seite heißt „Roadmap & Status“,
+- Web-UI: neue Seite „Einrichtung“ (Admin; Zwei-Faktor-Pflicht entfiel mit Entscheidung 40), bisherige Seite heißt „Roadmap & Status“,
   neue Seite „Claude-Läufe“, Cockpit-Hinweis auf offene Pflichtschritte, „Markt & Kurse“ mit Quelle,
   Zeitstempel und Verzögerung, News im Cockpit und je Wert, Sicherung (Export/Restore).
+
+## Umbau v2 (2026-10-09)
+
+Auftrag der Auftraggeber: sechs Änderungen in vier Stufen (je Stufe ein Branch und ein Pull Request). Die
+Auftraggeber erlauben dafür ausdrücklich Änderungen an regeln.md, CLAUDE.md, config/ und den Anlagerichtlinien;
+das ist eine Ausnahme zu CLAUDE.md Grundsatz 1 und gilt nur für diesen Auftrag. Unklarheiten entscheidet Claude
+selbst (regeln.md 12, Entscheidung 34); die Auslegungen stehen unter den Entscheidungen ab Nr. 40.
+
+| Stufe | Punkte | Branch |
+| --- | --- | --- |
+| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` |
+| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` |
+| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` |
+| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` |
+
+Ausgangslage (geprüft am 2026-10-09 auf `main` nach Pull Request 19): Werkzeuge 234 Tests, Backend 292, Oberfläche 39
+(Komponenten) und E2E grün. Abweichungen zwischen Doku und Code, die dabei auffielen: (a) Entscheidung 37 und 39 sowie
+`einrichtung.py` sprechen von „Administratoren mit Zwei-Faktor“; mit Stufe A gilt das nicht mehr. (b) CLAUDE.md
+beschreibt „Modus bestimmen“ über das Startdatum, `buchen.py` lehnt Orders vor dem Startdatum ab, und der Lauf-Prompt
+beschränkt Läufe dann auf Recherche (Entscheidung 33); alles entfällt mit Stufe B. (c) Ein Verzeichnis `webui/worker`
+gibt es nicht; der Hintergrunddienst ist `webui/backend/stockmaster/worker.py` (Dienst `worker` im Compose).
+(d) „Drei Profile“ ist in `tools/gemeinsam.py` (`PROFILE`), `appdaten.py` (`VORGABEN_PROFILE`), im Frontend
+(`Profil`-Typ, Farben, Namen) und in regeln.md fest verdrahtet.
+
+Inventur je Punkt (alle betroffenen Stellen, Stand vor der Umsetzung):
+
+1. **Zwei-Faktor.** Backend: `auth.py` (Schritte `totp` und `zwei_faktor_einrichten` in `naechster_schritt`, Route
+   `POST /api/auth/totp`, `totp/einrichten`, `totp/aktivieren`, `totp/deaktivieren`; Admins ohne TOTP kommen nicht
+   über die Anmeldung hinaus), `auftraege.py` (`admin_2fa`/`Admin2FA`: Admin und `totp_aktiv`), verwendet in
+   `einrichtung.py` (Router und rund 20 Routen), `auftraege.py` (Läufe starten und abbrechen), `freigaben.py`,
+   `sicherung.py`; `admin.py` (`benutzer_anlegen` verlangt nur das Passwort, `zwei-faktor-zuruecksetzen`);
+   `__main__.py` (Text der Admin-Erstanlage). Frontend: `Anmeldung.tsx` (TotpFormular, ZweiFaktorEinrichten),
+   `Verwaltung.tsx` (Konto: Zwei-Faktor, Benutzer anlegen), `api.ts` (`Schritt`), Hinweistexte in `Einrichtung.tsx`.
+   Tests: `conftest.py` (`anmelden` mit TOTP-Schritt, Fixture `admin` mit TOTP), `test_auth.py`, `test_admin.py`,
+   `test_einrichtung.py`, E2E (`ablauf.spec.ts`, TOTP-Hilfen). Doku: AUFTRAG_WEBUI.md (Abschnitte 6 und 7),
+   BETRIEB.md, PORTAINER.md, README.md, STATUS.md (W3, Entscheidungen 16, 37, 39).
+2. **Zeitfenster und Datumsmechanik.** `tools/buchen.py` (`portfolio_pruefen`: „Das Spiel beginnt erst am …“),
+   `tools/init.py` (`--vorziehen`, `vorziehen_pruefen`), `auftraege.py` (`lauf_pruefen(geplant=True)`, `hinweise`,
+   `GET /api/laeufe/vorpruefung`), `worker.py` (`zeitplan`: Termin ohne Handelstag wird „kein Handelstag“, Fenster von
+   30 Minuten, `geplanten_lauf_anlegen` meldet „übersprungen“ und markiert den Termin als erledigt;
+   `richtlinien_standard` und `nachbuchen` warten auf das Startdatum), `claude_lauf.py` (Prompt: „nur Marktüberblick …
+   keine Order versuchen“), `einrichtung.py` (Pflichtschritt „Spiel starten“, Checkliste, `vorziehen`),
+   `tools/session.py`/`richtlinien.py` (Anzeige „Startdatum fehlt“), Frontend `Laeufe.tsx` (Hinweise im Startdialog)
+   und `Einrichtung.tsx` (Spielstart, Vorziehen), CLAUDE.md („Modus bestimmen“, Entwicklungsmodus), STATUS.md
+   (Entscheidungen 26, 33, 34). Bewusst nicht betroffen: die Wochentage und Uhrzeiten des Zeitplans selbst (fester
+   Termin nur für geplante Läufe), Handelszeiten als Bedingung der Ausführung (regeln.md 5), das Kursalter, der
+   Review-Rhythmus nach Spielzeit und die Kalendertage der Nachbuchung.
+3. **Handeln priorisieren.** CLAUDE.md (Rolle, Haltung, Schritt 7, Session-Vorlage), `config/richtlinien/*.md`,
+   `claude_lauf.py` (Trading-Prompt, `vorgaben_prompt`), regeln.md 10 und 12, STATUS.md Entscheidung 39 (Auslegung 2),
+   Platzhalter im Editor „Vorgaben je Portfolio“ (`Einrichtung.tsx`), Warnungen in `pruefe.py` und im Cockpit
+   (`Cockpit.tsx`, Backend `spiel/lesen.py`).
+4. **Viertes Portfolio.** `tools/gemeinsam.py` (`PROFILE`, `limits_fuer`, `richtlinien_offen`, `vorhandene_profile`),
+   `init.py`, `limits.py`, `buchen.py` (argparse `choices`), `bewertung.py` (Benchmark je Profil, Ranking, NAV),
+   `pruefe.py` (Prüfungen je Profil, Abschnitt 7 gegen `config/profile.json`), `termine.py` (Monatsvergleich),
+   `richtlinien.py`, `config/profile.json`, `config/richtlinien/`, `appdaten.py` (`VORGABEN_PROFILE`),
+   `spiel/lesen.py` und `spiel/router.py` (Portfolios, Ranking), `einrichtung.py` (Vorgaben), `claude_lauf.py`,
+   `webui/demo/demo_daten.py`, Frontend (`Profil`-Typ in `api.ts`, `PROFIL_NAME`/`PROFIL_FARBE` in `ui.tsx`,
+   `styles.css`, `Bausteine.tsx`, `AppRahmen.tsx`, Cockpit, Portfolio, Analyse, Anmeldung, App-Icon
+   `assets/icons/drei-profile.svg`), Tests (`tests/` und `webui/backend/tests/`), regeln.md 2, 7, 9, 11, README,
+   CLAUDE.md, KONZEPT.md.
+5. **Ausführung ohne Lauf.** Heute führt nur `buchen.py` (Market-Order bei offenem Markt, sonst Vormerkung) und
+   `bewertung.py nachbuchen` (Tageskerzen, nur bis gestern, mit Session-Sperre) Orders aus; der Worker bucht nachts um
+   00:30 nach (Entscheidung 38). Es gibt keine fortlaufende Ausführung während der Handelszeit. Vorhandene Bausteine:
+   `kurse.py` (protokollierte aktuelle Kurse, `markt_offen`, Eröffnung und Schluss je Börse mit Frühschlüssen),
+   `buchen.kauf_ausfuehren`/`verkauf_ausfuehren`/`wertlos_ausbuchen`, `limits.pruefe_kauf`, `gemeinsam.schreibsperre`
+   (kurze Sperre je Schreibvorgang, nicht über Lesen-Ändern-Schreiben), Kurstakt des Workers (`planen`, 5 Minuten).
+   Es fehlen: Ausführung von Stops, Kurszielen, Knock-outs und Limits in Echtzeit, eine Sperre über den ganzen
+   Buchungsvorgang, ein idempotenter Orderzustand, die Anzeige „automatisch ausgeführt“ und der Systemstatus
+   „Ausführung“.
+6. **Regeln.** regeln.md Abschnitte 2, 5, 6, 7, 9, 11, 12, 13, 14; `config/profile.json`; Prüfung
+   `pruefe_config_regeln` gleicht Abschnitt 7 mit `config/profile.json` ab (liest die Profile aus der Tabelle).
 
 ## Entscheidungen
 
@@ -273,7 +344,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
       Abo-Kontingent; Reviews laufen immer.
     - **Stoppen:** „Lauf stoppen“ bricht den laufenden Lauf ab (Prozess beendet, Sperre freigegeben);
       „Automatik stoppen/starten“ auf der Lauf-Seite schaltet den Zeitplan (`POST
-      /api/einrichtung/zeitplan/automatik`, Admin + Zwei-Faktor, Audit) ohne die Termine zu verlieren.
+      /api/einrichtung/zeitplan/automatik`, Admin, Audit; Zwei-Faktor entfiel mit Entscheidung 40) ohne die Termine zu verlieren.
       `GET /api/laeufe/plan` zeigt Automatik, nächste Termine (Wochentag, Zeitzone, Handelstag) und die
       zuletzt übersprungenen.
     - **Startdatum:** Vorschlag im Spielstart ist heute. Ein bereits gesetztes, noch unberührtes
@@ -353,7 +424,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     `control_request` an. Der Worker legt je Anfrage eine Zeile in `freigaben` an, die Web-UI zeigt sie im Lauf
     (Befehl Zeichen für Zeichen ohne Ligaturen, Beschreibung von Claude als ungeprüft gekennzeichnet, Restzeit,
     „Erlauben“ und „Ablehnen“) und als Hinweis „n Freigaben offen“ in der Kopfzeile für Administratoren.
-    Entscheiden dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag `freigabe_erlaubt` oder
+    Entscheiden dürfen nur Administratoren (seit Entscheidung 40 ohne Zwei-Faktor-Code; CSRF, Audit-Eintrag `freigabe_erlaubt` oder
     `freigabe_abgelehnt`; wer entschieden hat, steht nur in der Datenbank). Eine Freigabe gilt nur für den einen
     Aufruf. Ohne Entscheidung verfällt die Anfrage nach `SM_FREIGABE_WARTEZEIT_SEKUNDEN` (Standard 180) und gilt als
     abgelehnt; deshalb hängen auch Zeitplan-Läufe nie. Ein schon abgelehnter oder verfallener Befehl wartet im
@@ -432,7 +503,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     je Portfolio ein Freitext (bis 4000 Zeichen). Jede Änderung ist eine Version (Text, Zeitpunkt, Kennung des
     Administrators, nie Name) im Verlauf der App-Konfiguration (`einstellungen.json`, damit in der Sicherung; die
     letzten 300 Fassungen); ein unveränderter Text legt keine Version an, eine alte Fassung lässt sich in den Editor
-    übernehmen und neu speichern. Schreiben dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag
+    übernehmen und neu speichern. Schreiben dürfen nur Administratoren (seit Entscheidung 40 ohne Zwei-Faktor-Code; CSRF, Audit-Eintrag
     `einrichtung_vorgabe` mit Version und Länge, ohne Text); lesen dürfen alle Angemeldeten (Reiter Anlagerichtlinie
     im Portfolio, ohne Verfasser). Wirkung: Der Prompt eines Trading-Laufs enthält die Vorgaben zwischen den Marken
     `VORGABE-BEGINN` und `VORGABE-ENDE` (Marken im Text werden entschärft) mit der Anweisung, dass sie die
@@ -454,6 +525,32 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     folgt dann der Regel und meldet den Konflikt. Tests: Backend (Versionen, Verlauf und Begrenzung, Audit ohne
     Text, Rechte, Eingaben, Prompt mit Entschärfung der Marken), Oberfläche (Editor, Entwürfe je Portfolio, Verlauf,
     Lese-Karte) und E2E.
+40. Zwei-Faktor nur beim Anlegen neuer Benutzer (Umbau v2, Stufe A, Auftrag der Auftraggeber vom 2026-10-09).
+    **Umgesetzt.** Die Anmeldung braucht nur noch das Passwort (Argon2id, serverseitige Sitzung, CSRF, Rate-Limit und
+    Sperre bei Fehlversuchen bleiben); der Schritt „Code bei der Anmeldung“ (`POST /api/auth/totp`) und der Pflichtschritt
+    „Zwei-Faktor einrichten“ sind entfernt. Einen TOTP-Code verlangt die Web-UI nur noch, wenn ein Administrator einen
+    neuen Benutzer anlegt (`POST /api/admin/benutzer` mit Feld `code`, zusätzlich zur Passwortbestätigung). Alle
+    bisherigen „Admin + Zwei-Faktor“-Aktionen (Einrichtung, Vorgaben, Zeitplan und Automatik, Freigaben von
+    Claude-Befehlen, Claude-Anmeldung, Spielstart, Sicherung, Läufe starten und abbrechen) behalten die
+    Admin-Rollenprüfung (Rolle aus der Datenbank, Nicht-Admins erhalten 404), CSRF, den Audit-Eintrag und die schon
+    vorhandene Passwortbestätigung, aber keinen Code (Abhängigkeit `admin_pflicht`, vorher `admin_2fa`). Vorhandene
+    TOTP-Geheimnisse bleiben gespeichert und gültig (der Master-Schlüssel verschlüsselt sie weiter); niemand wird
+    ausgesperrt, es gibt keine Datenbankmigration. Die Admin-Erstanlage per Kommandozeile bleibt.
+    **Auslegungen:** (1) „Die Anmeldung braucht nur noch das Passwort“ gilt für alle Konten, auch für Benutzer mit
+    schon aktivem TOTP; ihr Code wird nur beim Anlegen von Benutzern gebraucht. (2) Ein Administrator ohne eingerichtetes
+    Zwei-Faktor kann sich anmelden und alles andere tun, aber keine Benutzer anlegen (409 mit Hinweis); der Dialog
+    „Benutzer anlegen“ führt die Einrichtung (QR-Code, Bestätigung) gleich mit. (3) Ein falscher Code liefert 403 statt 401
+    (die Oberfläche würde bei 401 abmelden), ist auf fünf Versuche je Minute begrenzt und steht als `totp_fehlgeschlagen`
+    im Audit-Log; ein erfolgreiches Anlegen vermerkt `zwei_faktor` im Audit-Eintrag. (4) Zwei-Faktor lässt sich im Konto
+    mit Passwort und Code auch von Administratoren wieder abschalten (vorher gesperrt). (5) Der Zugriff von außen
+    „Variante B“ (AUFTRAG_WEBUI.md 4.7) setzte Zwei-Faktor für alle bei der Anmeldung voraus; sie war nie umgesetzt und
+    ist ohne neuen Auftrag nicht zulässig.
+    **Das senkt die Schutzstufe:** Wer das Passwort eines Administrators kennt, kann ohne zweiten Faktor die Einrichtung
+    ändern, Claude-Befehle freigeben und das Spiel starten. Die Heimnetz-Schranke (Entscheidung 6: Caddy und API
+    lassen nur private Netze zu, `SM_ERLAUBTE_NETZE`) trägt diese Schutzstufe weiter; die Web-UI darf deshalb nicht ins
+    Internet gestellt werden. Tests: Anmeldung ohne Code (auch mit vorhandenem TOTP), Administrator ohne Zwei-Faktor,
+    Anlegen mit gültigem, falschem und fehlendem Code, andere Admin-Aktionen ohne Code mit Passwortprüfung, E2E.
+
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
+import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -22,9 +22,7 @@ export function Anmeldung() {
       <main className="flex items-center justify-center px-5 py-12 sm:px-10">
         <div className="einblenden w-full max-w-[400px]">
           {!sitzung && <LoginFormular />}
-          {schritt === "totp" && <TotpFormular />}
           {schritt === "passwort_aendern" && <PasswortFormular />}
-          {schritt === "zwei_faktor_einrichten" && <ZweiFaktorEinrichten />}
           <p className="mt-10 text-center text-[12px] text-text-3">
             Nur im Heimnetz erreichbar · Simulation mit Spielgeld, keine Anlageberatung
           </p>
@@ -151,41 +149,6 @@ function CodeEingabe(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-function TotpFormular() {
-  const { setzen, abmelden } = useAuth();
-  const [code, setCode] = useState("");
-  const [fehler, setFehler] = useState<string | null>(null);
-  const [laedt, setLaedt] = useState(false);
-  const senden = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLaedt(true);
-    setFehler(null);
-    try {
-      setzen(await api<SitzungAntwort>("/api/auth/totp", { daten: { code } }));
-    } catch (err) {
-      setFehler(fehlertext(err));
-      setCode("");
-    } finally {
-      setLaedt(false);
-    }
-  };
-  return (
-    <form onSubmit={senden} className="space-y-4">
-      <Kopf icon={<Smartphone className="size-5" />} titel="Zwei-Faktor-Code" text="Gib den sechsstelligen Code aus deiner Authenticator-App ein." />
-      <Fehlerzeile text={fehler} />
-      <Feld id="code" label="Code">
-        <CodeEingabe id="code" autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />
-      </Feld>
-      <Knopf type="submit" variante="primaer" className="w-full" laedt={laedt} disabled={code.length !== 6}>
-        Bestätigen
-      </Knopf>
-      <Knopf type="button" variante="geist" className="w-full" onClick={() => void abmelden()}>
-        Abbrechen
-      </Knopf>
-    </form>
-  );
-}
-
 const passwortSchema = z
   .object({
     alt: z.string().min(1, "Bitte das bisherige Passwort eingeben."),
@@ -274,7 +237,7 @@ export function ZweiFaktorEinrichten({ eingebettet, fertig }: { eingebettet?: bo
         <Kopf
           icon={<ShieldCheck className="size-5" />}
           titel="Zwei-Faktor einrichten"
-          text="Für Administratoren Pflicht. Du brauchst eine Authenticator-App (z. B. Aegis, 2FAS, Google Authenticator)."
+          text="Wird nur zum Anlegen neuer Benutzer gebraucht. Du brauchst eine Authenticator-App (z. B. Aegis, 2FAS, Google Authenticator)."
         />
       )}
       <Fehlerzeile text={fehler} />

@@ -398,7 +398,7 @@ def test_spielstart_einmalig(frisch, client):
                                                   "eintraege": [{"ticker": "EUNL.DE", "kurs": "100", "veraltet": False}]}))
     geheimnis = pyotp.random_base32()
     benutzer_anlegen("admin2@example.org", ADMIN_PW, admin=True, totp=geheimnis)
-    anmelden(client, "admin2@example.org", ADMIN_PW, geheimnis)
+    anmelden(client, "admin2@example.org", ADMIN_PW)
     liste = client.get("/api/einrichtung").json()["spielstart"]
     assert liste["bereit"] is True and liste["gestartet"] is False
     heute = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
@@ -433,7 +433,7 @@ def test_startdatum_vorziehen_per_api(frisch, client):
                                                   "eintraege": [{"ticker": "EUNL.DE", "kurs": "100", "veraltet": False}]}))
     geheimnis = pyotp.random_base32()
     benutzer_anlegen("admin3@example.org", ADMIN_PW, admin=True, totp=geheimnis)
-    anmelden(client, "admin3@example.org", ADMIN_PW, geheimnis)
+    anmelden(client, "admin3@example.org", ADMIN_PW)
     liste = client.get("/api/einrichtung").json()["spielstart"]
     heute_ziel = liste["vorschlag_startdatum"]
     assert liste["vorziehen"]["moeglich"] is False  # noch nicht gestartet

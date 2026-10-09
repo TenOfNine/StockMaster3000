@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from . import sicherheit as s
-from .auth import DB, Streng, angemeldet, audit, begrenzen
+from .auth import DB, Streng, angemeldet, audit, begrenzen, totp_pruefen_fuer
 from .db import jetzt_utc, utc
 from .modelle import AuditEintrag, AuthSitzung, Benutzer
 
@@ -46,6 +46,8 @@ class NeuerBenutzer(Streng):
     email: str = Field(min_length=3, max_length=254, pattern=EMAIL_MUSTER)
     anzeigename: str = Field(min_length=1, max_length=80)
     passwort: str = Field(min_length=1, max_length=200, description="Passwort des Admins zur Bestätigung")
+    code: str = Field(min_length=6, max_length=8, pattern=r"^[0-9 ]+$",
+                      description="Aktueller Zwei-Faktor-Code des Admins (nur hier verlangt)")
 
 
 class Bestaetigung(Streng):
@@ -109,7 +111,9 @@ def benutzer_liste(db: DB) -> list[BenutzerZeile]:
 
 @router.post("/benutzer", response_model=Einmalpasswort, status_code=201)
 def benutzer_anlegen(daten: NeuerBenutzer, request: Request, db: DB, admin: Admin) -> Einmalpasswort:
+    """Einzige Aktion mit Zwei-Faktor-Code: Passwortbestätigung und TOTP des Administrators (Entscheidung 40)."""
     bestaetigen(admin, daten.passwort)
+    totp_pruefen_fuer(db, admin, daten.code, request)
     email = daten.email.lower()
     if db.scalar(select(Benutzer).where(Benutzer.email == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Diese E-Mail-Adresse ist bereits vergeben.")
@@ -118,7 +122,7 @@ def benutzer_anlegen(daten: NeuerBenutzer, request: Request, db: DB, admin: Admi
                    passwort_hash=s.passwort_hash(passwort), passwortwechsel_noetig=True)
     db.add(neu)
     db.flush()
-    audit(db, admin.id, "benutzer_angelegt", request, ziel=neu.id)
+    audit(db, admin.id, "benutzer_angelegt", request, ziel=neu.id, meta={"zwei_faktor": True})
     db.commit()
     return Einmalpasswort(benutzer=zeile(neu), einmalpasswort=passwort)
 

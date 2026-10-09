@@ -172,7 +172,7 @@ export function Einrichtung() {
   if (!sitzung?.benutzer?.ist_admin)
     return (
       <Karte className="mt-6">
-        <Leer titel="Nur für Administratoren" text="Die Einrichtung ist Administratoren mit Zwei-Faktor-Anmeldung vorbehalten. Den Projektstand zeigt „Roadmap & Status“." aktion={<Link to="/roadmap" className="text-[13px] font-medium text-akzent hover:underline">Zu Roadmap & Status</Link>} />
+        <Leer titel="Nur für Administratoren" text="Die Einrichtung ist Administratoren vorbehalten. Den Projektstand zeigt „Roadmap & Status“." aktion={<Link to="/roadmap" className="text-[13px] font-medium text-akzent hover:underline">Zu Roadmap & Status</Link>} />
       </Karte>
     );
   if (daten.isError) return <Fehleranzeige fehler={daten.error} erneut={() => void daten.refetch()} />;

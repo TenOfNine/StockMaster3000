@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse
 from pydantic import Field
 
 from . import appdaten, auftraege
-from .auftraege import Admin2FA, admin_2fa
+from .auftraege import AdminPflicht, admin_pflicht
 from .auth import DB, Streng, audit, begrenzen
 from .config import einstellungen
 
@@ -196,7 +196,7 @@ def wiederherstellen(quelle: Path, einstellungen_uebernehmen: bool = True, gehei
 # --------------------------------------------------------------------------
 # API
 
-router = APIRouter(prefix="/api/sicherung", tags=["sicherung"], dependencies=[Depends(admin_2fa)])
+router = APIRouter(prefix="/api/sicherung", tags=["sicherung"], dependencies=[Depends(admin_pflicht)])
 
 
 class ExportDaten(Streng):
@@ -210,7 +210,7 @@ def _aufraeumen(pfad: Path) -> None:
 
 
 @router.post("/export")
-def export(daten: ExportDaten, request: Request, db: DB, admin: Admin2FA, hinterher: BackgroundTasks) -> FileResponse:
+def export(daten: ExportDaten, request: Request, db: DB, admin: AdminPflicht, hinterher: BackgroundTasks) -> FileResponse:
     begrenzen(f"sicherung:{admin.id}", 10, 3600)
     if daten.mit_geheimnissen and not daten.bestaetigt:
         raise HTTPException(422, "Eine Sicherung mit Secrets bitte ausdrücklich bestätigen.")
@@ -233,7 +233,7 @@ def export(daten: ExportDaten, request: Request, db: DB, admin: Admin2FA, hinter
 
 
 @router.post("/wiederherstellen")
-async def wiederherstellen_api(request: Request, db: DB, admin: Admin2FA, einstellungen_uebernehmen: bool = True) -> dict:
+async def wiederherstellen_api(request: Request, db: DB, admin: AdminPflicht, einstellungen_uebernehmen: bool = True) -> dict:
     from .admin import bestaetigen
 
     begrenzen(f"wiederherstellung:{admin.id}", 10, 3600)

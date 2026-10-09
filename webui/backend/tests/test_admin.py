@@ -1,7 +1,7 @@
 """Administration und Isolationsmatrix."""
 
 import pytest
-from conftest import ADMIN_PW, SCHLUESSEL, anmelden
+from conftest import ADMIN_PW, SCHLUESSEL, anmelden, benutzer_anlegen, totp_code
 
 ADMIN_ROUTEN = [("GET", "/api/admin/benutzer"), ("POST", "/api/admin/benutzer"), ("GET", "/api/admin/audit"),
                 ("GET", "/api/admin/system"), ("POST", "/api/admin/benutzer/x/passwort-zuruecksetzen"),
@@ -31,7 +31,7 @@ def test_benutzer_anlegen_und_erste_anmeldung(admin, app):
     from fastapi.testclient import TestClient
 
     antwort = admin.post("/api/admin/benutzer", json={"email": "Neu@Example.org", "anzeigename": "Neu",
-                                                       "passwort": ADMIN_PW})
+                                                       "passwort": ADMIN_PW, "code": totp_code(admin)})
     assert antwort.status_code == 201
     daten = antwort.json()
     assert daten["benutzer"]["email"] == "neu@example.org"
@@ -39,22 +39,23 @@ def test_benutzer_anlegen_und_erste_anmeldung(admin, app):
     with TestClient(app) as neu:
         assert anmelden(neu, "neu@example.org", daten["einmalpasswort"]) == "passwort_aendern"
     doppelt = admin.post("/api/admin/benutzer", json={"email": "neu@example.org", "anzeigename": "X",
-                                                       "passwort": ADMIN_PW})
+                                                       "passwort": ADMIN_PW, "code": totp_code(admin)})
     assert doppelt.status_code == 409
 
 
 def test_heimnetz_adressen_und_ungueltige_adressen(admin):
     antwort = admin.post("/api/admin/benutzer", json={"email": "kim@heimnetz.local", "anzeigename": "Kim",
-                                                       "passwort": ADMIN_PW})
+                                                       "passwort": ADMIN_PW, "code": totp_code(admin)})
     assert antwort.status_code == 201
     for falsch in ("ohne-at", "a@b@c", "leer @x.de"):
-        antwort = admin.post("/api/admin/benutzer", json={"email": falsch, "anzeigename": "X", "passwort": ADMIN_PW})
+        antwort = admin.post("/api/admin/benutzer", json={"email": falsch, "anzeigename": "X", "passwort": ADMIN_PW,
+                                                           "code": totp_code(admin)})
         assert antwort.status_code == 422, falsch
 
 
 def test_kritische_aktionen_brauchen_passwort(admin):
     antwort = admin.post("/api/admin/benutzer", json={"email": "z@example.org", "anzeigename": "Z",
-                                                       "passwort": "falsch"})
+                                                       "passwort": "falsch", "code": totp_code(admin)})
     assert antwort.status_code == 403
 
 
@@ -62,7 +63,7 @@ def test_sperren_und_zuruecksetzen(admin, app):
     from fastapi.testclient import TestClient
 
     neu = admin.post("/api/admin/benutzer", json={"email": "s@example.org", "anzeigename": "S",
-                                                   "passwort": ADMIN_PW}).json()
+                                                   "passwort": ADMIN_PW, "code": totp_code(admin)}).json()
     uid = neu["benutzer"]["id"]
     assert admin.post(f"/api/admin/benutzer/{uid}/aktiv", json={"passwort": ADMIN_PW, "aktiv": False}).json()["aktiv"] is False
     with TestClient(app) as gesperrt:
@@ -79,6 +80,38 @@ def test_letzter_admin_behaelt_rolle(admin):
     antwort = admin.post(f"/api/admin/benutzer/{ich}/admin", json={"passwort": ADMIN_PW, "ist_admin": False})
     assert antwort.status_code == 400
     assert admin.post(f"/api/admin/benutzer/{ich}/aktiv", json={"passwort": ADMIN_PW, "aktiv": False}).status_code == 400
+
+
+def test_benutzer_anlegen_verlangt_zwei_faktor_code(admin):
+    daten = {"email": "code@example.org", "anzeigename": "C", "passwort": ADMIN_PW}
+    assert admin.post("/api/admin/benutzer", json=daten).status_code == 422  # Code fehlt
+    falsch = admin.post("/api/admin/benutzer", json={**daten, "code": "000000"})
+    assert falsch.status_code == 403 and "Code" in falsch.json()["detail"]
+    ok = admin.post("/api/admin/benutzer", json={**daten, "code": totp_code(admin)})
+    assert ok.status_code == 201
+    audit = admin.get("/api/admin/audit").json()
+    assert any(e["aktion"] == "totp_fehlgeschlagen" for e in audit)
+    assert any(e["aktion"] == "benutzer_angelegt" for e in audit)
+
+
+def test_benutzer_anlegen_ohne_eingerichteten_zwei_faktor(client):
+    benutzer_anlegen("admin0@example.org", ADMIN_PW, admin=True)
+    assert anmelden(client, "admin0@example.org", ADMIN_PW) == "fertig"
+    antwort = client.post("/api/admin/benutzer", json={"email": "n@example.org", "anzeigename": "N",
+                                                       "passwort": ADMIN_PW, "code": "123456"})
+    assert antwort.status_code == 409 and "Zwei-Faktor einrichten" in antwort.json()["detail"]
+
+
+def test_andere_admin_aktionen_brauchen_keinen_code(admin):
+    neu = admin.post("/api/admin/benutzer", json={"email": "k@example.org", "anzeigename": "K", "passwort": ADMIN_PW,
+                                                   "code": totp_code(admin)}).json()
+    uid = neu["benutzer"]["id"]
+    for pfad, daten in ((f"/api/admin/benutzer/{uid}/passwort-zuruecksetzen", {"passwort": ADMIN_PW}),
+                        (f"/api/admin/benutzer/{uid}/zwei-faktor-zuruecksetzen", {"passwort": ADMIN_PW}),
+                        (f"/api/admin/benutzer/{uid}/aktiv", {"passwort": ADMIN_PW, "aktiv": True}),
+                        (f"/api/admin/benutzer/{uid}/admin", {"passwort": ADMIN_PW, "ist_admin": False})):
+        assert admin.post(pfad, json=daten).status_code == 200, pfad
+        assert admin.post(pfad, json={**daten, "passwort": "falsch"}).status_code == 403, pfad  # Passwort bleibt
 
 
 def test_audit_log(admin):

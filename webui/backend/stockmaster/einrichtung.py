@@ -1,6 +1,6 @@
 """Einrichtung: Einstellungen und Secrets in der App, Verbindungstests, Systemstatus, Spielstart.
 
-Lesen und Schreiben nur für Admins mit Zwei-Faktor; jede Änderung mit CSRF-Prüfung (über die
+Lesen und Schreiben nur für Administratoren; jede Änderung mit CSRF-Prüfung (über die
 Anmeldung) und Audit-Eintrag ohne Werte. Secrets werden nie zurückgegeben, nur "gesetzt" und die
 letzten vier Zeichen.
 """
@@ -20,12 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, field_validator
 
 from . import appdaten, auftraege, claude_optionen
-from .auftraege import Admin2FA, admin_2fa
+from .auftraege import AdminPflicht, admin_pflicht
 from .auth import DB, Streng, audit, begrenzen
 from .config import einstellungen
 from .db import jetzt_utc
 
-router = APIRouter(prefix="/api/einrichtung", tags=["einrichtung"], dependencies=[Depends(admin_2fa)])
+router = APIRouter(prefix="/api/einrichtung", tags=["einrichtung"], dependencies=[Depends(admin_pflicht)])
 
 TZ = ZoneInfo("Europe/Berlin")
 FEED_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
@@ -459,7 +459,7 @@ class ClaudeDaten(Streng):
 
 
 @router.put("/claude")
-def claude_speichern(daten: ClaudeDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def claude_speichern(daten: ClaudeDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     for zweck, v in (("Trading-Session", daten.trading), ("Review/Bericht", daten.review)):
         fehler = claude_optionen.pruefen(v.modell.strip(), v.aufwand)
         if fehler:
@@ -486,7 +486,7 @@ class GeheimnisDaten(Streng):
 
 @router.put("/geheimnis/{name}")
 def geheimnis_setzen(name: Literal["claude_token", "kurs_key_finnhub", "kurs_key_twelvedata"], daten: GeheimnisDaten,
-                     request: Request, db: DB, admin: Admin2FA) -> dict:
+                     request: Request, db: DB, admin: AdminPflicht) -> dict:
     begrenzen(f"geheimnis:{admin.id}", 20, 3600)
     if name == "claude_token" and not daten.wert.startswith("sk-ant-"):
         raise HTTPException(422, "Das sieht nicht nach einem Claude-Token aus (beginnt mit 'sk-ant-'). "
@@ -502,7 +502,7 @@ def geheimnis_setzen(name: Literal["claude_token", "kurs_key_finnhub", "kurs_key
 
 @router.delete("/geheimnis/{name}")
 def geheimnis_loeschen(name: Literal["claude_token", "kurs_key_finnhub", "kurs_key_twelvedata"], request: Request,
-                       db: DB, admin: Admin2FA) -> dict:
+                       db: DB, admin: AdminPflicht) -> dict:
     appdaten.geheimnis_loeschen(name)
     audit(db, admin.id, "einrichtung_geheimnis_geloescht", request, ziel=name,
           meta={"text": f"{appdaten.GEHEIMNISSE[name]} gelöscht"})
@@ -542,7 +542,7 @@ def _anmeldung_laden(db, auftrag_id: str):
 
 
 @router.post("/claude/anmeldung")
-def claude_anmeldung_starten(request: Request, db: DB, admin: Admin2FA) -> dict:
+def claude_anmeldung_starten(request: Request, db: DB, admin: AdminPflicht) -> dict:
     """Startet `claude setup-token` im Worker und liefert den Anmeldelink."""
     from sqlalchemy import select
 
@@ -573,7 +573,7 @@ class AnmeldeCode(Streng):
 
 
 @router.post("/claude/anmeldung/{auftrag_id}/code")
-def claude_anmeldung_code(auftrag_id: str, daten: AnmeldeCode, request: Request, db: DB, admin: Admin2FA) -> dict:
+def claude_anmeldung_code(auftrag_id: str, daten: AnmeldeCode, request: Request, db: DB, admin: AdminPflicht) -> dict:
     from . import claude_anmeldung
 
     begrenzen(f"anmeldecode:{admin.id}", 10, 600)
@@ -600,7 +600,7 @@ def claude_anmeldung_code(auftrag_id: str, daten: AnmeldeCode, request: Request,
 
 
 @router.post("/claude/anmeldung/{auftrag_id}/abbrechen")
-def claude_anmeldung_abbrechen(auftrag_id: str, request: Request, db: DB, admin: Admin2FA) -> dict:
+def claude_anmeldung_abbrechen(auftrag_id: str, request: Request, db: DB, admin: AdminPflicht) -> dict:
     auftrag = _anmeldung_laden(db, auftrag_id)
     if auftrag.status in auftraege.OFFEN:
         auftrag.abbrechen = True
@@ -613,7 +613,7 @@ def claude_anmeldung_abbrechen(auftrag_id: str, request: Request, db: DB, admin:
 
 
 @router.post("/claude/test")
-def claude_test(request: Request, db: DB, admin: Admin2FA) -> dict:
+def claude_test(request: Request, db: DB, admin: AdminPflicht) -> dict:
     if not appdaten.geheimnis_info("claude_token")["gesetzt"]:
         raise HTTPException(409, "Zuerst ein Claude-Token hinterlegen.")
     return _test_ausfuehren(db, admin, request, "test_claude", {}, "einrichtung_claude_test")
@@ -630,7 +630,7 @@ class KursDaten(Streng):
 
 
 @router.put("/kursdaten")
-def kursdaten_speichern(daten: KursDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def kursdaten_speichern(daten: KursDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     if daten.anbieter != "keiner" and not appdaten.geheimnis_info(f"kurs_key_{daten.anbieter}")["gesetzt"]:
         raise HTTPException(422, f"Für {kursquellen()['anbieter'][daten.anbieter]['name']} zuerst den API-Key eintragen.")
     werte = daten.model_dump()
@@ -645,14 +645,14 @@ class KursTest(Streng):
 
 
 @router.post("/kursdaten/test")
-def kursdaten_test(daten: KursTest, request: Request, db: DB, admin: Admin2FA) -> dict:
+def kursdaten_test(daten: KursTest, request: Request, db: DB, admin: AdminPflicht) -> dict:
     if daten.anbieter != "yfinance" and not appdaten.geheimnis_info(f"kurs_key_{daten.anbieter}")["gesetzt"]:
         raise HTTPException(409, "Zuerst den API-Key eintragen.")
     return _test_ausfuehren(db, admin, request, "test_kurse", {"anbieter": daten.anbieter}, "einrichtung_kurse_test")
 
 
 @router.post("/kursdaten/abrufen")
-def kursdaten_abrufen(request: Request, db: DB, admin: Admin2FA) -> dict:
+def kursdaten_abrufen(request: Request, db: DB, admin: AdminPflicht) -> dict:
     return _test_ausfuehren(db, admin, request, "kurse_jetzt", {"historie": True}, "einrichtung_kurse_abruf")
 
 
@@ -699,7 +699,7 @@ class NewsDaten(Streng):
 
 
 @router.put("/news")
-def news_speichern(daten: NewsDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def news_speichern(daten: NewsDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     standard = {f["id"] for f in json.loads((einstellungen().framework_pfad / "config" / "news.json")
                                            .read_text(encoding="utf-8"))["feeds"]}
     unbekannt = [d for d in daten.deaktiviert if d not in standard]
@@ -731,12 +731,12 @@ class FeedTest(Streng):
 
 
 @router.post("/news/test")
-def news_test(daten: FeedTest, request: Request, db: DB, admin: Admin2FA) -> dict:
+def news_test(daten: FeedTest, request: Request, db: DB, admin: AdminPflicht) -> dict:
     return _test_ausfuehren(db, admin, request, "test_feed", {"url": daten.url}, "einrichtung_feed_test")
 
 
 @router.post("/news/abrufen")
-def news_abrufen(request: Request, db: DB, admin: Admin2FA) -> dict:
+def news_abrufen(request: Request, db: DB, admin: AdminPflicht) -> dict:
     return _test_ausfuehren(db, admin, request, "news_jetzt", {}, "einrichtung_news_abruf")
 
 
@@ -772,7 +772,7 @@ class ZeitplanDaten(Streng):
 
 
 @router.put("/zeitplan")
-def zeitplan_speichern(daten: ZeitplanDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def zeitplan_speichern(daten: ZeitplanDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     try:
         ZoneInfo(daten.zeitzone)
     except (ZoneInfoNotFoundError, ValueError):
@@ -797,7 +797,7 @@ class AutomatikDaten(Streng):
 
 
 @router.post("/zeitplan/automatik")
-def automatik_schalten(daten: AutomatikDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def automatik_schalten(daten: AutomatikDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     """Automatik ein- oder ausschalten, ohne den Zeitplan neu zu speichern (Start/Stopp per Klick)."""
     plan = appdaten.laden()["zeitplan"]
     if daten.an:
@@ -845,7 +845,7 @@ def vorgaben_lesen() -> dict:
 
 @router.put("/vorgaben/{profil}")
 def vorgabe_speichern(profil: Literal["defensiv", "ausgewogen", "aggressiv"], daten: VorgabeDaten, request: Request,
-                      db: DB, admin: Admin2FA) -> dict:
+                      db: DB, admin: AdminPflicht) -> dict:
     """Neue Version der Vorgabe; gilt ab dem nächsten Lauf. Unveränderter Text legt keine Version an."""
     begrenzen(f"vorgaben:{admin.id}", 30, 60)
     eintrag = appdaten.vorgaben_aendern(profil, daten.text, admin.kennung)
@@ -869,7 +869,7 @@ class SpielstartDaten(Streng):
 
 
 @router.post("/spielstart")
-def spielstart(daten: SpielstartDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def spielstart(daten: SpielstartDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     from .admin import bestaetigen
 
     bestaetigen(admin, daten.passwort)
@@ -902,7 +902,7 @@ class VorziehenDaten(Streng):
 
 
 @router.post("/spielstart/vorziehen")
-def spielstart_vorziehen(daten: VorziehenDaten, request: Request, db: DB, admin: Admin2FA) -> dict:
+def spielstart_vorziehen(daten: VorziehenDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     """Noch unberührtes Startdatum auf heute/den nächsten Handelstag vorziehen (tools/init.py --vorziehen)."""
     from .admin import bestaetigen
 

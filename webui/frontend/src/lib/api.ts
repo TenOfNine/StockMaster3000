@@ -2,7 +2,7 @@
 
 export type Profil = "defensiv" | "ausgewogen" | "aggressiv";
 export const PROFILE: Profil[] = ["defensiv", "ausgewogen", "aggressiv"];
-export type Schritt = "totp" | "passwort_aendern" | "zwei_faktor_einrichten" | "fertig";
+export type Schritt = "passwort_aendern" | "fertig";
 
 export interface Benutzer {
   id: string;
@@ -578,7 +578,7 @@ export async function api<T>(pfad: string, optionen: { methode?: string; daten?:
   if (!antwort.ok) {
     let nachricht = typeof daten?.detail === "string" ? daten.detail : `Fehler ${antwort.status}`;
     if (antwort.status === 422 && Array.isArray(daten?.felder) && daten.felder.length) nachricht += ` Bitte prüfen: ${daten.felder.join(", ")}.`;
-    if (antwort.status === 401 && !pfad.startsWith("/api/auth/login") && !pfad.startsWith("/api/auth/totp")) {
+    if (antwort.status === 401 && !pfad.startsWith("/api/auth/login")) {
       aufAbmeldung(401, nachricht);
     } else if (antwort.status === 403 && nachricht.startsWith("Anmeldung unvollständig")) {
       aufAbmeldung(403, nachricht);

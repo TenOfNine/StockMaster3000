@@ -77,17 +77,19 @@ def benutzer_anlegen(email: str, passwort: str, admin: bool = False, totp: str |
         return b.id
 
 
-def anmelden(client, email: str, passwort: str, totp: str | None = None) -> str:
+def anmelden(client, email: str, passwort: str) -> str:
+    """Anmeldung nur mit Passwort (kein Zwei-Faktor-Schritt, Entscheidung 40)."""
     antwort = client.post("/api/auth/login", json={"email": email, "passwort": passwort})
     assert antwort.status_code == 200, antwort.text
     daten = antwort.json()
-    if daten["naechster_schritt"] == "totp":
-        antwort = client.post("/api/auth/totp", json={"code": pyotp.TOTP(totp).now()},
-                              headers={"X-CSRF-Token": daten["csrf"]})
-        assert antwort.status_code == 200, antwort.text
-        daten = antwort.json()
+    assert daten["naechster_schritt"] in ("fertig", "passwort_aendern")
     client.headers["X-CSRF-Token"] = daten["csrf"]
     return daten["naechster_schritt"]
+
+
+def totp_code(client) -> str:
+    """Aktueller Zwei-Faktor-Code des Test-Administrators (nur zum Anlegen neuer Benutzer nötig)."""
+    return pyotp.TOTP(client.totp).now()
 
 
 @pytest.fixture
@@ -101,6 +103,6 @@ def nutzer(client):
 def admin(client):
     geheimnis = pyotp.random_base32()
     benutzer_anlegen("admin@example.org", ADMIN_PW, admin=True, totp=geheimnis)
-    assert anmelden(client, "admin@example.org", ADMIN_PW, geheimnis) == "fertig"
+    assert anmelden(client, "admin@example.org", ADMIN_PW) == "fertig"
     client.totp = geheimnis
     return client
