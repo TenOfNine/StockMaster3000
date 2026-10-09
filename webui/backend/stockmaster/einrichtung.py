@@ -874,9 +874,10 @@ def vorgaben_lesen() -> dict:
 
 
 @router.put("/vorgaben/{profil}")
-def vorgabe_speichern(profil: Literal["defensiv", "ausgewogen", "aggressiv"], daten: VorgabeDaten, request: Request,
-                      db: DB, admin: AdminPflicht) -> dict:
+def vorgabe_speichern(profil: str, daten: VorgabeDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     """Neue Version der Vorgabe; gilt ab dem nächsten Lauf. Unveränderter Text legt keine Version an."""
+    if profil not in appdaten.profil_liste():
+        raise HTTPException(404, "Dieses Profil gibt es nicht.")
     begrenzen(f"vorgaben:{admin.id}", 30, 60)
     eintrag = appdaten.vorgaben_aendern(profil, daten.text, admin.kennung)
     if eintrag:

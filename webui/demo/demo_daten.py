@@ -26,6 +26,7 @@ from pathlib import Path
 
 QUELLE_REPO = Path(__file__).resolve().parents[2]
 KENNUNGEN = ("auftraggeber-a", "auftraggeber-b")
+HANDELSPROFILE = ("defensiv", "ausgewogen", "aggressiv")  # handeln in Sessions; Overnight läuft über eine Daueranweisung
 
 # Ticker, Startkurs, Tagesvolatilität, Drift
 WERTE = {
@@ -221,6 +222,8 @@ def strategie_text(profil: str) -> str:
                        "Europa und den USA, ergänzt um den MSCI World"),
         "aggressiv": ("Deutliche Mehrrendite gegen den MSCI World", "Trendfolge mit Knock-outs und "
                       "Faktor-Zertifikaten auf Indizes, dazu wachstumsstarke Einzelwerte"),
+        "overnight": ("Nacht-Rendite zwischen Schluss und Eröffnung nach Kosten", "Daueranweisung auf ein breites "
+                      "ETF, Kauf zum Schlusskurs, Verkauf zur Eröffnung"),
     }
     ziel, ansatz = texte[profil]
     return (f"# Anlagerichtlinie {profil.capitalize()} (Demo)\n\n## Ziel\n{ziel}.\n\n## Ausgangsstrategie\n"
@@ -251,10 +254,18 @@ def session_eintrag(sid, kennung, zeit, entscheidungen: dict) -> str:
     zeilen = [f"\n### {sid} | Session | {kennung}", f"- Zeit: {zeit:%Y-%m-%d %H:%M}",
               "- Marktlage: Demo – simulierte Kurse; Indizes leicht fester, Volatilität moderat "
               f"(https://example.org/demo/markt, {zeit:%Y-%m-%d}). Einschätzung: freundliches Umfeld."]
-    for profil in ("defensiv", "ausgewogen", "aggressiv"):
-        zeilen.append(f"- {profil.capitalize()}: {entscheidungen.get(profil, 'keine Order; Positionierung passt zur Anlagerichtlinie')}")
+    for profil in ("defensiv", "ausgewogen", "aggressiv", "overnight"):
+        standard = ("keine Änderung der Daueranweisung" if profil == "overnight"
+                    else "keine Order; Positionierung passt zur Anlagerichtlinie")
+        zeilen.append(f"- {profil.capitalize()}: {entscheidungen.get(profil, standard)}")
     zeilen.append("- Offene Punkte und Termine für die nächste Session: Stops prüfen, Zahlenveröffentlichungen beobachten")
     return "\n".join(zeilen) + "\n"
+
+
+def g_profile() -> tuple[str, ...]:
+    import gemeinsam as g
+
+    return g.vorhandene_profile()
 
 
 def review_text(faellig: dict, zeit: datetime) -> str:
@@ -263,7 +274,7 @@ def review_text(faellig: dict, zeit: datetime) -> str:
     zeilen = [f"# {faellig['text']} (Demo)", "", f"Erstellt: {zeit:%Y-%m-%d %H:%M}", "",
               "| Profil | Wert | Rendite | gegen Benchmark | Drawdown-Stufe |", "| --- | ---: | ---: | ---: | ---: |"]
     benchmark = bewertung.benchmark_berechnen()
-    for profil in ("defensiv", "ausgewogen", "aggressiv"):
+    for profil in g_profile():
         k = bewertung.kennzahlen(profil, benchmark)
         zeilen.append(f"| {profil} | {k['wert']:.2f} EUR | {bewertung._p(k['rendite'])} | {bewertung._p(k['gegen_bench'])} "
                       f"| {k['stufe']} |")
@@ -297,14 +308,27 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
 
     uhr.stellen(start, "08:00")
     still(init.main, ["--startdatum", start.isoformat(), "--freigabe", KENNUNGEN[0]])
-    for profil in g.PROFILE:
+    for profil in g.profile():
         (ziel / "strategie" / f"{profil}.md").write_text(strategie_text(profil), encoding="utf-8")
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", f"aufbau: Demo-Arbeitsbereich initialisiert (Start {start})")
 
+    import ausfuehrung
+    import daueranweisung
+
     tag = start
     nummer_session = 0
+    overnight_ab = start + timedelta(days=7)
     while tag <= ende:
+        if g.portfolio_laden("overnight").get("daueranweisung"):
+            # Wie der Hintergrunddienst: nachts nachbuchen, zur Eröffnung die Positionen der Daueranweisung verkaufen.
+            uhr.stellen(tag, "00:30")
+            still(session.main, ["start", "--person", KENNUNGEN[0], "--art", "nachbuchung"])
+            still(bewertung.main, ["nachbuchen"])
+            still(session.main, ["ende"])
+            if kurse.ist_handelstag("EUNL.DE", tag):
+                uhr.stellen(tag, "09:17")
+                still(ausfuehrung.tick, "eroeffnung")
         if tag.weekday() in (0, 2, 4) and kurse.ist_handelstag("EUNL.DE", tag):
             kennung = KENNUNGEN[(tag.isocalendar()[1]) % 2]
             nummer_session += 1
@@ -320,7 +344,7 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
                 (ziel / faellig["datei"]).write_text(review_text(faellig, uhr()), encoding="utf-8")
             entscheidungen = {}
             nummer = 0
-            for profil in g.PROFILE:
+            for profil in HANDELSPROFILE:
                 portfolio = g.portfolio_laden(profil)
                 if portfolio["status"] != "aktiv":
                     continue
@@ -384,6 +408,20 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
                 else:
                     grund = ausgabe.strip().splitlines()[-1][:160] if ausgabe.strip() else "abgelehnt"
                     entscheidungen[profil] = f"Order {jid} von tools/ abgelehnt ({grund}); nicht umgangen"
+            if tag >= overnight_ab and not g.portfolio_laden("overnight").get("daueranweisung"):
+                nummer += 1
+                jid = f"J-{tag:%Y%m%d}-{nummer:02d}"
+                uhr.stellen(tag, f"10:{10 + nummer:02d}")
+                with journal.open("a", encoding="utf-8") as datei:
+                    datei.write(journal_eintrag(jid, "overnight", "etf", "EUNL.DE", uhr(),
+                                                "Daueranweisung: Kauf zum Schlusskurs, Verkauf zur nächsten Eröffnung "
+                                                "(Experiment, Kosten rund 0,3 % je Nacht)", 970,
+                                                float(kurse.QUELLE.aktuell("EUNL.DE")[0]) * 0.97, 0, 0))
+                code, ausgabe = still(daueranweisung.main, [
+                    "setzen", "--profil", "overnight", "--journal-id", jid, "--gueltig-bis",
+                    (tag + timedelta(days=60)).isoformat(), "--instrument", "etf:EUNL.DE:1.0", "--aussetzen-verluste", "0"])
+                entscheidungen["overnight"] = (f"Daueranweisung {jid} gesetzt (EUNL.DE, Demo-Experiment)" if code == 0 else
+                                               f"Daueranweisung {jid} von tools/ abgelehnt; nicht umgangen")
             uhr.stellen(tag, "10:40")
             nummer_s = 1
             with journal.open("a", encoding="utf-8") as datei:
@@ -393,6 +431,9 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
             git(ziel, "commit", "-q", "-m", f"session: {tag.isoformat()} {kennung}")
             uhr.stellen(tag, "10:45")
             still(session.main, ["ende"])
+        if g.portfolio_laden("overnight").get("daueranweisung") and kurse.ist_handelstag("EUNL.DE", tag):
+            uhr.stellen(tag, "17:36")
+            still(ausfuehrung.tick, "schlusskurs")
         tag += timedelta(days=1)
     # Abschluss: Stand bis zum Ende nachbuchen, damit die Ansicht aktuell ist
     uhr.stellen(ende + timedelta(days=1), "07:30")
@@ -402,6 +443,9 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", "session: Abschluss Demo (Nachbuchung)")
     still(session.main, ["ende"])
+    if g.portfolio_laden("overnight").get("daueranweisung") and kurse.ist_handelstag("EUNL.DE", ende + timedelta(days=1)):
+        uhr.stellen(ende + timedelta(days=1), "09:17")
+        still(ausfuehrung.tick, "eroeffnung")  # die letzte Nacht endet mit dem Verkauf zur Eröffnung
     # Marktübersicht und News wie vom Hintergrunddienst (Werte ohne simulierte Kurse erscheinen "veraltet").
     uhr.stellen(ende + timedelta(days=1), "10:00")
     still(kurse.markt)

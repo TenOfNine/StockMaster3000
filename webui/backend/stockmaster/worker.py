@@ -37,6 +37,8 @@ NACHBUCHUNG_WIEDERHOLUNG_MINUTEN = 60
 BEOBACHTUNG_AB = (23, 15)
 BEOBACHTUNG_WIEDERHOLUNG_MINUTEN = 60
 # Zeitplan (Umbau v2): verpasste Termine werden so lange nachgeholt, wartende so lange wiederholt.
+OVERNIGHT_AB = (23, 30)
+OVERNIGHT_TAGE = 7
 NACHHOLEN_MINUTEN = 120
 WARTEN_STUNDEN = 24
 
@@ -250,6 +252,66 @@ class Worker:
             meldung += f"; Bericht: {_letzte_zeile(bericht)}"
         meldung += "; Prüfung bestanden" if pruefung.returncode == 0 else f"; Prüfung mit Fehlern: {_letzte_zeile(pruefung)}"
         return ergebnis(True, meldung, pruefung.returncode == 0)
+
+    def profile_ergaenzen(self, jetzt: datetime) -> str | None:
+        """Migration (regeln.md 7, Entscheidung 44): fehlende Profile im laufenden Spiel ergänzen.
+
+        Ein neues Profil (Overnight) startet mit 1.000 EUR am heutigen Tag, nie rückwirkend; die vorhandenen
+        Portfolios, Trades, Journal und Historie bleiben unberührt. Vorher entsteht eine Sicherung im App-Verzeichnis
+        und ein lokaler Commit des Ist-Zustands; danach committet der Dienst die Ergänzung. Idempotent und ohne
+        manuellen Eingriff: Läuft gerade eine Session, versucht es der Dienst später erneut.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum"):
+            return None
+        fehlend = [p for p in g.profile() if not g.portfolio_pfad(p).exists()]
+        if not fehlend or self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
+            return None
+        if not self._faellig(self.zustand.get("profile_versuch"), 30, jetzt):
+            return None
+        self._merken(profile_versuch=jetzt.isoformat())
+        from . import sicherung
+
+        ziel = einstellungen().app_pfad / "sicherungen" / f"vor-migration-{jetzt:%Y%m%d-%H%M}.tar.gz"
+        try:
+            sicherung.exportieren(ziel)
+        except Exception as exc:  # noqa: BLE001 - ohne Sicherung wird nicht migriert
+            self._merken(profile_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": False,
+                                           "meldung": f"Sicherung fehlgeschlagen: {exc}"[:300]})
+            return f"Migration abgebrochen: Sicherung fehlgeschlagen ({exc})"
+        for alt in sorted(ziel.parent.glob("vor-migration-*.tar.gz"))[:-3]:
+            alt.unlink(missing_ok=True)  # die letzten drei bleiben
+        werkzeug("datenverzeichnis", "commit", "-m", "daten: Stand vor der Migration neuer Profile", timeout=120)
+        lauf = werkzeug("init", "--profile-ergaenzen", "--ausloeser", "migration", timeout=120)
+        ok = lauf.returncode == 0
+        meldung = (_letzte_zeile(lauf) if not ok else f"Profil {', '.join(fehlend)} ergänzt (Start heute, 1.000 EUR)")
+        if ok:
+            werkzeug("datenverzeichnis", "commit", "-m",
+                     f"aufbau: Profil {', '.join(fehlend)} ergänzt (Migration, Start heute, automatisch)", timeout=120)
+        self._merken(profile_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok, "meldung": meldung[:300],
+                                       "sicherung": ziel.name})
+        return f"Migration: {meldung}"
+
+    def overnight_analysieren(self, jetzt: datetime) -> str | None:
+        """Wöchentlicher Rückblick auf Schluss → Eröffnung (tools/overnight.py analyse, Kosten des Spiels, Train/Test)."""
+        g = _werkzeuge()["gemeinsam"]
+        if "overnight" not in g.vorhandene_profile():
+            return None
+        lokal = jetzt.astimezone(TZ)
+        if (lokal.hour, lokal.minute) < OVERNIGHT_AB:
+            return None
+        letzte = self.zustand.get("overnight_zeit")
+        if letzte and jetzt - datetime.fromisoformat(letzte) < timedelta(days=OVERNIGHT_TAGE):
+            return None
+        if not self._faellig(self.zustand.get("overnight_versuch"), 60, jetzt):
+            return None
+        self._merken(overnight_versuch=jetzt.isoformat())
+        lauf = werkzeug("overnight", "analyse", timeout=1800)
+        ok = lauf.returncode == 0
+        self._merken(overnight_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok,
+                                         "meldung": (_letzte_zeile(lauf) or "")[:300]},
+                     **({"overnight_zeit": jetzt.isoformat()} if ok else {}))
+        return f"Overnight-Analyse: {_letzte_zeile(lauf)}"
 
     def ausfuehren(self, jetzt: datetime) -> str | None:
         """Automatische Ausführung ohne Claude-Lauf (regeln.md 6, Entscheidung 43).
@@ -662,8 +724,8 @@ class Worker:
             self.herzschlag("Wartung (Wiederherstellung)")
             return ["Wartung"]
         self.auftraege_bearbeiten()
-        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.ausfuehren,
-                        self.beobachtung_aktualisieren, self.nachbuchen, self.committen):
+        for schritt in (self.zeitplan, self.richtlinien_standard, self.profile_ergaenzen, self.planen, self.ausfuehren,
+                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht

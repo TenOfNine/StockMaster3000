@@ -1239,3 +1239,83 @@ def test_ausfuehrung_gehoert_zur_schleife(app, werkzeug_attrappe):
 
     Worker().einmal(_um(12, "09:03"))
     assert ("ausfuehrung", "tick", "--ausloeser", "eroeffnung", "--json") in [a[:5] for a in werkzeug_attrappe]
+
+
+# --------------------------------------------------------------------------
+# Viertes Portfolio: Migration und wöchentliche Overnight-Analyse (Entscheidung 44)
+
+
+@pytest.fixture
+def altbestand(app, demo_repo, tmp_path, monkeypatch):
+    """Kopie des Demo-Datenverzeichnisses wie vor dem Umbau: drei Portfolios, ohne Overnight, eigener Git-Verlauf."""
+    import shutil
+
+    from stockmaster import config
+    from stockmaster.spiel import lesen
+
+    daten = tmp_path / "daten-alt"
+    shutil.copytree(demo_repo, daten)
+    for pfad in ("portfolios/overnight.json", "trades/overnight.csv", "data/nav/overnight.csv", "strategie/overnight.md",
+                 "data/daueranweisung/overnight.jsonl"):
+        (daten / pfad).unlink(missing_ok=True)
+    benchmark = daten / "data" / "benchmark.csv"
+    zeilen = [z.split(",") for z in benchmark.read_text().splitlines()]
+    spalte = zeilen[0].index("overnight")
+    benchmark.write_text("\n".join(",".join(v for i, v in enumerate(z) if i != spalte) for z in zeilen) + "\n")
+    shutil.rmtree(daten / ".git")
+    for befehl in (["init", "-q", "-b", "main"], ["config", "user.email", "t@example.org"], ["config", "user.name", "T"],
+                   ["config", "commit.gpgsign", "false"], ["add", "-A"], ["commit", "-q", "-m", "daten: Altbestand"]):
+        subprocess.run(["git", *befehl], cwd=daten, check=True, capture_output=True)
+    monkeypatch.setenv("STOCKMASTER_DATA_DIR", str(daten))
+    config.einstellungen.cache_clear()
+    lesen.zuruecksetzen()
+    yield daten
+    lesen.zuruecksetzen()
+
+
+def test_worker_ergaenzt_fehlende_profile_mit_sicherung_und_ohne_die_historie_anzufassen(altbestand, tmp_path):
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
+
+    g = lesen.werkzeuge()["gemeinsam"]
+    assert "overnight" not in g.vorhandene_profile()
+    vorher = {p: (altbestand / "trades" / f"{p}.csv").read_bytes() for p in ("defensiv", "ausgewogen", "aggressiv")}
+    w = Worker()
+    jetzt = datetime(2026, 10, 12, 8, 0, tzinfo=UTC)
+    meldung = w.profile_ergaenzen(jetzt)
+    assert meldung == "Migration: Profil overnight ergänzt (Start heute, 1.000 EUR)"
+    assert "overnight" in g.vorhandene_profile()
+    p = g.portfolio_laden("overnight")
+    assert p["cash"] == "1000.00" and p["startdatum"] == g.heute().isoformat()
+    sicherungen = list((tmp_path / "app" / "sicherungen").glob("vor-migration-*.tar.gz"))
+    assert len(sicherungen) == 1 and sicherungen[0].stat().st_size > 0
+    protokoll = subprocess.run(["git", "log", "--format=%s", "-3"], cwd=altbestand, capture_output=True, text=True).stdout
+    assert "Profil overnight ergänzt" in protokoll and "daten: Altbestand" in protokoll  # Verlauf bleibt, neuer Commit obenauf
+    for profil, inhalt in vorher.items():
+        assert (altbestand / "trades" / f"{profil}.csv").read_bytes() == inhalt
+    assert w.zustand["profile_ergebnis"]["ok"] is True
+    # idempotent
+    assert w.profile_ergaenzen(jetzt + timedelta(hours=1)) is None
+    assert len(list((tmp_path / "app" / "sicherungen").glob("*.tar.gz"))) == 1
+
+
+def test_worker_migriert_nicht_waehrend_einer_session(altbestand, tmp_path, monkeypatch):
+    from stockmaster import auftraege
+    from stockmaster.worker import Worker
+
+    monkeypatch.setattr(auftraege, "session_sperre_aktiv", lambda: {"person": "auftraggeber-a", "start": "x"})
+    assert Worker().profile_ergaenzen(datetime(2026, 10, 12, 8, 0, tzinfo=UTC)) is None
+    assert not (tmp_path / "app" / "sicherungen").exists()
+
+
+def test_overnight_analyse_woechentlich_nach_23_30(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.overnight_analysieren(_um(12, "22:00")) is None and werkzeug_attrappe == []
+    assert w.overnight_analysieren(_um(12, "23:35")).startswith("Overnight-Analyse:")
+    assert ("overnight", "analyse") in [tuple(a[:2]) for a in werkzeug_attrappe]
+    assert w.zustand["overnight_ergebnis"]["ok"] is True
+    werkzeug_attrappe.clear()
+    assert w.overnight_analysieren(_um(13, "23:40")) is None and werkzeug_attrappe == []  # erst nach sieben Tagen
+    assert w.overnight_analysieren(_um(12, "23:35") + timedelta(days=7)) is not None

@@ -42,7 +42,7 @@ def test_portfolio_und_trades(nutzer):
         assert position["wert_eur"] is not None and position["kurs_datum"]
     trades = nutzer.get("/api/spiel/portfolios/aggressiv/trades").json()
     assert trades[0]["trade_id"] == "T-0001"
-    assert nutzer.get("/api/spiel/portfolios/unbekannt").status_code == 422
+    assert nutzer.get("/api/spiel/portfolios/unbekannt").status_code == 404
 
 
 def test_journal_und_akte(nutzer):

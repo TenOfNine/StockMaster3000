@@ -464,7 +464,7 @@ def test_startdatum_vorziehen_per_api(frisch, client):
 
 def test_vorgaben_versionieren_sofort_wirksam_und_im_audit(admin, monkeypatch):
     leer = admin.get("/api/einrichtung/vorgaben").json()
-    assert set(leer["profile"]) == {"defensiv", "ausgewogen", "aggressiv"} and leer["historie"] == []
+    assert set(leer["profile"]) == {"defensiv", "ausgewogen", "aggressiv", "overnight"} and leer["historie"] == []
     assert leer["profile"]["aggressiv"] == {"text": "", "version": 0, "zeit": None, "von": None}
     assert leer["max_zeichen"] == 4000
 
@@ -502,7 +502,7 @@ def test_vorgaben_eingaben_werden_geprueft(admin):
     assert admin.put(adresse, json={"text": "Umkehr ‮ Zeichen"}).status_code == 422
     assert admin.put(adresse, json={"text": "ok", "extra": 1}).status_code == 422
     assert admin.put(adresse, json={}).status_code == 422
-    assert admin.put("/api/einrichtung/vorgaben/unbekannt", json={"text": "x"}).status_code == 422
+    assert admin.put("/api/einrichtung/vorgaben/unbekannt", json={"text": "x"}).status_code == 404
     assert admin.get("/api/einrichtung/vorgaben").json()["profile"]["aggressiv"]["version"] == 1
 
 
