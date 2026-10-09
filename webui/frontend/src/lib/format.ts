@@ -89,3 +89,10 @@ export function relativ(wert: string | null | undefined): string {
   }
   return rtf.format(-Math.round(sekunden / 31557600), "year");
 }
+
+const AUTOMATISCH = /^automatisch \(Auslöser: ([^)]+)\)/;
+
+/** Auslöser einer automatisch (ohne Claude-Lauf) ausgeführten Buchung, sonst null (Bemerkung der Trade-Zeile). */
+export function automatischAusloeser(bemerkung: string | null | undefined): string | null {
+  return AUTOMATISCH.exec(bemerkung ?? "")?.[1] ?? null;
+}

@@ -10,7 +10,7 @@ import { Markdown } from "@/components/Markdown";
 import { Abzeichen, Fehleranzeige, Karte, Leer, Mono, PROFIL_FARBE, PROFIL_NAME, Skelett } from "@/components/ui";
 import { api, ApiFehler, type Akte as AkteTyp, type Trade } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
+import { automatischAusloeser, datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
 
 function feld(felder: Record<string, string>, praefix: string): string | undefined {
   const schluessel = Object.keys(felder).find((k) => k.startsWith(praefix));
@@ -253,6 +253,11 @@ function Verlauf({ folge }: { folge: Trade[] }) {
             <span className="text-[13.5px] font-medium text-text">
               {AKTION_TEXT[t.aktion] ?? t.aktion}
               {t.grund !== "order" && t.aktion !== "dividende" && <span className="text-text-3"> · Auslöser {t.grund}</span>}
+              {automatischAusloeser(t.bemerkung) && (
+                <Abzeichen ton="akzent" className="ml-2 align-middle">
+                  automatisch ausgeführt · {automatischAusloeser(t.bemerkung)}
+                </Abzeichen>
+              )}
             </span>
             <span className="text-[12px] text-text-3">{zeit(t.zeit)}</span>
           </div>

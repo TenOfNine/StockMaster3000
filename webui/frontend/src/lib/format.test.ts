@@ -1,4 +1,4 @@
-import { euro, prozent, zahl, faktor, datum } from "./format";
+import { automatischAusloeser, euro, prozent, zahl, faktor, datum } from "./format";
 
 describe("deutsche Formate", () => {
   it("formatiert Geld und Zahlen", () => {
@@ -15,5 +15,13 @@ describe("deutsche Formate", () => {
   });
   it("formatiert Datum ohne Zeitzonenversatz", () => {
     expect(datum("2026-10-05")).toBe("05.10.2026");
+  });
+});
+
+describe("automatischAusloeser", () => {
+  it("erkennt die Kennzeichnung automatisch ausgeführter Buchungen", () => {
+    expect(automatischAusloeser("automatisch (Auslöser: Stop): Kurs 98 <= Stop 99")).toBe("Stop");
+    expect(automatischAusloeser("Teilverkauf")).toBeNull();
+    expect(automatischAusloeser(null)).toBeNull();
   });
 });

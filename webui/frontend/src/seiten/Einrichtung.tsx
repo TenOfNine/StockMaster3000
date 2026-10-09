@@ -918,7 +918,7 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
       id="zeitplan"
       titel="Sessions & Zeitplan"
       icon={<CalendarClock className="size-4" />}
-      untertitel="Sessions laufen im Container. Automatisch nur an Handelstagen (Xetra oder NYSE), nie parallel zu einer Session-Sperre. Unabhängig davon bucht der Hintergrunddienst jede Nacht um 00:30 Uhr alle Tage bis gestern nach (vorgemerkte Orders, Stops, Tagesabschluss)."
+      untertitel="Sessions laufen im Container. Geplante Läufe werden nie übersprungen: Ist eine Session aktiv, wartet der Lauf sichtbar. Unabhängig davon führt der Hintergrunddienst vorgemerkte Orders, Limits, Stops und Kursziele bei offenem Markt ohne Claude-Lauf aus und bucht jede Nacht um 00:30 Uhr alle Tage bis gestern nach (Abgleich, Tagesabschluss)."
       status={automatik ? <Abzeichen ton="gut">Automatik an</Abzeichen> : <Abzeichen>Automatik aus</Abzeichen>}
     >
       <Schalter an={automatik} setAn={setAutomatik} label="Sessions automatisch starten" beschreibung="Mit den Voreinstellungen aus dem Bereich Claude; manueller Start jederzeit unter Claude-Läufe." />

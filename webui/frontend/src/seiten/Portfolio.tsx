@@ -30,7 +30,7 @@ import {
 } from "@/components/ui";
 import { api, type NavDaten, type PortfolioDetail, type Position, type Profil, type Trade } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
+import { automatischAusloeser, datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
 
 export function Portfolio() {
   const { profil } = useParams({ strict: false }) as { profil: Profil };
@@ -330,7 +330,14 @@ function Trades({ profil }: { profil: Profil }) {
           zeilen={gefiltert.slice(0, 400).map((t) => [
             <Mono key="t">{t.trade_id}</Mono>,
             zeit(t.zeit),
-            <span key="a" className="font-medium text-text">{t.aktion}</span>,
+            <span key="a" className="font-medium text-text">
+              {t.aktion}
+              {automatischAusloeser(t.bemerkung) && (
+                <Abzeichen ton="akzent" className="ml-1.5 align-middle">
+                  automatisch · {automatischAusloeser(t.bemerkung)}
+                </Abzeichen>
+              )}
+            </span>,
             t.ticker || "–",
             t.grund,
             t.stueck != null ? frei(t.stueck) : "–",

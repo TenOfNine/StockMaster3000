@@ -83,6 +83,19 @@ export interface Ueberblick {
   letzter_lauf: Lauf | null;
   news: NewsMeldung[];
   handeln: HandelnHinweis[];
+  automatisch: AutomatischeBuchung[];
+}
+
+export interface AutomatischeBuchung {
+  profil: Profil;
+  trade_id: string;
+  zeit: string;
+  aktion: string;
+  ticker: string;
+  betrag_eur: number | null;
+  ausloeser: string;
+  journal_id: string;
+  order_id: string;
 }
 
 export interface HandelnHinweis {
