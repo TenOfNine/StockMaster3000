@@ -24,15 +24,16 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
+import daueranweisung
 import gemeinsam as g
 import kurse
 import limits
 from gemeinsam import D
 
-NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits", "news")
+NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits", "data/ausfuehrung", "news")
 ORDER_AKTIONEN = ("kauf", "verkauf", "vormerkung", "aenderung", "storno")
 
 
@@ -161,16 +162,28 @@ def _hat_feld(felder: dict, praefix: str) -> str | None:
     return None
 
 
+def profile_am(datum: str | None) -> list[str]:
+    """Profile, die am Tag `datum` im Spiel waren (Startdatum des Portfolios); ohne Portfolios alle der Konfiguration.
+
+    Ein später ergänztes Profil (Migration, regeln.md 7) wird für frühere Sessions nicht verlangt.
+    """
+    vorhanden = g.vorhandene_profile()
+    if not vorhanden:
+        return list(g.profile())
+    if not datum:
+        return vorhanden
+    return [p for p in vorhanden if (g.portfolio_laden(p).get("startdatum") or "") <= datum]
+
+
 def pruefe_journal_vollstaendigkeit(bloecke: list[dict] | None = None) -> list[Befund]:
     """Warnungen für unvollständige Journal- und Session-Einträge (Vorlagen in CLAUDE.md)."""
     name = "Journal-Vorlage"
     befunde = []
     bloecke = g.journal_bloecke() if bloecke is None else bloecke
-    profile = g.vorhandene_profile() or list(g.PROFILE)
     for block in bloecke:
         ort = f"{block['id']} ({block['datei']})"
         pflicht = J_PFLICHTFELDER if block["art"] == "J" else dict(
-            S_PFLICHTFELDER, **{p: p.capitalize() for p in profile})
+            S_PFLICHTFELDER, **{p: p.capitalize() for p in profile_am(block["datum"])})
         fehlend = [titel for praefix, titel in pflicht.items() if not (_hat_feld(block["felder"], praefix) or "").strip()]
         if fehlend:
             befunde.append(warnung(name, f"{ort}: es fehlt {', '.join(fehlend)}."))
@@ -268,6 +281,102 @@ def pruefe_kurse(profil: str) -> list[Befund]:
                                         f"(O {kerze.open} H {kerze.high} L {kerze.low} C {kerze.close})."))
         if fx is not None and not _fx_belegt(fx, tag, art == "open", historien):
             befunde.append(fehler(name, f"{ort}: Devisenkurs {fx} am {tag} nicht in data/historie/ belegt."))
+    return befunde
+
+
+# --------------------------------------------------------------------------
+# Automatische Ausführung (regeln.md 6, tools/ausfuehrung.py)
+
+ENDBUCHUNGEN = ("kauf", "verkauf", "verfall", "storno")
+
+
+def pruefe_ausfuehrung(profil: str) -> list[Befund]:
+    """Automatische Buchungen: bekannter Auslöser, protokollierter Kurs, innerhalb der Handelszeit; keine
+    doppelte Endbuchung je Order; keine Ausführung vor der Vormerkung (kein Backdating)."""
+    name = "Ausführung"
+    befunde = []
+    zeilen = g.trades_lesen(profil)
+    vormerkung = {z["order_id"]: g.zeit_lesen(z["zeit"]) for z in zeilen
+                  if z["aktion"] == "vormerkung" and z["order_id"]}
+    endbuchungen: dict[str, int] = {}
+    for zeile in zeilen:
+        ort = f"{profil} {zeile['trade_id']}"
+        order_id = zeile["order_id"]
+        if order_id and zeile["aktion"] in ENDBUCHUNGEN:
+            endbuchungen[order_id] = endbuchungen.get(order_id, 0) + 1
+            if zeile["aktion"] in ("kauf", "verkauf") and order_id in vormerkung \
+                    and g.zeit_lesen(zeile["zeit"]) < vormerkung[order_id]:
+                befunde.append(fehler(name, f"{ort}: Ausführung vor der Vormerkung der Order {order_id} (Backdating)."))
+        treffer = g.AUTOMATISCH_MUSTER.match(zeile["bemerkung"] or "")
+        if not treffer:
+            continue
+        if treffer.group(1) not in g.AUSLOESER:
+            befunde.append(fehler(name, f"{ort}: unbekannter Auslöser '{treffer.group(1)}' der automatischen Buchung."))
+        if zeile["aktion"] in ("kauf", "verkauf", "knockout") and zeile["kursquelle"] != "kurse":
+            befunde.append(fehler(name, f"{ort}: automatische Buchung nur zu protokollierten Kursen "
+                                        f"(Quelle '{zeile['kursquelle']}')."))
+        nachlauf = int(daueranweisung.einstellungen()["schluss_fenster_minuten"]) \
+            if treffer.group(1) == "Daueranweisung" else 0  # Kauf zum Schlusskurs: bis zum Ende des Schlussfensters
+        if not kurse.im_handelsfenster(zeile["basiswert"], g.zeit_lesen(zeile["zeit"]), nachlauf):
+            befunde.append(fehler(name, f"{ort}: automatische Buchung außerhalb der Handelszeit von "
+                                        f"{zeile['basiswert']} ({zeile['zeit']})."))
+    for order_id, anzahl in sorted(endbuchungen.items()):
+        if anzahl > 1:
+            befunde.append(fehler(name, f"{profil}: Order {order_id} hat {anzahl} Endbuchungen (doppelt gebucht?)."))
+    return befunde
+
+
+def pruefe_daueranweisung(profil: str) -> list[Befund]:
+    """Käufe der Daueranweisung nur mit gültiger, aktiver Anweisung (Protokoll data/daueranweisung/) und nach ihrer
+    Erfassung; Positionen aus der Anweisung bleiben nicht über die nächste Eröffnung hinaus im Bestand."""
+    name = "Daueranweisung"
+    befunde = []
+    zyklus = daueranweisung.zyklus_profile()
+    ereignisse = daueranweisung.protokoll_lesen(profil)
+    gesetzt = {z["plan"]: z for z in ereignisse if z["ereignis"] == "gesetzt"}
+    for zeile in g.trades_lesen(profil):
+        treffer = daueranweisung.PLAN_MUSTER.search(zeile["bemerkung"] or "")
+        if not treffer:
+            continue
+        ort = f"{profil} {zeile['trade_id']}"
+        plan_id = treffer.group(1)
+        if profil not in zyklus:
+            befunde.append(fehler(name, f"{ort}: Daueranweisung in einem Profil ohne Zyklus (config/profile.json)."))
+            continue
+        if zeile["aktion"] != "kauf" or not g.AUTOMATISCH_MUSTER.match(zeile["bemerkung"]):
+            continue
+        plan = gesetzt.get(plan_id)
+        if plan is None:
+            befunde.append(fehler(name, f"{ort}: Kauf für {plan_id}, aber es gibt keine Daueranweisung {plan_id} im Protokoll."))
+            continue
+        zeitpunkt = g.zeit_lesen(zeile["zeit"])
+        if zeitpunkt < g.zeit_lesen(plan["erfasst"]):
+            befunde.append(fehler(name, f"{ort}: Kauf vor der Erfassung der Daueranweisung {plan_id} (Backdating)."))
+        if zeile["journal_id"] != plan["journal_id"]:
+            befunde.append(fehler(name, f"{ort}: Journal-ID {zeile['journal_id']} gehört nicht zur Daueranweisung "
+                                        f"{plan_id} ({plan['journal_id']})."))
+        if zeitpunkt.date().isoformat() > plan["gueltig_bis"]:
+            befunde.append(fehler(name, f"{ort}: Kauf nach Ablauf der Daueranweisung {plan_id} (gültig bis "
+                                        f"{plan['gueltig_bis']})."))
+        letzter = None
+        for ereignis in ereignisse:
+            if ereignis["plan"] == plan_id and g.zeit_lesen(ereignis["zeit"]) <= zeitpunkt and ereignis["ereignis"] in (
+                    "gesetzt", "ausgesetzt", "fortgesetzt", "beendet", "abgelaufen"):
+                letzter = ereignis["ereignis"]
+        if letzter in ("ausgesetzt", "beendet", "abgelaufen"):
+            befunde.append(fehler(name, f"{ort}: Kauf, obwohl die Daueranweisung {plan_id} {letzter} war."))
+    if profil in zyklus and g.portfolio_pfad(profil).exists():
+        jetzt = g.jetzt()
+        for position in g.portfolio_laden(profil)["positionen"]:
+            if not position.get("daueranweisung"):
+                continue
+            ticker = position["basiswert"]
+            tag = kurse.boersentag(ticker, g.zeit_lesen(position["eroeffnet"]))
+            faellig = kurse.oeffnung(ticker, kurse.naechster_handelstag(ticker, tag)) + timedelta(hours=2)
+            if jetzt > faellig:
+                befunde.append(warnung(name, f"{profil} {position['id']}: Position aus {position['daueranweisung']} seit "
+                                             f"{position['eroeffnet'][:16]} im Bestand, obwohl sie zur Eröffnung "
+                                             f"{faellig - timedelta(hours=2):%d.%m. %H:%M} verkauft werden sollte."))
     return befunde
 
 
@@ -469,6 +578,71 @@ def pruefe_richtlinien() -> list[Befund]:
             for profil in g.vorhandene_profile() if not g.richtlinie_ausformuliert(profil)]
 
 
+HANDELN_PROFIL = re.compile(r"(?<![\wäöüß])({namen})\s*:", re.I)
+
+
+def _handeln_einstellungen() -> dict:
+    return {"pflicht_ab": "9999-12-31", "cash_warnung_ueber_min": "0.25", "cash_warnung_tage": 5,
+            **g.projekt().get("handeln", {})}
+
+
+def handeln_hinweise() -> list[dict]:
+    """Hinweise zum Handeln (regeln.md 12): dauerhaft hohe Cashquote und Sessions ohne Order und ohne belegte Ausnahme.
+
+    Nur Hinweise (Warnungen, nie Fehler): Grundlage von pruefe.py und der Karte im Cockpit. Sessions vor
+    `handeln.pflicht_ab` (config/projekt.json) werden nicht beanstandet (keine Rückwirkung).
+    """
+    einst = _handeln_einstellungen()
+    hinweise: list[dict] = []
+    tage = int(einst["cash_warnung_tage"])
+    aufschlag = D(einst["cash_warnung_ueber_min"])
+    for profil in g.vorhandene_profile():
+        if g.portfolio_laden(profil).get("status") != "aktiv":
+            continue
+        zeilen = g.csv_lesen(g.pfad("data", "nav", f"{profil}.csv"))[-tage:]
+        if len(zeilen) < tage:
+            continue
+        schnitt = sum(D(z["cashquote"]) for z in zeilen) / tage
+        mindest = g.limits_fuer(profil)["min_cashquote"]
+        if schnitt > mindest + aufschlag:
+            hinweise.append({"art": "cash", "profil": profil, "text": (
+                f"{profil}: Cashquote im Schnitt {schnitt * 100:.0f} % der letzten {tage} Handelstage "
+                f"(Mindestquote {mindest * 100:.0f} %, Ziel nahe der Mindestquote); Cash bringt nur 2 % p. a. "
+                "und ist die Ausnahme: höher nur mit Grund im Session-Eintrag.")})
+    alle = g.vorhandene_profile() or list(g.profile())
+    muster = re.compile(HANDELN_PROFIL.pattern.format(namen="|".join(re.escape(p) for p in alle)), re.I)
+    for block in g.journal_bloecke():
+        if block["art"] != "S" or (block["datum"] or "") < einst["pflicht_ab"]:
+            continue
+        profile = profile_am(block["datum"])
+        feld = _hat_feld(block["felder"], "handlung oder ausnahme")
+        ort = f"{block['id']} ({block['datei']})"
+        if feld is None or not feld.strip():
+            hinweise.append({"art": "session", "profil": None, "ref": block["id"],
+                             "text": f"{ort}: die Zeile 'Handlung oder Ausnahme' fehlt (je Portfolio Order J-… "
+                                     "oder belegte Ausnahme mit Zahlen)."})
+            continue
+        treffer = list(muster.finditer(feld))
+        abschnitte = {t.group(1).lower(): feld[t.end(): treffer[i + 1].start() if i + 1 < len(treffer) else len(feld)]
+                      for i, t in enumerate(treffer)}
+        for profil in profile:
+            text = abschnitte.get(profil)
+            if text is None:
+                hinweise.append({"art": "session", "profil": profil, "ref": block["id"],
+                                 "text": f"{ort}: {profil} ohne Order und ohne belegte Ausnahme."})
+            elif re.search(r"J-\d{8}-\d{2}", text):
+                continue
+            elif "ausnahme" not in text.lower() or not re.search(r"\d", text):
+                hinweise.append({"art": "session", "profil": profil, "ref": block["id"],
+                                 "text": f"{ort}: {profil} ohne Order; die Ausnahme braucht Zahlen (Verlust bis Stop "
+                                         "gegen Limit, Erwartungswert nach Kosten, geprüfte Kandidaten)."})
+    return hinweise
+
+
+def pruefe_handeln() -> list[Befund]:
+    return [warnung("Handeln", h["text"]) for h in handeln_hinweise()]
+
+
 def pruefe_kalender() -> list[Befund]:
     heute = g.heute()
     jahre = [heute.year] + ([heute.year + 1] if heute.month >= 11 else [])
@@ -484,6 +658,7 @@ def pruefe_kalender() -> list[Befund]:
 
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
     befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote() + pruefe_richtlinien()
+    befunde += pruefe_handeln()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
     bloecke = g.journal_bloecke()
     befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)
@@ -492,6 +667,8 @@ def alle_pruefungen(historie: bool = False) -> list[Befund]:
         befunde += pruefe_nachrechnung(profil)
         befunde += pruefe_journal(profil, eintraege)
         befunde += pruefe_kurse(profil)
+        befunde += pruefe_ausfuehrung(profil)
+        befunde += pruefe_daueranweisung(profil)
         befunde += pruefe_limits(profil)
     return befunde
 

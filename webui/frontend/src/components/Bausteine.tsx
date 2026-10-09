@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { CalendarClock, CircleDot, CircleSlash, Clock3, LockOpen, Pencil, ShoppingCart, XCircle } from "lucide-react";
 
-import type { JournalEintrag, Termin } from "@/lib/api";
+import { PROFILE, type JournalEintrag, type Termin } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { datum, euro, zeit } from "@/lib/format";
 
@@ -80,7 +80,6 @@ export function TerminZeile({ t }: { t: Termin }) {
 }
 
 export function SessionKarte({ s }: { s: JournalEintrag }) {
-  const profile = ["defensiv", "ausgewogen", "aggressiv"] as const;
   return (
     <Link to="/sessions" hash={s.id} className="block rounded-xl border border-rand bg-flaeche-2 p-3 transition-colors hover:border-rand-stark">
       <div className="flex items-center justify-between gap-2">
@@ -88,7 +87,7 @@ export function SessionKarte({ s }: { s: JournalEintrag }) {
         <span className="text-[12px] text-text-3">{zeit(s.zeit)}</span>
       </div>
       <ul className="mt-2 space-y-1">
-        {profile.map((p) =>
+        {PROFILE.map((p) =>
           s.felder[p] ? (
             <li key={p} className="flex gap-2 text-[12.5px] text-text-2">
               <span className="mt-[7px] size-1.5 shrink-0 rounded-full" style={{ background: PROFIL_FARBE[p] }} />

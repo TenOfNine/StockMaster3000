@@ -88,6 +88,23 @@ def einrichten(ziel: Path | None = None) -> list[str]:
     return [f"Datenverzeichnis {ziel} aus der Vorlage angelegt und lokal committet."]
 
 
+def ignore_ergaenzen(ziel: Path) -> bool:
+    """Trägt Sperrdateien neuerer Werkzeug-Versionen in die .gitignore bestehender Datenverzeichnisse nach.
+
+    Idempotent; ältere Instanzen (ohne `.buchungssperre`) bekommen die Zeile beim nächsten Commit, bevor die Sperrdatei
+    versehentlich in die Prüfspur gelangt. Bestehende Zeilen bleiben unverändert.
+    """
+    datei = ziel / ".gitignore"
+    text = datei.read_text(encoding="utf-8") if datei.exists() else ""
+    fehlend = [z for z in pfade.NICHT_VERSIONIERT if z not in {x.strip().rstrip("/") for x in text.splitlines()}]
+    if not fehlend:
+        return False
+    zusatz = ("" if text.endswith("\n") or not text else "\n") + "\n".join(
+        f"{z}/" if z == ".cache" else z for z in fehlend) + "\n"
+    datei.write_text(text + zusatz, encoding="utf-8")
+    return True
+
+
 def commit(nachricht: str, ziel: Path | None = None) -> str:
     """Committet alle Änderungen im Datenverzeichnis lokal. Gibt den Commit oder '' (nichts zu tun) zurück."""
     ziel = Path(ziel) if ziel else pfade.daten()
@@ -95,6 +112,7 @@ def commit(nachricht: str, ziel: Path | None = None) -> str:
         raise Fehler(f"Commit-Nachricht braucht ein Präfix ({', '.join(PRAEFIXE)}).")
     if not ist_eingerichtet(ziel):
         raise Fehler(f"{ziel} ist kein eingerichtetes Datenverzeichnis (python tools/datenverzeichnis.py einrichten).")
+    ignore_ergaenzen(ziel)
     git(ziel, "add", "-A")
     if not git(ziel, "status", "--porcelain").stdout.strip():
         return ""

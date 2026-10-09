@@ -111,23 +111,8 @@ def pflichtschritte() -> list[dict]:
         offen.append({"schritt": "claude", "titel": "Claude verbinden",
                       "text": "Kein Claude-Token hinterlegt; Sessions können nicht starten.",
                       "link": "/einrichtung#claude"})
-    try:
-        gestartet = bool(_werkzeuge()["gemeinsam"].spiel_lesen().get("startdatum"))
-    except Exception:  # noqa: BLE001 - Datenverzeichnis fehlt: ebenfalls offen
-        gestartet = False
-    if not gestartet:
-        offen.append({"schritt": "spielstart", "titel": "Spiel starten",
-                      "text": "Das Spiel ist noch nicht gestartet (Startdatum fehlt).", "link": "/einrichtung#spielstart"})
-    else:
-        try:
-            ohne = _werkzeuge()["gemeinsam"].richtlinien_offen()
-        except Exception:  # noqa: BLE001
-            ohne = []
-        if ohne:
-            offen.append({"schritt": "richtlinien", "titel": "Anlagerichtlinien werden übernommen",
-                          "text": f"Für {', '.join(ohne)} übernimmt der Hintergrunddienst gleich die "
-                                  "Standard-Anlagerichtlinie (config/richtlinien); sie lässt sich später per Lauf anpassen.",
-                          "link": "/laeufe"})
+    # Spielstart und Anlagerichtlinien sind keine Pflichtschritte mehr: Der erste Trading-Lauf startet das Spiel
+    # selbst (Startdatum heute, Standard-Anlagerichtlinien); die Einrichtung bietet den manuellen Start weiter an.
     return offen
 
 
@@ -202,6 +187,50 @@ def _nachbuchung_ampel() -> dict:
                             "hinweis": "pruefe.py meldet Fehler im Spielstand: Prüfung und Audit ansehen, bevor die "
                                        "nächste Session startet.", "seit": None, "anzahl": 0, "url": None})
     return _ampel("nachbuchung", titel, stufe, text, details, link="#zeitplan")
+
+
+AUSFUEHRUNG_UEBERFAELLIG_MINUTEN = 15
+
+
+def _ausfuehrung_ampel() -> dict:
+    """Automatische Ausführung ohne Claude-Lauf (Entscheidung 43): letzter Lauf, Warteschlange, Fehler, Rückstand."""
+    titel = "Ausführung"
+    werkzeuge = _werkzeuge()
+    try:
+        if not werkzeuge["gemeinsam"].spiel_lesen().get("startdatum"):
+            return _ampel("ausfuehrung", titel, "gruen", "Das Spiel ist noch nicht gestartet, es gibt nichts auszuführen.")
+        offen_boerse = werkzeuge["ausfuehrung"].irgendeine_boerse_offen(datetime.now(TZ))
+    except Exception as exc:  # noqa: BLE001 - der Status darf nie an einer unlesbaren Datei scheitern
+        return _ampel("ausfuehrung", titel, "gelb", f"Stand nicht lesbar ({type(exc).__name__}).")
+    stand = appdaten.zustand_lesen("planer").get("ausfuehrung") or {}
+    versuch = _zeit(stand.get("versuch"))
+    if not versuch:
+        return _ampel("ausfuehrung", titel, "gruen" if not offen_boerse else "gelb",
+                      "Noch kein Durchlauf; der Hintergrunddienst führt bei offenem Markt im 5-Minuten-Takt aus.")
+    text = (f"Letzter Durchlauf {_alter_text(versuch)} ({stand.get('ausloeser', 'takt')}): "
+            f"{stand.get('buchungen', 0)} Buchung(en); {stand.get('offen', 0)} Orders in der Warteschlange")
+    if stand.get("rueckstand"):
+        text += f", davon {stand['rueckstand']} Market-Order(s) bei offenem Markt noch nicht ausgeführt"
+    text += "."
+    letzte = stand.get("letzte_buchung")
+    if letzte:
+        text += f" Zuletzt gebucht {_alter_text(_zeit(letzte.get('zeit')))}: {letzte.get('text', '')[:120]}"
+    stufe, details = "gruen", []
+    for fehler in stand.get("fehler", []):
+        details.append({"titel": "Fehler", "text": fehler, "hinweis": "Kein verlässlicher Kurs oder Fehler im Werkzeug; "
+                        "der Hintergrunddienst versucht es im Minutentakt erneut.", "seit": None, "anzahl": 0, "url": None})
+    for problem in stand.get("probleme", []):
+        details.append({"titel": "Hinweis", "text": problem, "hinweis": "Die Nachbuchung führt vorgemerkte Orders sonst "
+                        "zum Eröffnungskurs aus.", "seit": None, "anzahl": 0, "url": None})
+    if stand.get("rueckstand_nachbuchung"):
+        details.append({"titel": "Nachbuchung steht aus", "text": "Die Ausführung wartet auf die Nachbuchung der Vortage.",
+                        "hinweis": "Zeile Nachbuchung ansehen.", "seit": None, "anzahl": 0, "url": None})
+    if stand.get("fehler") or not stand.get("ok", True) or stand.get("rueckstand") or stand.get("rueckstand_nachbuchung"):
+        stufe = "gelb"
+    if offen_boerse and datetime.now(UTC) - versuch > timedelta(minutes=AUSFUEHRUNG_UEBERFAELLIG_MINUTEN):
+        stufe = "rot"
+        text += " Überfällig: bei offenem Markt wird alle 5 Minuten ausgeführt (Hintergrunddienst prüfen)."
+    return _ampel("ausfuehrung", titel, stufe, text, details)
 
 
 BEOBACHTUNG_UHR = "23:15"  # lokale Zeit, wie worker.BEOBACHTUNG_AB
@@ -321,6 +350,7 @@ def systemstatus() -> list[dict]:
 
     status.append(_beobachtung_ampel())
     status.append(_nachbuchung_ampel())
+    status.append(_ausfuehrung_ampel())
 
     info =appdaten.geheimnis_info("claude_token")
     test = appdaten.laden()["claude"].get("letzter_test") or {}
@@ -844,9 +874,10 @@ def vorgaben_lesen() -> dict:
 
 
 @router.put("/vorgaben/{profil}")
-def vorgabe_speichern(profil: Literal["defensiv", "ausgewogen", "aggressiv"], daten: VorgabeDaten, request: Request,
-                      db: DB, admin: AdminPflicht) -> dict:
+def vorgabe_speichern(profil: str, daten: VorgabeDaten, request: Request, db: DB, admin: AdminPflicht) -> dict:
     """Neue Version der Vorgabe; gilt ab dem nächsten Lauf. Unveränderter Text legt keine Version an."""
+    if profil not in appdaten.profil_liste():
+        raise HTTPException(404, "Dieses Profil gibt es nicht.")
     begrenzen(f"vorgaben:{admin.id}", 30, 60)
     eintrag = appdaten.vorgaben_aendern(profil, daten.text, admin.kennung)
     if eintrag:

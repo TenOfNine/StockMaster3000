@@ -36,6 +36,11 @@ NACHBUCHUNG_WIEDERHOLUNG_MINUTEN = 60
 # Xetra und NYSE (22:00 Berlin), vor der Nachbuchung; bei Fehlern stündlich erneut.
 BEOBACHTUNG_AB = (23, 15)
 BEOBACHTUNG_WIEDERHOLUNG_MINUTEN = 60
+# Zeitplan (Umbau v2): verpasste Termine werden so lange nachgeholt, wartende so lange wiederholt.
+OVERNIGHT_AB = (23, 30)
+OVERNIGHT_TAGE = 7
+NACHHOLEN_MINUTEN = 120
+WARTEN_STUNDEN = 24
 
 
 def _werkzeuge():
@@ -168,17 +173,23 @@ class Worker:
         return meldung if meldung.startswith("Beobachtungsliste") else f"Beobachtungsliste: {meldung}"
 
     def richtlinien_standard(self, jetzt: datetime) -> str | None:
-        """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt."""
+        """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt.
+
+        Fehlt eine Richtlinie oder ist sie noch die Vorlage, wird die Standard-Richtlinie übernommen; eine unveränderte
+        ältere Standardfassung wird aktualisiert (Umbau v2: Handeln ist der Normalfall), die bisherige Historie bleibt.
+        Eine angepasste Richtlinie bleibt unberührt.
+        """
         if self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
             return None
         g = _werkzeuge()["gemeinsam"]
-        if not g.spiel_lesen().get("startdatum") or not g.richtlinien_offen():
+        if not g.spiel_lesen().get("startdatum") or not (g.richtlinien_offen() or g.richtlinien_veraltet()):
             return None
         lauf = werkzeug("richtlinien", "standard", timeout=60)
         if lauf.returncode != 0:
             return "Standard-Anlagerichtlinien: " + _letzte_zeile(lauf)
-        werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen", timeout=60)
-        return "Standard-Anlagerichtlinien übernommen."
+        werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen bzw. aktualisiert",
+                 timeout=60)
+        return "Standard-Anlagerichtlinien übernommen bzw. aktualisiert."
 
     def _nachbuchung_rueckstand(self, gestern: date) -> list[str]:
         """Aktive Portfolios, die noch nicht bis gestern verarbeitet sind (Kennungen)."""
@@ -242,6 +253,116 @@ class Worker:
         meldung += "; Prüfung bestanden" if pruefung.returncode == 0 else f"; Prüfung mit Fehlern: {_letzte_zeile(pruefung)}"
         return ergebnis(True, meldung, pruefung.returncode == 0)
 
+    def profile_ergaenzen(self, jetzt: datetime) -> str | None:
+        """Migration (regeln.md 7, Entscheidung 44): fehlende Profile im laufenden Spiel ergänzen.
+
+        Ein neues Profil (Overnight) startet mit 1.000 EUR am heutigen Tag, nie rückwirkend; die vorhandenen
+        Portfolios, Trades, Journal und Historie bleiben unberührt. Vorher entsteht eine Sicherung im App-Verzeichnis
+        und ein lokaler Commit des Ist-Zustands; danach committet der Dienst die Ergänzung. Idempotent und ohne
+        manuellen Eingriff: Läuft gerade eine Session, versucht es der Dienst später erneut.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum"):
+            return None
+        fehlend = [p for p in g.profile() if not g.portfolio_pfad(p).exists()]
+        if not fehlend or self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
+            return None
+        if not self._faellig(self.zustand.get("profile_versuch"), 30, jetzt):
+            return None
+        self._merken(profile_versuch=jetzt.isoformat())
+        from . import sicherung
+
+        ziel = einstellungen().app_pfad / "sicherungen" / f"vor-migration-{jetzt:%Y%m%d-%H%M}.tar.gz"
+        try:
+            sicherung.exportieren(ziel)
+        except Exception as exc:  # noqa: BLE001 - ohne Sicherung wird nicht migriert
+            self._merken(profile_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": False,
+                                           "meldung": f"Sicherung fehlgeschlagen: {exc}"[:300]})
+            return f"Migration abgebrochen: Sicherung fehlgeschlagen ({exc})"
+        for alt in sorted(ziel.parent.glob("vor-migration-*.tar.gz"))[:-3]:
+            alt.unlink(missing_ok=True)  # die letzten drei bleiben
+        werkzeug("datenverzeichnis", "commit", "-m", "daten: Stand vor der Migration neuer Profile", timeout=120)
+        lauf = werkzeug("init", "--profile-ergaenzen", "--ausloeser", "migration", timeout=120)
+        ok = lauf.returncode == 0
+        meldung = (_letzte_zeile(lauf) if not ok else f"Profil {', '.join(fehlend)} ergänzt (Start heute, 1.000 EUR)")
+        if ok:
+            werkzeug("datenverzeichnis", "commit", "-m",
+                     f"aufbau: Profil {', '.join(fehlend)} ergänzt (Migration, Start heute, automatisch)", timeout=120)
+        self._merken(profile_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok, "meldung": meldung[:300],
+                                       "sicherung": ziel.name})
+        return f"Migration: {meldung}"
+
+    def overnight_analysieren(self, jetzt: datetime) -> str | None:
+        """Wöchentlicher Rückblick auf Schluss → Eröffnung (tools/overnight.py analyse, Kosten des Spiels, Train/Test)."""
+        g = _werkzeuge()["gemeinsam"]
+        if "overnight" not in g.vorhandene_profile():
+            return None
+        lokal = jetzt.astimezone(TZ)
+        if (lokal.hour, lokal.minute) < OVERNIGHT_AB:
+            return None
+        letzte = self.zustand.get("overnight_zeit")
+        if letzte and jetzt - datetime.fromisoformat(letzte) < timedelta(days=OVERNIGHT_TAGE):
+            return None
+        if not self._faellig(self.zustand.get("overnight_versuch"), 60, jetzt):
+            return None
+        self._merken(overnight_versuch=jetzt.isoformat())
+        lauf = werkzeug("overnight", "analyse", timeout=1800)
+        ok = lauf.returncode == 0
+        self._merken(overnight_ergebnis={"zeit": jetzt.isoformat(timespec="seconds"), "ok": ok,
+                                         "meldung": (_letzte_zeile(lauf) or "")[:300]},
+                     **({"overnight_zeit": jetzt.isoformat()} if ok else {}))
+        return f"Overnight-Analyse: {_letzte_zeile(lauf)}"
+
+    def ausfuehren(self, jetzt: datetime) -> str | None:
+        """Automatische Ausführung ohne Claude-Lauf (regeln.md 6, Entscheidung 43).
+
+        Im Takt bei offenem Markt sowie zu Öffnung und Schluss jeder Börse: vorgemerkte Orders, Limits, Stops,
+        Kursziele und Knock-outs zu protokollierten Kursen. Der Code rechnet und bucht (tools/ausfuehrung.py, unter
+        der Buchungssperre, unabhängig von der Session-Sperre); ein Fehler oder fehlender Kurs wird nach kurzer Pause
+        erneut versucht. Weder Claude noch ein Token sind beteiligt.
+        """
+        werkzeuge = _werkzeuge()
+        if not werkzeuge["gemeinsam"].spiel_lesen().get("startdatum"):
+            return None
+        stand = self.zustand.get("ausfuehrung") or {}
+        zuletzt = datetime.fromisoformat(stand["versuch"]) if stand.get("versuch") else None
+        ausloeser = werkzeuge["ausfuehrung"].faellig(zuletzt, jetzt.astimezone(TZ), wiederholen=bool(stand.get("wiederholen")))
+        if not ausloeser:
+            return None
+        lauf = werkzeug("ausfuehrung", "tick", "--ausloeser", ausloeser, "--json", timeout=300)
+        ergebnis: dict = {"versuch": jetzt.isoformat(timespec="seconds"), "ausloeser": ausloeser,
+                          "letzte_buchung": stand.get("letzte_buchung")}
+        try:
+            bericht = json.loads((lauf.stdout.strip().splitlines() or [""])[-1])
+        except ValueError:
+            bericht = None
+        if bericht is None or lauf.returncode != 0:
+            ergebnis.update(ok=False, wiederholen=True, meldung=_letzte_zeile(lauf) or "Ausführung ohne Ergebnis.",
+                            fehler=[], offen=stand.get("offen", 0), rueckstand=stand.get("rueckstand", 0))
+            self._merken(ausfuehrung=ergebnis)
+            return f"Ausführung: {ergebnis['meldung']}"
+        fehler = [f"{f.get('ticker') or f.get('profil')}: {f['text']}" for f in bericht["fehler"]][:5]
+        probleme = [f"{p['profil']}: {p['text']}" for p in bericht.get("probleme", [])][:5]
+        ergebnis.update(ok=not fehler, wiederholen=bool(bericht["wiederholen"]), fehler=fehler, probleme=probleme,
+                        offen=bericht["offen"], rueckstand=bericht["rueckstand"],
+                        rueckstand_nachbuchung=bool(bericht.get("rueckstand_nachbuchung")),
+                        buchungen=len(bericht["ausgefuehrt"]), hinweis=bericht.get("hinweis", ""),
+                        meldung=bericht["meldungen"][-1] if bericht["meldungen"] else "")
+        meldung = None
+        if bericht["ausgefuehrt"]:
+            ergebnis["letzte_buchung"] = {"zeit": bericht["zeit"], "anzahl": len(bericht["ausgefuehrt"]),
+                                          "text": "; ".join(bericht["meldungen"])[:300]}
+            anzahl = len(bericht["ausgefuehrt"])
+            meldung = f"Ausführung ({ausloeser}): {anzahl} Buchung(en): " + ergebnis["letzte_buchung"]["text"]
+            if not auftraege.session_sperre_aktiv() and not self.lauf_aktiv():
+                werkzeug("datenverzeichnis", "commit", "-m",
+                         f"session: automatische Ausführung ({len(bericht['ausgefuehrt'])} Buchungen, automatisch)",
+                         timeout=120)
+        elif fehler:
+            meldung = f"Ausführung: {fehler[0]}"
+        self._merken(ausfuehrung=ergebnis)
+        return meldung
+
     def committen(self, jetzt: datetime) -> str | None:
         """Abrufe höchstens stündlich lokal committen; nie während einer Session oder eines Laufs."""
         if not self._faellig(self.zustand.get("commit_zeit"), 60, jetzt) or self.lauf_aktiv():
@@ -255,42 +376,71 @@ class Worker:
     # ------------------------------------------------------------------ Zeitplan
 
     def zeitplan(self, jetzt: datetime) -> str | None:
+        """Geplante Läufe starten (Umbau v2, Entscheidung 41).
+
+        Der Zeitplan (Wochentage, Uhrzeiten, Zeitzone) ist der einzige feste Termin. Ein fälliger Termin läuft immer:
+        unabhängig von Handelstag, Feiertag, Startdatum und Spielzustand. Ist gerade eine Session oder ein anderer
+        Lauf aktiv (oder fehlt das Token), bleibt der Termin sichtbar „wartend“ (GET /api/laeufe/plan) und wird
+        bei jedem Takt wiederholt; nach `WARTEN_STUNDEN` ohne Erfolg gilt er sichtbar als nicht gestartet.
+        Ein Termin, den der Dienst wegen eines Ausfalls verpasst hat, wird bis `NACHHOLEN_MINUTEN` danach nachgeholt.
+        """
         plan = appdaten.laden()["zeitplan"]
         if not plan["automatik"]:
             return None
         zone = ZoneInfo(plan["zeitzone"])
         lokal = jetzt.astimezone(zone)
-        kurse = _werkzeuge()["kurse"]
-        handelstag = any(kurse.ist_handelstag(t, lokal.date()) for t in ("EUNL.DE", "^GSPC"))
-        erledigt = self.zustand.get("zeitplan_erledigt", {})
+        erledigt = dict(self.zustand.get("zeitplan_erledigt", {}))
+        offen = {k: dict(v) for k, v in self.zustand.get("zeitplan_offen", {}).items()}
+        vorher = (dict(erledigt), json.dumps(offen, sort_keys=True))
+        meldungen = []
         for termin in plan["termine"]:
             stunde, minute = map(int, termin["uhrzeit"].split(":"))
             beginn = lokal.replace(hour=stunde, minute=minute, second=0, microsecond=0)
             schluessel = f"{beginn:%Y-%m-%dT%H:%M}-{termin['art']}"
-            if lokal.weekday() not in termin["wochentage"] or not (beginn <= lokal < beginn + timedelta(minutes=30)):
+            nachholfenster = beginn + timedelta(minutes=NACHHOLEN_MINUTEN)
+            if lokal.weekday() not in termin["wochentage"] or not (beginn <= lokal < nachholfenster):
                 continue
-            if schluessel in erledigt:
+            if schluessel in erledigt or schluessel in offen:
                 continue
-            erledigt = {k: v for k, v in erledigt.items() if k >= f"{lokal - timedelta(days=7):%Y-%m-%d}"}
-            if not handelstag:
-                erledigt[schluessel] = "kein Handelstag"
-                self._merken(zeitplan_erledigt=erledigt)
-                continue
-            erledigt[schluessel] = self.geplanten_lauf_anlegen(termin["art"], plan["auftraggeber"])
-            self._merken(zeitplan_erledigt=erledigt)
-            return f"Zeitplan {schluessel}: {erledigt[schluessel]}"
-        return None
+            offen[schluessel] = {"art": termin["art"], "auftraggeber": plan["auftraggeber"], "seit": jetzt.isoformat(),
+                                 "grund": "fällig"}
+        for schluessel, eintrag in sorted(offen.items(), key=lambda kv: kv[1]["seit"]):
+            status, text = self.geplanten_lauf_anlegen(eintrag["art"], eintrag["auftraggeber"])
+            if status == "angelegt":
+                erledigt[schluessel] = text
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: {text}")
+            elif status == "fehler":
+                erledigt[schluessel] = f"nicht gestartet: {text}"
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: nicht gestartet: {text}")
+            elif jetzt - datetime.fromisoformat(eintrag["seit"]) >= timedelta(hours=WARTEN_STUNDEN):
+                erledigt[schluessel] = f"nicht gestartet: {text} (nach {WARTEN_STUNDEN} Stunden aufgegeben)"
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: aufgegeben: {text}")
+            else:
+                eintrag["grund"] = text
+        grenze = f"{lokal - timedelta(days=7):%Y-%m-%d}"
+        erledigt = {k: v for k, v in erledigt.items() if k >= grenze}
+        if (erledigt, json.dumps(offen, sort_keys=True)) != vorher:
+            self._merken(zeitplan_erledigt=erledigt, zeitplan_offen=offen)
+        return "; ".join(meldungen) or None
 
-    def geplanten_lauf_anlegen(self, art: str, auftraggeber: str) -> str:
+    def geplanten_lauf_anlegen(self, art: str, auftraggeber: str) -> tuple[str, str]:
+        """Legt den geplanten Lauf an. Ergebnis: ("angelegt" | "wartet" | "fehler", Klartext).
+
+        „wartet“ (HTTP 409: Session aktiv, Lauf aktiv, Token fehlt) wird wiederholt, „fehler“ (422: Eingaben der
+        Konfiguration ungültig) nicht.
+        """
         from fastapi import HTTPException
 
         zweck = claude_optionen.optionen()["laufarten"][art]["zweck"]
         vorgabe = appdaten.laden()["claude"]["voreinstellungen"][zweck]
         with neue_sitzung() as db:
             try:
-                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber, geplant=True)
+                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber)
             except HTTPException as exc:
-                return f"übersprungen: {exc.detail}"
+                return ("wartet" if exc.status_code == 409 else "fehler"), f"{exc.detail}"
             auftrag = auftraege.anlegen(db, art, {}, modell=vorgabe["modell"], aufwand=vorgabe["aufwand"],
                                         auftraggeber=auftraggeber, ausloeser="zeitplan")
             db.add(AuditEintrag(akteur=None, aktion="lauf_geplant", ziel=auftrag.id,
@@ -298,7 +448,46 @@ class Worker:
                                                  "aufwand": vorgabe["aufwand"] or "standard",
                                                  "auftraggeber": auftraggeber})))
             db.commit()
-            return f"Lauf {auftrag.id} angelegt"
+            return "angelegt", f"Lauf {auftrag.id} angelegt"
+
+    def spiel_vorbereiten(self, auftrag, log_datei: Path, schwaerzen) -> list[str]:
+        """Trading-Lauf: Ist das Spiel noch nicht initialisiert, initialisiert der Lauf es selbst (Entscheidung 41).
+
+        Startdatum ist heute, die Standard-Anlagerichtlinien legt init.py an, die Freigabe nach AP12 trägt die Kennung
+        des Auftraggebers dieses Laufs; dazu ein Audit-Eintrag und ein lokaler Commit. Liegt ein älteres Startdatum
+        in der Zukunft (frühere Version), wird es auf heute vorgezogen, soweit noch nichts gebucht wurde.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        meldungen: list[str] = []
+        spiel = g.spiel_lesen()
+        if not spiel.get("startdatum") or not g.vorhandene_profile():
+            lauf = werkzeug("init", "--freigabe", auftrag.auftraggeber, "--ausloeser", "lauf", timeout=120)
+            if lauf.returncode != 0:
+                meldungen.append("Spielstart durch den Lauf fehlgeschlagen: " + _letzte_zeile(lauf))
+            else:
+                werkzeug("datenverzeichnis", "commit", "-m",
+                         f"aufbau: Spielstart durch Trading-Lauf (Freigabe AP12: {auftrag.auftraggeber})", timeout=120)
+                with neue_sitzung() as db:
+                    db.add(AuditEintrag(akteur=None, aktion="spielstart_automatisch", ziel=auftrag.id,
+                                        meta=json.dumps({"freigabe": auftrag.auftraggeber,
+                                                         "startdatum": g.spiel_lesen().get("startdatum")})))
+                    db.commit()
+                meldungen.append(f"Spiel noch nicht gestartet: Der Lauf hat es gestartet (Startdatum "
+                                 f"{g.spiel_lesen().get('startdatum')}, Standard-Anlagerichtlinien, Freigabe "
+                                 f"{auftrag.auftraggeber}).")
+        elif spiel["startdatum"] > g.heute().isoformat():
+            lauf = werkzeug("init", "--vorziehen", timeout=120)
+            if lauf.returncode == 0:
+                werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Startdatum durch Trading-Lauf vorgezogen",
+                         timeout=120)
+                meldungen.append(f"Startdatum {spiel['startdatum']} lag in der Zukunft: auf heute vorgezogen.")
+            else:
+                meldungen.append("Startdatum liegt in der Zukunft und ließ sich nicht vorziehen: " + _letzte_zeile(lauf))
+        if meldungen:
+            with open(log_datei, "a", encoding="utf-8") as datei:
+                for zeile in meldungen:
+                    datei.write(schwaerzen(zeile) + "\n")
+        return meldungen
 
     # ------------------------------------------------------------------ Aufträge
 
@@ -464,6 +653,13 @@ class Worker:
             datei.write(f"Lauf {auftrag_id}: {auftrag.art}, Modell {auftrag.modell}, Aufwand "
                         f"{auftrag.aufwand or 'Standard'}, Auftraggeber {auftrag.auftraggeber}"
                         + (f", Vorgaben: {claude_lauf.vorgaben_versionen()}" if auftrag.art == "trading" else "") + "\n")
+        if auftrag.art == "trading":
+            try:
+                self.spiel_vorbereiten(auftrag, log_datei, schwaerzen)
+            except Exception as exc:  # noqa: BLE001 - der Lauf selbst meldet, was fehlt
+                log.exception("Spielstart durch den Lauf %s fehlgeschlagen", auftrag_id)
+                with open(log_datei, "a", encoding="utf-8") as datei:
+                    datei.write(f"Spielstart durch den Lauf fehlgeschlagen: {type(exc).__name__}: {exc}\n")
 
         def abbrechen() -> bool:
             with neue_sitzung() as db:
@@ -528,8 +724,8 @@ class Worker:
             self.herzschlag("Wartung (Wiederherstellung)")
             return ["Wartung"]
         self.auftraege_bearbeiten()
-        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.beobachtung_aktualisieren,
-                        self.nachbuchen, self.committen):
+        for schritt in (self.zeitplan, self.richtlinien_standard, self.profile_ergaenzen, self.planen, self.ausfuehren,
+                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht

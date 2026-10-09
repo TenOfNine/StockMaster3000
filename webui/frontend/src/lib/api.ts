@@ -1,7 +1,8 @@
 // API-Client: gleiche Herkunft, Cookie-Sitzung, CSRF-Token im Header.
 
-export type Profil = "defensiv" | "ausgewogen" | "aggressiv";
-export const PROFILE: Profil[] = ["defensiv", "ausgewogen", "aggressiv"];
+/** Die Profile des Spiels (config/profile.json, regeln.md 7); die Reihenfolge ist die der Konfiguration. */
+export type Profil = "defensiv" | "ausgewogen" | "aggressiv" | "overnight";
+export const PROFILE: Profil[] = ["defensiv", "ausgewogen", "aggressiv", "overnight"];
 export type Schritt = "passwort_aendern" | "fertig";
 
 export interface Benutzer {
@@ -82,6 +83,27 @@ export interface Ueberblick {
   einrichtung_offen: Pflichtschritt[];
   letzter_lauf: Lauf | null;
   news: NewsMeldung[];
+  handeln: HandelnHinweis[];
+  automatisch: AutomatischeBuchung[];
+}
+
+export interface AutomatischeBuchung {
+  profil: Profil;
+  trade_id: string;
+  zeit: string;
+  aktion: string;
+  ticker: string;
+  betrag_eur: number | null;
+  ausloeser: string;
+  journal_id: string;
+  order_id: string;
+}
+
+export interface HandelnHinweis {
+  art: "cash" | "session";
+  profil: Profil | null;
+  text: string;
+  ref?: string;
 }
 
 export interface Pflichtschritt {
@@ -303,6 +325,7 @@ export interface LaufPlan {
   zeitzone: string;
   auftraggeber: string;
   naechste: { zeit: string; art: "trading" | "review" }[];
+  wartend: { termin: string; art: "trading" | "review"; seit: string; grund: string }[];
   token_gesetzt: boolean;
   letzte: { termin: string; ergebnis: string }[];
 }
@@ -431,6 +454,30 @@ export interface PortfolioDetail {
   max_risiko_trade: number;
   letzter_tageswert: Partial<NavZeile>;
   strategie: string | null;
+  daueranweisung: Daueranweisung | null;
+}
+
+/** Daueranweisung (Overnight-Zyklus, regeln.md 5 bis 7): Plan und Protokoll; null bei Profilen ohne Zyklus. */
+export interface Daueranweisung {
+  zyklus: string;
+  plan: DauerPlan | null;
+  protokoll: { zeit: string; plan: string; ereignis: string; text: string }[];
+}
+
+export interface DauerPlan {
+  id: string;
+  journal_id: string;
+  erfasst: string;
+  gueltig_bis: string;
+  status: "aktiv" | "ausgesetzt" | "beendet" | "abgelaufen" | "ersetzt";
+  status_grund: string;
+  instrumente: { typ: string; ticker: string; gewicht: string; hebel: string | null; stop_abstand: string }[];
+  einsatz_anteil: string;
+  nur_lange_naechte: boolean;
+  aussetzen: { ab_drawdown_stufe: number; nach_verlustnaechten: number; unter_portfoliowert: string | null };
+  naechte: number;
+  verlustnaechte_in_folge: number;
+  ergebnis_eur: string;
 }
 
 export interface Trade {

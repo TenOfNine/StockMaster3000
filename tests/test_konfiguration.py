@@ -16,6 +16,9 @@ ERWARTET = {
     "aggressiv": {"max_anteil_zertifikate": "0.70", "max_hebel": "10", "max_exposure": "4.0",
                   "max_einzelposition": "0.35", "min_cashquote": "0.00", "max_risiko_trade": "0.05",
                   "drawdown_stufe1": "-0.20", "drawdown_stufe2": "-0.35", "benchmark_etf_anteil": "1.00"},
+    "overnight": {"max_anteil_zertifikate": "0.30", "max_hebel": "3", "max_exposure": "1.5",
+                  "max_einzelposition": "1.00", "min_cashquote": "0.02", "max_risiko_trade": "0.04",
+                  "drawdown_stufe1": "-0.10", "drawdown_stufe2": "-0.20", "benchmark_etf_anteil": "1.00"},
 }
 
 

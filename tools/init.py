@@ -89,12 +89,12 @@ def standard_text(profil: str, datum) -> str:
     werte["max_hebel"] = f"{limits['max_hebel']}x"
     werte["max_exposure"] = f"{limits['max_exposure']}x"
     return quelle.read_text(encoding="utf-8").format(
-        datum=datum.isoformat(), **werte,
+        datum=datum.isoformat(), version=g.RICHTLINIE_STANDARD_VERSION, **werte,
         benchmark=f"{_prozent(etf)} iShares Core MSCI World (EUNL.DE) / {_prozent(1 - etf)} Cash mit 2 % p. a., "
                   "Aufteilung zum ersten Schlusskurs ab Starttag, ohne Rebalancing und Kosten.")
 
 
-def initialisieren(startdatum_text: str | None, freigabe: str) -> list[str]:
+def initialisieren(startdatum_text: str | None, freigabe: str, ausloeser: str = "kommandozeile") -> list[str]:
     status_pruefen()
     erlaubt = g.projekt()["auftraggeber"]
     if freigabe not in erlaubt:
@@ -111,31 +111,84 @@ def initialisieren(startdatum_text: str | None, freigabe: str) -> list[str]:
                      "Zustimmung beider Auftraggeber und ohne Löschen der Historie.")
     kapital = g.text(g.geld(g.projekt()["startkapital"]))
     meldungen = []
-    for profil in g.PROFILE:
-        g.portfolio_speichern({
-            "profil": profil, "startdatum": startdatum.isoformat(), "cash": kapital,
-            "verarbeitet_bis": (startdatum - timedelta(days=1)).isoformat(), "hoechststand": kapital,
-            "drawdown_stufe": 0, "status": "aktiv", "positionen": [], "offene_orders": [],
-            "zaehler": {"order": 0, "position": 0, "trade": 0}, "stufe2_seit": None, "stufe2_review": None,
-        })
-        g.csv_schreiben(g.trades_pfad(profil), g.TRADE_FELDER, [])
-        g.csv_schreiben(g.pfad("data", "nav", f"{profil}.csv"), g.NAV_FELDER, [])
-        strategie = g.pfad("strategie", f"{profil}.md")
-        if not g.richtlinie_ausformuliert(profil):
-            g.atomar_schreiben(strategie, standard_text(profil, g.heute()))
-            meldungen.append(f"strategie/{profil}.md aus der Standard-Anlagerichtlinie angelegt.")
-        meldungen.append(f"Portfolio {profil}: {kapital} EUR ab {startdatum}.")
-    g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.PROFILE], [])
+    for profil in g.profile():
+        meldungen += profil_anlegen(profil, startdatum, kapital)
+    g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.profile()], [])
     for ordner in ("journal", "reviews", "data/kurse", "data/historie", "data/limits"):
         g.pfad(ordner).mkdir(parents=True, exist_ok=True)
     g.json_schreiben(g.spiel_pfad(), {
         "startdatum": startdatum.isoformat(), "initialisiert": g.iso(g.jetzt()),
-        "freigabe_ap12": freigabe, "werkzeug": "tools/init.py",
+        "freigabe_ap12": freigabe, "werkzeug": "tools/init.py", "ausloeser": ausloeser,
     })
     meldungen.append(f"Benchmark {benchmark}: Basis ist der erste Schlusskurs ab {startdatum}.")
     meldungen.append("spiel.json: Startdatum und Freigabe eingetragen. Jetzt prüfen und im Datenverzeichnis "
                      "committen (python tools/datenverzeichnis.py commit).")
     return meldungen
+
+
+LESSON_OVERNIGHT = """
+## H-OVERNIGHT-1 (Hypothese, {datum})
+Die durchschnittliche Rendite breiter Indizes zwischen Handelsschluss und nächster Eröffnung liegt nach allgemeiner
+Erwartung (hier noch nicht überprüft) bei wenigen hundertstel Prozent je Nacht und damit eine Größenordnung unter den
+Kosten einer Nacht im Spiel (0,31 % bei einer ETF-Position und 1.000 EUR: 2 EUR Gebühr plus 0,10 % Spread).
+Prüfkriterium: `python tools/overnight.py ergebnis` zeigt für ein Instrument im Testzeitraum eine mittlere Netto-Rendite
+je Nacht über null; sonst gilt für das Overnight-Portfolio Ausnahme (a) aus regeln.md 12 mit Zahlen. Aus einzelnen
+Nächten folgt nichts (Glück ist kein Können).
+"""
+
+
+def profil_anlegen(profil: str, startdatum: date, kapital: str) -> list[str]:
+    """Portfolio, Trades, NAV und Standard-Anlagerichtlinie eines Profils (Start und Ergänzung teilen den Code)."""
+    g.portfolio_speichern({
+        "profil": profil, "startdatum": startdatum.isoformat(), "cash": kapital,
+        "verarbeitet_bis": (startdatum - timedelta(days=1)).isoformat(), "hoechststand": kapital,
+        "drawdown_stufe": 0, "status": "aktiv", "positionen": [], "offene_orders": [],
+        "zaehler": {"order": 0, "position": 0, "trade": 0}, "stufe2_seit": None, "stufe2_review": None,
+    })
+    g.csv_schreiben(g.trades_pfad(profil), g.TRADE_FELDER, [])
+    g.csv_schreiben(g.pfad("data", "nav", f"{profil}.csv"), g.NAV_FELDER, [])
+    meldungen = []
+    if not g.richtlinie_ausformuliert(profil):
+        g.atomar_schreiben(g.pfad("strategie", f"{profil}.md"), standard_text(profil, g.heute()))
+        meldungen.append(f"strategie/{profil}.md aus der Standard-Anlagerichtlinie angelegt.")
+    if profil == "overnight":
+        lessons = g.pfad("lessons.md")
+        if "H-OVERNIGHT-1" not in (lessons.read_text(encoding="utf-8") if lessons.exists() else ""):
+            g.text_anhaengen(lessons, LESSON_OVERNIGHT.format(datum=g.heute().isoformat()))
+            meldungen.append("lessons.md: Hypothese H-OVERNIGHT-1 eingetragen.")
+    meldungen.append(f"Portfolio {profil}: {kapital} EUR ab {startdatum}.")
+    return meldungen
+
+
+def profile_ergaenzen(ausloeser: str = "migration") -> list[str]:
+    """Ergänzt Profile aus config/profile.json, die im laufenden Spiel noch fehlen (Migration, regeln.md Abschnitt 7).
+
+    Das neue Portfolio startet am heutigen Tag mit dem Startkapital (nie rückwirkend); die vorhandenen Portfolios,
+    ihre Trades, Journal und Historie bleiben unberührt. Idempotent: fehlt nichts, geschieht nichts. Vor dem Spielstart
+    legt `initialisieren` alle Profile an.
+    """
+    if not g.spiel_lesen().get("startdatum"):
+        return []
+    with g.buchungssperre():
+        fehlend = [p for p in g.profile() if not g.portfolio_pfad(p).exists()]
+        if not fehlend:
+            return []
+        if g.sperre_lesen() is not None and not g.sperre_verwaist(g.sperre_lesen()):
+            raise Fehler("Eine Session läuft (Session-Sperre). Die Profile werden danach ergänzt.")
+        kapital = g.text(g.geld(g.projekt()["startkapital"]))
+        meldungen = []
+        for profil in fehlend:
+            meldungen += profil_anlegen(profil, g.heute(), kapital)
+        benchmark = g.pfad("data", "benchmark.csv")
+        if not g.csv_lesen(benchmark):  # nur eine leere Datei bekommt die neue Spalte sofort; sonst schreibt der Bericht sie
+            g.csv_schreiben(benchmark, ["datum", "etf_kurs", *g.profile()], [])
+        spiel = g.spiel_lesen()
+        spiel.setdefault("profile_ergaenzt", []).extend(
+            {"profil": p, "datum": g.heute().isoformat(), "ausloeser": ausloeser, "zeit": g.iso(g.jetzt())}
+            for p in fehlend)
+        g.json_schreiben(g.spiel_pfad(), spiel)
+        meldungen.append("Jetzt prüfen und im Datenverzeichnis committen (python tools/datenverzeichnis.py commit).")
+        return meldungen
 
 
 def vorziehen_pruefen(neu: date) -> None:
@@ -191,21 +244,30 @@ def vorziehen(neu_text: str) -> list[str]:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Spiel initialisieren: drei Portfolios mit je 1.000 EUR.")
+    parser = argparse.ArgumentParser(description="Spiel initialisieren: ein Portfolio je Profil mit je 1.000 EUR.")
     parser.add_argument("--startdatum", help="JJJJ-MM-TT, nicht vor heute; ohne Angabe: heute (kein fester Starttermin)")
+    parser.add_argument("--ausloeser", choices=["kommandozeile", "einrichtung", "lauf", "migration"], default="kommandozeile",
+                        help="wer den Start auslöst (nur zur Dokumentation in spiel.json): Einrichtung der Web-UI "
+                             "oder der erste Trading-Lauf")
     parser.add_argument("--freigabe",
                         help="Kennung des Auftraggebers, der AP12 freigegeben hat (config/projekt.json)")
+    parser.add_argument("--profile-ergaenzen", action="store_true",
+                        help="Profile aus config/profile.json ergänzen, die im laufenden Spiel fehlen (Migration; "
+                             "Start heute, Historie unberührt)")
     parser.add_argument("--vorziehen", action="store_true",
                         help="bereits gesetztes, noch unberührtes Startdatum auf ein früheres (frühestens heute) "
                              "vorziehen; nichts darf gebucht sein")
     args = parser.parse_args(argv)
     try:
-        if args.vorziehen:
+        if args.profile_ergaenzen:
+            meldungen = profile_ergaenzen(args.ausloeser if args.ausloeser != "kommandozeile" else "migration") \
+                or ["Alle Profile sind vorhanden; nichts geändert."]
+        elif args.vorziehen:
             meldungen = vorziehen(args.startdatum)
         elif not args.freigabe:
             parser.error("--freigabe ist beim Spielstart nötig")
         else:
-            meldungen = initialisieren(args.startdatum, args.freigabe)
+            meldungen = initialisieren(args.startdatum, args.freigabe, args.ausloeser)
         for meldung in meldungen:
             print(meldung)
     except Fehler as exc:

@@ -18,6 +18,7 @@ import os
 import re
 import tempfile
 import threading
+import time as time_module
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
@@ -33,7 +34,19 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 TZ = ZoneInfo("Europe/Berlin")
-PROFILE = ("defensiv", "ausgewogen", "aggressiv")
+
+
+def profile() -> tuple[str, ...]:
+    """Die Profile (Portfolios) des Spiels in der Reihenfolge von config/profile.json (Abschnitt 7 in regeln.md)."""
+    return tuple(config("profile")["profile"])
+
+
+def __getattr__(name: str):  # g.PROFILE bleibt als Kürzel für profile() erhalten
+    if name == "PROFILE":
+        return profile()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 ZERTIFIKATE = ("ko", "faktor")
 AKTIEN = ("aktie", "etf")
 
@@ -45,6 +58,18 @@ TRADE_FELDER = [
     # Ergänzungen gegenüber AUFTRAG_PHASE1.md (siehe STATUS.md, Entscheidungen):
     "devisenkurs", "stop", "kursziel", "bemerkung",
 ]
+
+# Automatische Ausführung (ausfuehrung.py): Kennzeichnung in der Bemerkung der Trade-Zeile.
+AUTOMATISCH_MUSTER = re.compile(r"^automatisch \(Auslöser: ([^)]+)\)")
+AUSLOESER = ("Eröffnung", "Markt", "Limit", "Stop", "Kursziel", "Knock-out", "Daueranweisung")
+
+
+def automatisch_text(ausloeser: str, detail: str = "") -> str:
+    """Bemerkung einer automatisch ausgeführten Buchung: `automatisch (Auslöser: Stop): Kurs 98 <= Stop 99`."""
+    if ausloeser not in AUSLOESER:
+        raise Fehler(f"Unbekannter Auslöser '{ausloeser}'.")
+    return f"automatisch (Auslöser: {ausloeser})" + (f": {detail}" if detail else "")
+
 
 NAV_FELDER = [
     "datum", "cash", "positionswert", "portfoliowert", "hoechststand",
@@ -219,6 +244,75 @@ def schreibsperre():
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+class BuchungssperreBelegt(Fehler):
+    """Die Buchungssperre ist belegt und wurde nicht in der Wartezeit frei."""
+
+
+_buchung_lokal = threading.RLock()
+_buchung_tiefe = 0
+BUCHUNGSSPERRE_WARTEZEIT = 120.0
+
+
+@contextmanager
+def buchungssperre(wartezeit: float | None = None):
+    """Kurze, atomare Sperre über einen ganzen Buchungsvorgang (Laden, Prüfen, Schreiben).
+
+    Anders als die Schreibsperre (nur ein einzelner Schreibvorgang) und die Session-Sperre (session.lock, eine
+    Session gegen die andere) schützt sie das Lesen-Entscheiden-Schreiben eines Portfolios: buchen.py, die
+    automatische Ausführung (ausfuehrung.py) und die Nachbuchung (bewertung.py) laufen nacheinander, nie
+    gleichzeitig, und laden das Portfolio erst innerhalb der Sperre. Prozessübergreifend über flock auf
+    .buchungssperre, innerhalb eines Prozesses wiedereintrittsfähig. Ist sie nach `wartezeit` Sekunden nicht
+    frei, bricht die Funktion mit BuchungssperreBelegt ab (der Aufrufer versucht es später erneut).
+    """
+    global _buchung_tiefe
+    frist = BUCHUNGSSPERRE_WARTEZEIT if wartezeit is None else wartezeit
+    if not _buchung_lokal.acquire(timeout=frist):
+        raise BuchungssperreBelegt(f"Buchungssperre nach {frist:g} Sekunden nicht frei (anderer Thread).")
+    try:
+        if _buchung_tiefe:
+            _buchung_tiefe += 1
+            try:
+                yield
+            finally:
+                _buchung_tiefe -= 1
+            return
+        datei = pfad(".buchungssperre")
+        datei.parent.mkdir(parents=True, exist_ok=True)
+        with open(datei, "a", encoding="utf-8") as handle:
+            if fcntl is not None:
+                ende = time_module.monotonic() + frist
+                while True:
+                    try:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as exc:
+                        if time_module.monotonic() >= ende:
+                            raise BuchungssperreBelegt(
+                                f"Buchungssperre nach {frist:g} Sekunden nicht frei (anderer Prozess bucht gerade).") from exc
+                        time_module.sleep(0.05)
+            _buchung_tiefe = 1
+            try:
+                yield
+            finally:
+                _buchung_tiefe = 0
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        _buchung_lokal.release()
+
+
+def mit_buchungssperre(funktion):
+    """Decorator: die ganze Funktion läuft unter der Buchungssperre."""
+    import functools
+
+    @functools.wraps(funktion)
+    def gesperrt(*args, **kwargs):
+        with buchungssperre():
+            return funktion(*args, **kwargs)
+
+    return gesperrt
+
+
 def text_anhaengen(datei: Path, neu: str) -> None:
     """Hängt Text an; bisheriger Inhalt bleibt Byte für Byte erhalten (unter Schreibsperre)."""
     datei = Path(datei)
@@ -293,7 +387,7 @@ def config(name: str) -> dict:
 def limits_fuer(profil: str) -> dict:
     profile = config("profile")["profile"]
     if profil not in profile:
-        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(PROFILE)}.")
+        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(profile())}.")
     return {k: D(v) for k, v in profile[profil].items()}
 
 
@@ -331,9 +425,45 @@ def richtlinie_ausformuliert(profil: str) -> bool:
     return datei.exists() and RICHTLINIE_VORLAGE_MARKE not in datei.read_text(encoding="utf-8")
 
 
+# Version der Standard-Anlagerichtlinien (config/richtlinien/). v2: Handeln ist der Normalfall (Umbau v2).
+RICHTLINIE_STANDARD_VERSION = 2
+RICHTLINIE_STANDARD_MUSTER = re.compile(r"Standard-Richtlinie(?: v(\d+))? aus config/richtlinien/")
+RICHTLINIE_HISTORIE_UNVERAENDERT = ("Spielstart", "Standard-Update")
+
+
+def richtlinie_standard_version(profil: str) -> int | None:
+    """Version der Standard-Richtlinie, auf der strategie/<profil>.md beruht (None: keine Standard-Richtlinie)."""
+    datei = richtlinie_pfad(profil)
+    if not datei.exists():
+        return None
+    treffer = RICHTLINIE_STANDARD_MUSTER.search(datei.read_text(encoding="utf-8"))
+    return None if treffer is None else int(treffer.group(1) or 1)
+
+
+def richtlinie_historie(profil: str) -> list[list[str]]:
+    """Zeilen der Änderungshistorie (Datum, Anlass, Änderung, Prüfkriterium) aus strategie/<profil>.md."""
+    zeilen = []
+    for zeile in richtlinie_pfad(profil).read_text(encoding="utf-8").splitlines():
+        if re.match(r"^\|\s*\d{4}-\d{2}-\d{2}\s*\|", zeile):
+            zeilen.append([z.strip() for z in zeile.strip().strip("|").split("|")])
+    return zeilen
+
+
+def richtlinie_unveraendert(profil: str) -> bool:
+    """Reine Standard-Richtlinie: nie von Hand oder von Claude angepasst (nur Standardeinträge in der Historie)."""
+    return richtlinie_standard_version(profil) is not None and all(
+        len(z) > 1 and z[1] in RICHTLINIE_HISTORIE_UNVERAENDERT for z in richtlinie_historie(profil))
+
+
+def richtlinien_veraltet() -> list[str]:
+    """Unveränderte Standard-Richtlinien einer älteren Version (werden automatisch aktualisiert)."""
+    return [p for p in profile() if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
+            and (richtlinie_standard_version(p) or 0) < RICHTLINIE_STANDARD_VERSION]
+
+
 def richtlinien_offen() -> list[str]:
     """Profile ohne ausformulierte Anlagerichtlinie."""
-    return [p for p in PROFILE if not richtlinie_ausformuliert(p)]
+    return [p for p in profile() if not richtlinie_ausformuliert(p)]
 
 
 def portfolio_pfad(profil: str) -> Path:
@@ -352,11 +482,11 @@ def portfolio_speichern(portfolio: dict) -> None:
 
 
 def vorhandene_profile() -> list[str]:
-    return [p for p in PROFILE if portfolio_pfad(p).exists()]
+    return [p for p in profile() if portfolio_pfad(p).exists()]
 
 
 def naechste_id(portfolio: dict, art: str) -> str:
-    praefix = {"order": "O", "position": "P", "trade": "T"}[art]
+    praefix = {"order": "O", "position": "P", "trade": "T", "plan": "D"}[art]
     zaehler = portfolio.setdefault("zaehler", {"order": 0, "position": 0, "trade": 0})
     zaehler[art] = int(zaehler.get(art, 0)) + 1
     return f"{praefix}-{zaehler[art]:04d}"

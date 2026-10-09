@@ -1,17 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Flag, History, Newspaper, NotebookPen, Rocket } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Cog, Flag, History, Newspaper, NotebookPen, Rocket, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
 import { EntscheidungsZeile, SessionKarte, TerminZeile } from "@/components/Bausteine";
 import { NewsListe } from "@/components/News";
 import { NavDiagramm, Sparkline } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
-import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Seitenkopf, Skelett, StufenAbzeichen } from "@/components/ui";
+import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, ProfilMarke, Seitenkopf, Skelett, StufenAbzeichen } from "@/components/ui";
 import { api, PROFILE, type Kennzahlen, type Lauf, type NavDaten, type NewsMeldung, type Pflichtschritt, type Profil } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, prozent, relativ } from "@/lib/format";
+import { datum, datumKompakt, euro, faktor, prozent, relativ, zeit } from "@/lib/format";
 import { LaufStatusAbzeichen, laufText } from "@/seiten/Laeufe";
 
 function gruss(): string {
@@ -54,8 +54,8 @@ export function Cockpit() {
       {daten && daten.einrichtung_offen.length > 0 && <EinrichtungsHinweis schritte={daten.einrichtung_offen} />}
 
       {!daten ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {[0, 1, 2].map((i) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
             <Skelett key={i} className="h-[208px] rounded-2xl" />
           ))}
         </div>
@@ -69,7 +69,7 @@ export function Cockpit() {
         </>
       ) : (
         <>
-          <section className="grid gap-4 md:grid-cols-3" aria-label="Portfolios">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Portfolios">
             {profile.map((p) => (
               <PortfolioKarte key={p} profil={p} k={daten.profile[p]!} werte={(nav.data?.profile[p] ?? []).map((z) => z.portfoliowert)} />
             ))}
@@ -98,6 +98,37 @@ export function Cockpit() {
                   {daten.termine.length > 4 && <p className="px-3 text-[12px] text-text-3">und {daten.termine.length - 4} weitere</p>}
                 </div>
               </Karte>
+              {!!daten.handeln?.length && (
+                <Karte>
+                  <KarteKopf titel="Handeln" icon={<TrendingUp className="size-4" />} untertitel="Handeln ist der Normalfall, Cash die Ausnahme" />
+                  <ul className="space-y-2 px-4 pb-4 text-[12.5px] text-text-2" aria-label="Hinweise zum Handeln">
+                    {daten.handeln.slice(0, 4).map((h) => (
+                      <li key={h.text} className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warnung" aria-hidden />
+                        <span>{h.text}</span>
+                      </li>
+                    ))}
+                    {daten.handeln.length > 4 && <li className="text-text-3">und {daten.handeln.length - 4} weitere</li>}
+                  </ul>
+                </Karte>
+              )}
+              {!!daten.automatisch?.length && (
+                <Karte>
+                  <KarteKopf titel="Automatisch ausgeführt" icon={<Cog className="size-4" />} untertitel="Ohne Claude-Lauf, zu protokollierten Kursen" />
+                  <ul className="space-y-2 px-4 pb-4 text-[12.5px] text-text-2" aria-label="Automatisch ausgeführte Buchungen">
+                    {daten.automatisch.map((b) => (
+                      <li key={`${b.profil}-${b.trade_id}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <ProfilMarke profil={b.profil} />
+                        <span className="font-medium text-text">
+                          {b.aktion} {b.ticker}
+                        </span>
+                        <Abzeichen ton="akzent">Auslöser {b.ausloeser}</Abzeichen>
+                        <span className="text-text-3">{zeit(b.zeit)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Karte>
+              )}
               <LaufKarte lauf={daten.letzter_lauf} />
               <Karte className="flex-1">
                 <KarteKopf
@@ -186,7 +217,7 @@ function PortfolioKarte({ profil, k, werte }: { profil: Profil; k: Kennzahlen; w
           <div className="zahl mt-3 text-[30px] font-semibold tracking-[-0.025em] text-text">{euro(k.wert)}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-text-3">
             <span className="flex items-center gap-1">
-              <Delta wert={k.rendite} /> seit Start
+              <Delta wert={k.rendite} /> seit {datumKompakt(k.startdatum)}
             </span>
             <span className="flex items-center gap-1">
               <Delta wert={k.gegen_bench} /> ggü. Benchmark

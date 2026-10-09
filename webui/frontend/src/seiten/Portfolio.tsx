@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowRight, BookMarked, Gauge, Layers, ListOrdered, ReceiptText, ShieldHalf } from "lucide-react";
+import { ArrowRight, BookMarked, Gauge, Layers, ListOrdered, MoonStar, ReceiptText, ShieldHalf } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Ergebnis } from "@/components/Bausteine";
@@ -28,9 +28,9 @@ import {
   Skelett,
   StufenAbzeichen,
 } from "@/components/ui";
-import { api, type NavDaten, type PortfolioDetail, type Position, type Profil, type Trade } from "@/lib/api";
+import { api, type Daueranweisung, type NavDaten, type PortfolioDetail, type Position, type Profil, type Trade } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
+import { automatischAusloeser, datum, euro, faktor, frei, prozent, zahl, zeit } from "@/lib/format";
 
 export function Portfolio() {
   const { profil } = useParams({ strict: false }) as { profil: Profil };
@@ -96,6 +96,9 @@ export function Portfolio() {
           <ReiterKnopf value="orders"><ListOrdered className="size-4" />Orders {d && <Zaehler n={d.portfolio.offene_orders.length} />}</ReiterKnopf>
           <ReiterKnopf value="trades"><ReceiptText className="size-4" />Trades</ReiterKnopf>
           <ReiterKnopf value="limits"><ShieldHalf className="size-4" />Limits</ReiterKnopf>
+          {d?.daueranweisung && (
+            <ReiterKnopf value="daueranweisung"><MoonStar className="size-4" />Daueranweisung</ReiterKnopf>
+          )}
           <ReiterKnopf value="strategie"><BookMarked className="size-4" />Anlagerichtlinie</ReiterKnopf>
         </ReiterLeiste>
 
@@ -133,11 +136,123 @@ export function Portfolio() {
           <Trades profil={profil} />
         </ReiterInhalt>
         <ReiterInhalt value="limits">{d && <Limits d={d} />}</ReiterInhalt>
+        {d?.daueranweisung && (
+          <ReiterInhalt value="daueranweisung">
+            <DaueranweisungKarte da={d.daueranweisung} />
+          </ReiterInhalt>
+        )}
         <ReiterInhalt value="strategie">
           <VorgabenKarte profil={profil} />
           <Karte className="p-6 sm:p-8">{d?.strategie ? <Markdown text={d.strategie} /> : <Leer titel="Noch keine Anlagerichtlinie" text={`strategie/${profil}.md fehlt.`} />}</Karte>
         </ReiterInhalt>
       </Reiter>
+    </div>
+  );
+}
+
+const PLAN_STATUS: Record<string, { text: string; ton: "gut" | "warnung" | "neutral" }> = {
+  aktiv: { text: "aktiv", ton: "gut" },
+  ausgesetzt: { text: "ausgesetzt", ton: "warnung" },
+  beendet: { text: "beendet", ton: "neutral" },
+  abgelaufen: { text: "abgelaufen", ton: "neutral" },
+  ersetzt: { text: "ersetzt", ton: "neutral" },
+};
+
+/** Daueranweisung (Overnight-Zyklus): Kauf zum Schlusskurs, Verkauf zur Eröffnung, solange sie gültig und aktiv ist. */
+function DaueranweisungKarte({ da }: { da: Daueranweisung }) {
+  const plan = da.plan;
+  if (!plan)
+    return (
+      <Karte>
+        <Leer
+          titel="Keine Daueranweisung"
+          text="Ohne gültige Anweisung kauft und verkauft dieses Portfolio nichts. Claude setzt sie in einer Session (tools/daueranweisung.py) oder belegt mit Zahlen, warum nicht (regeln.md 12, Ausnahme a)."
+        />
+      </Karte>
+    );
+  const status = PLAN_STATUS[plan.status] ?? PLAN_STATUS.beendet;
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <Karte>
+        <KarteKopf
+          titel={`Daueranweisung ${plan.id}`}
+          untertitel="Kauf zum Schlusskurs, Verkauf zur nächsten Eröffnung; ausgeführt vom Hintergrunddienst ohne Claude-Lauf"
+          aktion={<Abzeichen ton={status.ton}>{status.text}</Abzeichen>}
+        />
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 pb-5 text-[13px] sm:grid-cols-3">
+          <div>
+            <dt className="text-[12px] text-text-3">Gültig bis</dt>
+            <dd className="zahl font-medium text-text">{datum(plan.gueltig_bis)}</dd>
+          </div>
+          <div>
+            <dt className="text-[12px] text-text-3">Einsatz je Nacht</dt>
+            <dd className="zahl font-medium text-text">{prozent(Number(plan.einsatz_anteil), false, 0)} des Portfoliowerts</dd>
+          </div>
+          <div>
+            <dt className="text-[12px] text-text-3">Nächte</dt>
+            <dd className="zahl font-medium text-text">
+              {plan.naechte} · Verlustnächte in Folge {plan.verlustnaechte_in_folge}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[12px] text-text-3">Ergebnis nach Kosten</dt>
+            <dd className="font-medium text-text">
+              <Ergebnis wert={Number(plan.ergebnis_eur)} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[12px] text-text-3">Journal-Eintrag</dt>
+            <dd>
+              <Link to="/entscheidungen/$id" params={{ id: plan.journal_id }} className="font-mono text-[12px] text-akzent hover:underline">
+                {plan.journal_id}
+              </Link>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[12px] text-text-3">Nächte</dt>
+            <dd className="font-medium text-text">{plan.nur_lange_naechte ? "nur lange (Wochenende, Feiertag)" : "alle"}</dd>
+          </div>
+          <div className="col-span-2 sm:col-span-3">
+            <dt className="text-[12px] text-text-3">Instrumente</dt>
+            <dd className="text-text">
+              {plan.instrumente.map((i) => (
+                <span key={i.ticker} className="mr-4 inline-block">
+                  {i.typ.toUpperCase()} <span className="font-mono">{i.ticker}</span> · Gewicht {prozent(Number(i.gewicht), false, 0)}
+                  {i.hebel ? ` · Hebel ${i.hebel}` : ""} · Stop {prozent(Number(i.stop_abstand), false, 1)} unter dem Kurs
+                </span>
+              ))}
+            </dd>
+          </div>
+          <div className="col-span-2 sm:col-span-3">
+            <dt className="text-[12px] text-text-3">Aussetzen bei</dt>
+            <dd className="text-text">
+              Drawdown-Stufe ab {plan.aussetzen.ab_drawdown_stufe}
+              {plan.aussetzen.nach_verlustnaechten ? `, nach ${plan.aussetzen.nach_verlustnaechten} Verlustnächten in Folge` : ""}
+              {plan.aussetzen.unter_portfoliowert ? `, Portfoliowert unter ${euro(Number(plan.aussetzen.unter_portfoliowert))}` : ""}
+            </dd>
+          </div>
+          {plan.status_grund && (
+            <div className="col-span-2 sm:col-span-3">
+              <dt className="text-[12px] text-text-3">Grund des Status</dt>
+              <dd className="text-text">{plan.status_grund}</dd>
+            </div>
+          )}
+        </dl>
+      </Karte>
+      <Karte>
+        <KarteKopf titel="Protokoll" untertitel="data/daueranweisung/ (nur anhängen)" />
+        <ul className="space-y-2 px-5 pb-5 text-[12.5px]">
+          {da.protokoll.length === 0 && <li className="text-text-3">Noch keine Ereignisse.</li>}
+          {da.protokoll.map((e) => (
+            <li key={`${e.zeit}-${e.ereignis}-${e.text}`} className="border-l-2 border-rand pl-3">
+              <div className="text-text-3">
+                {zeit(e.zeit)} · {e.ereignis}
+              </div>
+              <div className="text-text-2">{e.text}</div>
+            </li>
+          ))}
+        </ul>
+      </Karte>
     </div>
   );
 }
@@ -186,7 +301,7 @@ function Zusammensetzung({ d }: { d: PortfolioDetail }) {
 const TYP_NAME: Record<Position["typ"], string> = { aktie: "Aktie", etf: "ETF", ko: "Knock-out", faktor: "Faktor" };
 
 function Positionen({ positionen }: { positionen: Position[] }) {
-  if (!positionen.length) return <Karte><Leer titel="Keine offenen Positionen" text="Nichtstun ist eine gültige Entscheidung – die Begründung steht im Session-Eintrag." /></Karte>;
+  if (!positionen.length) return <Karte><Leer titel="Keine offenen Positionen" text="Handeln ist der Normalfall, Cash die Ausnahme: Warum keine Position besteht, steht als belegte Ausnahme im Session-Eintrag." /></Karte>;
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {positionen.map((p) => {
@@ -330,7 +445,14 @@ function Trades({ profil }: { profil: Profil }) {
           zeilen={gefiltert.slice(0, 400).map((t) => [
             <Mono key="t">{t.trade_id}</Mono>,
             zeit(t.zeit),
-            <span key="a" className="font-medium text-text">{t.aktion}</span>,
+            <span key="a" className="font-medium text-text">
+              {t.aktion}
+              {automatischAusloeser(t.bemerkung) && (
+                <Abzeichen ton="akzent" className="ml-1.5 align-middle">
+                  automatisch · {automatischAusloeser(t.bemerkung)}
+                </Abzeichen>
+              )}
+            </span>,
             t.ticker || "–",
             t.grund,
             t.stueck != null ? frei(t.stueck) : "–",

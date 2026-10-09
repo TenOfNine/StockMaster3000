@@ -50,6 +50,7 @@ function Markenflaeche() {
         <path d="M0 230 C 80 220, 120 200, 180 205 S 300 170, 360 160 S 480 120, 600 110" fill="none" stroke={PROFIL_FARBE.aggressiv} strokeWidth="2" />
         <path d="M0 240 C 90 236, 150 222, 210 220 S 330 205, 400 196 S 520 178, 600 170" fill="none" stroke={PROFIL_FARBE.ausgewogen} strokeWidth="2" />
         <path d="M0 250 C 100 248, 170 242, 240 240 S 360 232, 430 228 S 540 220, 600 216" fill="none" stroke={PROFIL_FARBE.defensiv} strokeWidth="2" />
+        <path d="M0 262 C 100 258, 180 266, 250 256 S 380 262, 450 250 S 550 252, 600 246" fill="none" stroke={PROFIL_FARBE.overnight} strokeWidth="2" strokeDasharray="5 4" />
       </svg>
       <div className="relative flex items-center gap-3">
         <img src="/favicon.svg" alt="" className="size-10 rounded-xl shadow-lg" />
@@ -60,13 +61,13 @@ function Markenflaeche() {
       </div>
       <div className="relative max-w-md">
         <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.025em] text-text">
-          Drei Portfolios. Jede Entscheidung begründet, jede Buchung nachrechenbar.
+          Vier Portfolios. Jede Entscheidung begründet, jede Buchung nachrechenbar.
         </h2>
         <p className="mt-4 text-[14.5px] leading-relaxed text-text-2">
           Rechnen macht Code, Entscheiden macht Claude. Hier verfolgt ihr Kennzahlen, Trade-Akten und das Reasoning hinter
-          jeder Abwägung – auch hinter begründetem Nichtstun.
+          jeder Abwägung – und die Begründung, wenn einmal nicht gehandelt wird.
         </p>
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           {PROFILE.map((p) => (
             <span key={p} className="inline-flex items-center gap-2 rounded-full border border-rand bg-flaeche-2/80 px-3 py-1 text-[12.5px] text-text-2 backdrop-blur">
               <span className="size-2 rounded-full" style={{ background: PROFIL_FARBE[p] }} />

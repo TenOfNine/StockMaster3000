@@ -38,21 +38,27 @@ eigenen Trades verwaltet.
   synthetische Zertifikate, Limitprüfung, Buchung, Nachbuchung und
   Bewertung, Prüfskript, Session-Sperre, Initialisierung.
 - GitHub Action führt bei jedem Push Tests und Prüfskript aus.
-- Sessions werden von einem Auftraggeber in Claude Code gestartet;
-  Versäumtes seit der letzten Session wird nach festen Regeln
-  nachgebucht.
+- Sessions werden von einem Auftraggeber in Claude Code gestartet oder
+  nach Zeitplan im Container; sie sind an kein Datum gebunden. Vorgemerkte
+  Orders, Limits, Stops, Kursziele und Barrieren führt der
+  Hintergrunddienst ohne Claude-Lauf aus (v1.4); die Nachbuchung bleibt der
+  nächtliche Abgleich.
 
 ## 5. Spielmechanik (Kurzfassung)
 - Aktien und ETFs (Xetra, NYSE, NASDAQ), synthetische Knock-out- und
   Faktor-Zertifikate long und short auf eine feste Basiswertliste.
 - Cash-Zins 2 % p. a.; 1 EUR Gebühr je Order; feste Spreads;
   Mindestorder 100 EUR.
-- Orders außerhalb der Handelszeit zum nächsten Eröffnungskurs; kein
-  Backdating; im Zweifel die ungünstigere Annahme.
+- Orders außerhalb der Handelszeit werden vorgemerkt und zur nächsten
+  Eröffnung ausgeführt; kein Backdating; im Zweifel die ungünstigere
+  Annahme. Handeln ist der Normalfall, Cash die Ausnahme (v1.4).
 - Profile mit harten Limits für Zertifikate-Anteil, Hebel,
   Gesamt-Exposure, Einzelposition, Cashquote, Risiko je Trade und einer
   zweistufigen Drawdown-Bremse.
-- Benchmarks aus MSCI-World-ETF und Cash: 30/70, 60/40, 100/0.
+- Benchmarks aus MSCI-World-ETF und Cash: 30/70, 60/40, 100/0, 100/0.
+- Vier Profile (config/profile.json): Defensiv, Ausgewogen, Aggressiv und
+  Overnight, das per Daueranweisung zum Schlusskurs kauft und zur
+  nächsten Eröffnung verkauft (Experiment mit ehrlicher Kostenhypothese).
 
 ## 6. Lernsystem
 - Journal vor jeder Order (These, Szenarien, Stop, Ziel, Quellen),
@@ -100,6 +106,12 @@ einer zweistelligen Zahl abgeschlossener Trades je Portfolio.
   Exposure-Limit und Drawdown-Bremse; Profil-Benchmarks; Gebühren im
   Risiko; Erkenntnisregister; Session-Sperre; Startdatum erst nach
   Aufbau; Entwicklungsauftrag mit Abnahmekriterien.
+
+- v1.4 (09.10.2026, Umbau v2): Zwei-Faktor nur beim Anlegen von Benutzern;
+  keine Zeitfenster für Sessions; Handeln vor Cash mit umgekehrter
+  Beweislast; Ausführung ohne Claude-Lauf; viertes Profil Overnight mit
+  Daueranweisung; Profile aus der Konfiguration. Einzelheiten: regeln.md 14
+  und STATUS.md ab Entscheidung 40.
 
 ## 11. Offene Punkte
 - Session-Rhythmus nach Phase 2 festlegen.

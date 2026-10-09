@@ -47,7 +47,18 @@ UMGEBUNG = {
 UEBERFLUESSIG = ("SM_SCHLUESSEL", "SM_SCHLUESSEL_DATEI", "SPIEL_REPO", "SM_REPO_PFAD",
                  *[name for namen in UMGEBUNG.values() for name in namen])
 
-VORGABEN_PROFILE = ("defensiv", "ausgewogen", "aggressiv")
+PROFILE_ERSATZ = ("defensiv", "ausgewogen", "aggressiv", "overnight")
+
+
+def profil_liste() -> tuple[str, ...]:
+    """Die Profile des Spiels aus config/profile.json des Frameworks (regeln.md Abschnitt 7), in dieser Reihenfolge."""
+    try:
+        datei = einstellungen().framework_pfad / "config" / "profile.json"
+        return tuple(json.loads(datei.read_text(encoding="utf-8"))["profile"])
+    except (OSError, ValueError, KeyError):
+        return PROFILE_ERSATZ
+
+
 VORGABEN_MAX_ZEICHEN = 4000
 VORGABEN_HISTORIE_MAX = 300
 
@@ -66,7 +77,7 @@ STANDARD = {
                              {"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "21:30", "art": "trading"}]},
     "migration": {"aus_umgebung": []},
     # Vorgaben der Auftraggeber je Portfolio (Entscheidung 39): weicher Text, sofort wirksam, jede Änderung eine Version.
-    "vorgaben": {"profile": {p: {"text": "", "version": 0, "zeit": None, "von": None} for p in VORGABEN_PROFILE},
+    "vorgaben": {"profile": {p: {"text": "", "version": 0, "zeit": None, "von": None} for p in PROFILE_ERSATZ},
                  "historie": []},
 }
 
@@ -195,11 +206,11 @@ def vorgaben_aendern(profil: str, text: str, von: str) -> dict | None:
     Gilt sofort: Der nächste Lauf liest den Text beim Start. Die Historie behält die letzten Versionen mit Text,
     Zeitpunkt und Kennung (nie Name) des Administrators.
     """
-    if profil not in VORGABEN_PROFILE:
+    if profil not in profil_liste():
         raise KeyError(profil)
     with _sperre:
         vorgaben = laden()["vorgaben"]
-        aktuell = vorgaben["profile"][profil]
+        aktuell = vorgaben["profile"].get(profil) or {"text": "", "version": 0, "zeit": None, "von": None}
         if text == aktuell["text"]:
             return None
         eintrag = {"profil": profil, "version": aktuell["version"] + 1, "text": text,

@@ -27,6 +27,7 @@ S_VOLL = """### S-20261012-01 | Session | auftraggeber-a
 - Defensiv: keine Order; Alternative Anleihe-ETF verworfen
 - Ausgewogen: Order J-20261012-01
 - Aggressiv: keine Order
+- Overnight: keine Daueranweisung, Ausnahme (a) mit Zahlen
 - Offene Punkte und Termine für die nächste Session: Zahlen SAP
 """
 

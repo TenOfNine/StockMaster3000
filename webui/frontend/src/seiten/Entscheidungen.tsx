@@ -152,7 +152,7 @@ export function Sessions() {
     <div className="einblenden">
       <Seitenkopf
         titel="Sessions & Abwägungen"
-        untertitel="Jede Session endet mit einem Session-Eintrag: je Portfolio die Entscheidung, die erwogenen und verworfenen Alternativen und die Begründung – auch bei Nichtstun."
+        untertitel="Jede Session endet mit einem Session-Eintrag: je Portfolio die Handlung (Order) oder die belegte Ausnahme mit Zahlen, die erwogenen und verworfenen Alternativen und die Begründung."
       />
       {kennungen.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-1.5">
@@ -207,7 +207,7 @@ function SessionEintrag({ s, hervorheben }: { s: JournalEintrag; hervorheben: bo
       ) : (
         <>
           {s.felder.marktlage && <p className="mt-3 text-[13.5px] leading-relaxed text-text-2">{s.felder.marktlage}</p>}
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
             {PROFILE.map((p) => (
               <div key={p} className="rounded-xl border border-rand bg-flaeche-2 p-3.5">
                 <div className="mb-1.5 flex items-center gap-2 text-[12.5px] font-semibold text-text">

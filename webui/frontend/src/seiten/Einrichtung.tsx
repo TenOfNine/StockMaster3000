@@ -918,7 +918,7 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
       id="zeitplan"
       titel="Sessions & Zeitplan"
       icon={<CalendarClock className="size-4" />}
-      untertitel="Sessions laufen im Container. Automatisch nur an Handelstagen (Xetra oder NYSE), nie parallel zu einer Session-Sperre. Unabhängig davon bucht der Hintergrunddienst jede Nacht um 00:30 Uhr alle Tage bis gestern nach (vorgemerkte Orders, Stops, Tagesabschluss)."
+      untertitel="Sessions laufen im Container. Geplante Läufe werden nie übersprungen: Ist eine Session aktiv, wartet der Lauf sichtbar. Unabhängig davon führt der Hintergrunddienst vorgemerkte Orders, Limits, Stops und Kursziele bei offenem Markt ohne Claude-Lauf aus und bucht jede Nacht um 00:30 Uhr alle Tage bis gestern nach (Abgleich, Tagesabschluss)."
       status={automatik ? <Abzeichen ton="gut">Automatik an</Abzeichen> : <Abzeichen>Automatik aus</Abzeichen>}
     >
       <Schalter an={automatik} setAn={setAutomatik} label="Sessions automatisch starten" beschreibung="Mit den Voreinstellungen aus dem Bereich Claude; manueller Start jederzeit unter Claude-Läufe." />
@@ -978,10 +978,12 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
 // Vorgaben der Auftraggeber je Portfolio (Entscheidung 39)
 
 const VORGABE_BEISPIEL: Record<Profil, string> = {
-  defensiv: "Beispiel: Kapitalerhalt hat Vorrang. Nur handeln, wenn der mögliche Verlust bis zum Stop klein bleibt; Nichtstun kurz begründen.",
-  ausgewogen: "Beispiel: Nur mit konkretem Katalysator und Zeithorizont einsteigen; Gewinne nach Plan realisieren.",
+  defensiv: "Beispiel: Breit gestreute ETFs als Kern, Einzelwerte nur mit engem Stop; die Cashquote bleibt nahe der Mindestquote. Auf einen Trade nur verzichten, wenn der Verlust bis zum Stop das Limit sprengt (mit Zahlen belegen).",
+  ausgewogen: "Beispiel: Nur mit konkretem Katalysator und Zeithorizont einsteigen, Gewinne nach Plan realisieren. Cash ist die Ausnahme: Jede Session eine konkrete Order oder die belegte Ausnahme mit Zahlen.",
+  overnight:
+    "Beispiel: Daueranweisung nur setzen, wenn `python tools/overnight.py ergebnis` für das Instrument nach Kosten (rund 0,3 % je Nacht) im Testzeitraum positiv ist; sonst die belegte Ausnahme mit Netto-Rendite und Kosten je Nacht in den Session-Eintrag.",
   aggressiv:
-    "Beispiel: Kein Trade ist besser als ein Verlust-Trade, aber Nichtstun ist nie neutral. Prüfe in jeder Session die Screener-Kandidaten und handle, sobald du nach Kosten einen plausiblen kleinen Gewinn siehst. Kein Zwangstrade: Ohne solchen Kandidaten begründe das Nichtstun mit den geprüften Werten.",
+    "Beispiel: Handeln ist der Normalfall, Nichthandeln ist nie neutral. Prüfe in jeder Session die Screener-Kandidaten und handle, sobald du nach Kosten einen positiven Erwartungswert siehst. Kein Churning: Ohne solchen Kandidaten belege die Ausnahme mit den geprüften Werten und Zahlen.",
 };
 
 export function VorgabenBereich() {
@@ -1125,7 +1127,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
       id="spielstart"
       titel="Spielstart"
       icon={<Rocket className="size-4" />}
-      untertitel="Legt die drei Portfolios mit je 1.000 EUR an (tools/init.py). Es gibt weder ein festes Start- noch ein Enddatum: Das Spiel beginnt beim Start (heute). Ein früher gesetztes, noch unberührtes Startdatum lässt sich auf heute vorziehen – nie rückwirkend. Voraussetzung ist die Freigabe nach AP12 durch einen Auftraggeber (regeln.md Abschnitt 2)."
+      untertitel="Das Spiel startet von selbst mit dem ersten Trading-Lauf (Startdatum heute, Standard-Anlagerichtlinien, Freigabe nach AP12 durch den Auftraggeber des Laufs). Hier lässt es sich auch von Hand starten (tools/init.py): ein Portfolio je Profil (Defensiv, Ausgewogen, Aggressiv, Overnight) mit je 1.000 EUR. Es gibt weder ein festes Start- noch ein Enddatum; ein früher gesetztes, noch unberührtes Startdatum zieht der Lauf auf heute vor – nie rückwirkend."
       status={s.gestartet ? <Abzeichen ton="gut">gestartet {s.spiel.startdatum}</Abzeichen> : <Abzeichen ton="warnung">nicht gestartet</Abzeichen>}
     >
       <ul className="space-y-1.5">
@@ -1150,7 +1152,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
         <div className="space-y-2">
           <p className="text-[13px] text-text-2">
             {s.vorziehen.moeglich
-              ? `Es ist noch nichts gebucht: Das Startdatum lässt sich auf ${s.vorziehen.ziel} vorziehen, damit Trading-Läufe sofort handeln können. Rückwirkend geht es nie.`
+              ? `Es ist noch nichts gebucht: Das Startdatum lässt sich auf ${s.vorziehen.ziel} vorziehen (ein Trading-Lauf tut das ohnehin selbst). Rückwirkend geht es nie.`
               : `Vorziehen auf ${s.vorziehen.ziel} ist nicht möglich: ${s.vorziehen.grund ?? ""}`}
           </p>
           {s.vorziehen.moeglich && (

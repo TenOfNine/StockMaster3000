@@ -12,7 +12,7 @@ from ..auth import DB, Angemeldet, angemeldet, begrenzen
 from . import lesen
 
 router = APIRouter(prefix="/api/spiel", tags=["spiel"], dependencies=[Depends(angemeldet)])
-Profil = Annotated[str, Query(pattern=r"^(defensiv|ausgewogen|aggressiv)$")]
+Profil = Annotated[str, Query(pattern=r"^[a-z][a-z0-9-]{1,30}$")]
 
 
 def _404(funktion, *argumente):
@@ -39,6 +39,8 @@ def ueberblick(db: DB) -> dict:
         "status": lesen.status()["kopf"],
         "sperre": lesen.sperre(),
         "termine": lesen.termine(),
+        "handeln": lesen.handeln(),
+        "automatisch": lesen.automatische_buchungen(),
         "profile": {p: lesen.kennzahlen(p, bench) for p in profile},
         "letzte_sessions": sessions,
         "letzte_entscheidungen": [e for e in journal if e["art"] == "J"][-6:][::-1],
@@ -52,12 +54,12 @@ def nav() -> dict:
 
 
 @router.get("/portfolios/{profil}")
-def portfolio(profil: Literal["defensiv", "ausgewogen", "aggressiv"]) -> dict:
+def portfolio(profil: str) -> dict:
     return _404(lesen.portfolio, profil)
 
 
 @router.get("/portfolios/{profil}/trades")
-def trades(profil: Literal["defensiv", "ausgewogen", "aggressiv"]) -> list[dict]:
+def trades(profil: str) -> list[dict]:
     return _404(lesen.trades, profil)
 
 

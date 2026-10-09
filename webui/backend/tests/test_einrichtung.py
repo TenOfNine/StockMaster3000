@@ -28,8 +28,8 @@ def test_ueberblick_ohne_secrets(admin):
     assert daten["geheimnisse"]["claude_token"]["gesetzt"] is False
     assert {m["wert"] for m in daten["optionen"]["claude"]["modelle"]} >= {"opus", "sonnet", "haiku"}
     assert {a["wert"] for a in daten["optionen"]["claude"]["aufwand"]} >= {"low", "medium", "high"}
-    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "beobachtung", "nachbuchung", "claude",
-                                                       "worker"}
+    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "beobachtung", "nachbuchung",
+                                                       "ausfuehrung", "claude", "worker"}
     schritte = [s["schritt"] for s in daten["pflichtschritte"]]
     assert schritte == ["kursdaten", "claude"]  # Demo-Spiel ist gestartet
 
@@ -464,7 +464,7 @@ def test_startdatum_vorziehen_per_api(frisch, client):
 
 def test_vorgaben_versionieren_sofort_wirksam_und_im_audit(admin, monkeypatch):
     leer = admin.get("/api/einrichtung/vorgaben").json()
-    assert set(leer["profile"]) == {"defensiv", "ausgewogen", "aggressiv"} and leer["historie"] == []
+    assert set(leer["profile"]) == {"defensiv", "ausgewogen", "aggressiv", "overnight"} and leer["historie"] == []
     assert leer["profile"]["aggressiv"] == {"text": "", "version": 0, "zeit": None, "von": None}
     assert leer["max_zeichen"] == 4000
 
@@ -502,7 +502,7 @@ def test_vorgaben_eingaben_werden_geprueft(admin):
     assert admin.put(adresse, json={"text": "Umkehr ‮ Zeichen"}).status_code == 422
     assert admin.put(adresse, json={"text": "ok", "extra": 1}).status_code == 422
     assert admin.put(adresse, json={}).status_code == 422
-    assert admin.put("/api/einrichtung/vorgaben/unbekannt", json={"text": "x"}).status_code == 422
+    assert admin.put("/api/einrichtung/vorgaben/unbekannt", json={"text": "x"}).status_code == 404
     assert admin.get("/api/einrichtung/vorgaben").json()["profile"]["aggressiv"]["version"] == 1
 
 
@@ -557,3 +557,46 @@ def test_vorgaben_im_trading_prompt(app):
     assert claude_lauf.vorgaben_versionen() == "defensiv v1, aggressiv v1"
     # Nur der Trading-Lauf bekommt sie.
     assert "Vorgaben der Auftraggeber" not in claude_lauf.prompt("review", auftrag)
+
+
+def test_trading_prompt_stellt_handeln_in_den_vordergrund_und_kennt_keine_zeitfenster(app):
+    from types import SimpleNamespace
+
+    from stockmaster import claude_lauf
+
+    auftrag = SimpleNamespace(aufwand="high", auftraggeber="auftraggeber-a", modell="opus", id="lauf-1", ausloeser="zeitplan")
+    prompt = claude_lauf.prompt("trading", auftrag)
+    assert "Handeln ist der Normalfall, Cash die Ausnahme" in prompt and "Nichthandeln ist nicht neutral" in prompt
+    assert "Handlung oder Ausnahme" in prompt and "Erwartungswert nach Kosten" in prompt and "Mindest-Cashquote" in prompt
+    assert "Der Lauf hängt nicht von Datum, Wochentag, Uhrzeit oder Startdatum ab" in prompt
+    # Die frühere Beschränkung auf Recherche vor dem Startdatum ist weg.
+    assert "keine Order versuchen" not in prompt and "nur Marktüberblick" not in prompt
+    assert "Kapitalerhalt vor Rendite" not in prompt and "Nichtstun ist eine gültige" not in prompt
+
+
+def test_systemstatus_ausfuehrung(admin, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from stockmaster import appdaten, einrichtung
+
+    g = einrichtung._werkzeuge()
+    monkeypatch.setattr(g["ausfuehrung"], "irgendeine_boerse_offen", lambda jetzt: True)
+
+    def zeile(stand):
+        monkeypatch.setattr(appdaten, "zustand_lesen", lambda name: {"ausfuehrung": stand} if stand else {})
+        return einrichtung._ausfuehrung_ampel()
+
+    def stand(vor=timedelta(minutes=2), **zusatz):
+        return {"versuch": (datetime.now(UTC) - vor).isoformat(), "ausloeser": "takt", "ok": True, "buchungen": 0,
+                "offen": 2, "rueckstand": 0, "fehler": [], "probleme": [], "wiederholen": False, **zusatz}
+
+    assert zeile(None)["stufe"] == "gelb"  # Markt offen, aber noch kein Durchlauf
+    gut = zeile(stand(letzte_buchung={"zeit": datetime.now(UTC).isoformat(), "text": "Kauf 1 SAP.DE"}))
+    assert gut["stufe"] == "gruen" and "2 Orders in der Warteschlange" in gut["text"] and "Kauf 1 SAP.DE" in gut["text"]
+    rueckstand = zeile(stand(rueckstand=1))
+    assert rueckstand["stufe"] == "gelb" and "1 Market-Order" in rueckstand["text"]
+    kaputt = zeile(stand(ok=False, fehler=["SAP.DE: Kein verlässlicher Kurs"]))
+    assert kaputt["stufe"] == "gelb" and kaputt["details"][0]["text"] == "SAP.DE: Kein verlässlicher Kurs"
+    assert zeile(stand(vor=timedelta(minutes=40)))["stufe"] == "rot"  # bei offenem Markt überfällig
+    monkeypatch.setattr(g["ausfuehrung"], "irgendeine_boerse_offen", lambda jetzt: False)
+    assert zeile(stand(vor=timedelta(hours=9)))["stufe"] == "gruen"  # Markt zu: nichts überfällig

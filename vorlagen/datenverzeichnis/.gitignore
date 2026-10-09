@@ -3,3 +3,4 @@
 .schreibsperre
 *.tmp
 __pycache__/
+.buchungssperre

@@ -132,6 +132,24 @@ die Nur-Anhängen-Regeln über diese lokale Historie. Kein Code-Pfad pusht Spiel
   danach Bericht, Prüfung und lokaler Commit „session: Nachbuchung …“), damit vorgemerkte Orders nicht bis zur
   nächsten Session liegen. Status: Einrichtung → Systemstatus → „Nachbuchung“. Bei Fehlern wiederholt er
   stündlich; eine laufende Session oder ein laufender Lauf geht vor.
+- **Profile und Migration:** Die Profile (Defensiv, Ausgewogen, Aggressiv, Overnight) stehen in
+  `config/profile.json`. Fehlt im laufenden Spiel ein Profil, ergänzt der Worker es selbst: Sicherung nach
+  `/data-app/sicherungen/vor-migration-*.tar.gz` (die letzten drei bleiben), Commit des Ist-Zustands, dann
+  `tools/init.py --profile-ergaenzen` (Startdatum = heute, 1.000 EUR, nie rückwirkend; die bestehenden Portfolios
+  bleiben unverändert) und ein Commit „aufbau: Profil … ergänzt“. Ergebnis: Systemstatus und Log des Workers. Läuft
+  gerade eine Session, versucht er es später.
+- **Overnight-Analyse:** Der Worker ruft `tools/overnight.py analyse` wöchentlich ab 23:30 Uhr ab (Rückblick auf
+  Schluss → Eröffnung mit den Kosten des Spiels, Train/Test); Ergebnis `/data/.cache/overnight_analyse.json`,
+  lesbar mit `overnight.py ergebnis`. Von Hand, mit Netzwerk: `docker compose exec worker python
+  /app/framework/tools/overnight.py analyse`.
+- **Ausführung ohne Claude-Lauf:** Der Worker ruft `tools/ausfuehrung.py tick` bei offenem Markt alle 5 Minuten
+  sowie kurz nach Öffnung und kurz vor Schluss jeder Börse auf (nach Fehler oder fehlendem Kurs nach einer
+  Minute erneut). Er führt vorgemerkte Orders, Limits, Stops, Kursziele und Knock-outs zu protokollierten Kursen aus,
+  ohne Sprachmodell und ohne Token, unter der Buchungssperre (`/data/.buchungssperre`, unabhängig von
+  `session.lock`). Status: Einrichtung → Systemstatus → „Ausführung“ (letzter Durchlauf, Warteschlange, Rückstand,
+  Fehler). Protokoll: `data/ausfuehrung/JJJJ-MM-TT.jsonl`; Buchungen tragen „automatisch (Auslöser: …)“. Von Hand,
+  mit Netzwerk: `docker compose exec worker python /app/framework/tools/ausfuehrung.py tick`; Termine eines
+  Tages: `ausfuehrung.py ereignisse --tag JJJJ-MM-TT`. Steht die Nachbuchung aus, wartet die Ausführung.
 - **News:** `tools/news.py` ruft die Feeds aus `config/news.json` und der Einrichtung alle 15 Minuten ab,
   dedupliziert und speichert nur Titel, Kurztext und Link in `news/` (nur anhängen).
 

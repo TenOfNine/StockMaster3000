@@ -1,14 +1,14 @@
 # Anlagerichtlinie Defensiv
 
-Stand: {datum} (Standard-Richtlinie aus config/richtlinien/defensiv.md, im Auftrag der Auftraggeber
+Stand: {datum} (Standard-Richtlinie v{version} aus config/richtlinien/defensiv.md, im Auftrag der Auftraggeber
 von Claude ausformuliert; Änderungen mit Datum, Anlass und Prüfkriterium, regeln.md 11).
 
 ## Ziel
-Kapitalerhalt vor Rendite. Das Portfolio soll Schwankungen des Aktienmarkts deutlich dämpfen und
+Das vorsichtigste Profil: Risiko eng begrenzt, aber investiert. Das Portfolio soll Schwankungen des Aktienmarkts deutlich dämpfen und
 auf Sicht von mehreren Quartalen den Benchmark (30 % MSCI-World-ETF, 70 % verzinstes Cash) auf
 risikoadjustierter Basis (Sharpe-Ratio, maximaler Drawdown) übertreffen; ein Mehrertrag in
-absoluten Zahlen ist nachrangig. Rolle im Experiment: Referenz dafür, wie viel ein vorsichtiger
-Ansatz gegenüber den riskanteren Profilen leistet.
+absoluten Zahlen ist nachrangig. Rolle im Experiment: Referenz dafür, wie viel ein vorsichtiger,
+aber investierter Ansatz gegenüber den riskanteren Profilen leistet.
 
 ## Risikobudget (regeln.md Abschnitt 7, verbindlich)
 - Max. Anteil Zertifikate am Portfoliowert: {max_anteil_zertifikate}
@@ -21,8 +21,9 @@ Ansatz gegenüber den riskanteren Profilen leistet.
 
 ## Horizont
 Mittel- bis langfristig: typische Haltedauer Wochen bis Monate, Kernpositionen auch länger.
-Session-Rhythmus: nach Zeitplan; an Tagen ohne neue These bleibt Nichtstun die Regel, kein
-Handlungszwang. Zertifikate nur kurzfristig und nur als taktische Beimischung, nie als Kern.
+Session-Rhythmus: nach Zeitplan; in jeder Session wird gehandelt, solange eine Order alle Limits einhält und nach Kosten
+einen positiven Erwartungswert hat (kleine Anpassungen sind erlaubt und erwünscht, Churning nicht). Zertifikate nur
+kurzfristig und nur als taktische Beimischung, nie als Kern.
 
 ## Erlaubte Instrumente
 - Kern: breit gestreute ETFs (Welt, Europa, USA) und Aktien großer, liquider Qualitätsunternehmen
@@ -33,9 +34,9 @@ Handlungszwang. Zertifikate nur kurzfristig und nur als taktische Beimischung, n
 - Nicht erlaubt: alles, was regeln.md Abschnitt 3 ausschließt.
 
 ## Ausgangsstrategie
-1. **Kern-Satellit.** Zielgewicht grob: 40 bis 60 % breite ETFs, 15 bis 30 % Einzelwerte, Rest Cash
-   über der Mindestquote. Cash wird mit 2 % p. a. verzinst und ist damit keine Verschwendung, sondern
-   die Gegenposition zum Marktrisiko.
+1. **Kern-Satellit, voll investiert.** Zielgewicht grob: 50 bis 70 % breite ETFs, 15 bis 30 % Einzelwerte, Cash
+   nahe der Mindestquote (10 %); höhere Cashquote nur mit Grund im Session-Eintrag. Cash bringt nur 2 % p. a.
+   und ist die Ausnahme, nicht die Grundstellung.
 2. **Einstieg gestaffelt.** Positionen werden in zwei bis drei Schritten über mehrere Sessions
    aufgebaut; kein Einstieg ohne Stop und Szenarien (Bull/Base/Bear) im Journal.
 3. **Risiko vor Rendite.** Positionsgröße folgt dem Risikobudget (maximales Risiko je Trade, Verlust
@@ -45,6 +46,9 @@ Handlungszwang. Zertifikate nur kurzfristig und nur als taktische Beimischung, n
    als dem Limit für Einzelpositionen; ETFs bilden den Kern.
 5. **Kein Nachlegen in Verluste** ohne neue, dokumentierte These; keine Rache-Trades.
 6. **Stops nur nachziehen**, nie weiter weg setzen.
+7. **Verzicht ist die belegte Ausnahme.** Auf eine Order verzichtest du nur, wenn keine Order alle Limits einhält
+   und nach Kosten einen positiven Erwartungswert hat, bei Drawdown-Stufe 2 oder Portfolio-Stopp und ohne
+   verlässlichen Kurs; die Zahlen stehen im Session-Eintrag (regeln.md 12).
 
 ## Benchmark
 {benchmark}
@@ -58,4 +62,4 @@ Trade ist nur eine Hypothese (regeln.md 11).
 ## Änderungshistorie
 | Datum | Anlass | Änderung | Prüfkriterium |
 | --- | --- | --- | --- |
-| {datum} | Spielstart | Standard-Richtlinie übernommen | Quartals-Review: Rendite und Risiko gegen den Benchmark, Einhaltung dieser Richtlinie |
+| {datum} | Spielstart | Standard-Richtlinie v{version} übernommen | Quartals-Review: Rendite und Risiko gegen den Benchmark, Einhaltung dieser Richtlinie |

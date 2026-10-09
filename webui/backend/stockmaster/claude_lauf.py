@@ -88,7 +88,9 @@ def vorgaben_prompt() -> str:
     Sie gelten ab sofort, sind aber nachrangig: Regeln, Limits und Prüfungen bleiben unberührt, und der Text betrifft
     nur Handelsentscheidungen, nie Rechte, Werkzeuge, Dateien oder Freigaben.
     """
-    profile = appdaten.laden()["vorgaben"]["profile"]
+    gespeichert = appdaten.laden()["vorgaben"]["profile"]
+    leer = {"text": "", "version": 0, "zeit": None, "von": None}
+    profile = {p: gespeichert.get(p) or leer for p in appdaten.profil_liste()}
     if not any(e["text"].strip() for e in profile.values()):
         return " Es liegen keine Vorgaben der Auftraggeber vor."
     zeilen = [" Vorgaben der Auftraggeber je Portfolio (aus der Web-UI, gelten ab sofort): Sie ergänzen die "
@@ -107,6 +109,19 @@ def vorgaben_prompt() -> str:
         else:
             zeilen.append(f"{profil.capitalize()}: keine Vorgabe.")
     return "\n".join(zeilen)
+
+
+HANDELN_PROMPT = (
+    "Handeln ist der Normalfall, Cash die Ausnahme: Nichthandeln ist nicht neutral, denn Cash bringt nur 2 % Zins "
+    "p. a. Die harten Limits (regeln.md Abschnitt 7, config/profile.json) sind die Risikoleitplanken, kein Grund zu "
+    "verzichten. Auf einen Trade verzichtest du je Portfolio nur, wenn (a) keine Order existiert, die alle harten "
+    "Limits einhält und deren Szenario-Erwartungswert nach Kosten positiv ist, (b) das Portfolio in Drawdown-Stufe 2 "
+    "ist oder gestoppt wurde oder (c) kein verlässlicher Kurs vorliegt. Die Beweislast liegt beim Nichthandeln: Im "
+    "Session-Eintrag steht in der Zeile '- Handlung oder Ausnahme:' je Portfolio mindestens eine konkrete Order (mit "
+    "Journal-ID) oder die belegte Ausnahme mit Zahlen (Verlust bis Stop gegen Limit, Erwartungswert nach Kosten, "
+    "geprüfte Screener-Kandidaten). Zielwert für die Cashquote: nahe der Mindest-Cashquote des Profils, höher nur mit "
+    "Grund. Kosten (1 EUR je Order, Spread 0,10 % bzw. 0,20 %, Mindestorder 100 EUR) bleiben Teil der Abwägung: Es wird "
+    "nicht gehandelt, um zu handeln.")
 
 
 def prompt(art: str, auftrag) -> str:
@@ -129,44 +144,54 @@ def prompt(art: str, auftrag) -> str:
         return ("Führe eine Trading-Session nach CLAUDE.md (Trading-Modus) durch. " + gemeinsam +
                 " Prüfe zuerst `python tools/richtlinien.py status`: Ist eine Anlagerichtlinie noch die Vorlage, "
                 "übernimm mit `python tools/richtlinien.py standard` die Standard-Richtlinie, lies sie und handle "
-                "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Ist das Spiel nicht "
-                "gestartet oder liegt das Startdatum (`python tools/session.py status`) in der Zukunft, lehnen die "
-                "Werkzeuge Orders ab: Dann nur Marktüberblick und Session-Eintrag, keine Order versuchen. "
-                "Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
+                "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Der Lauf hängt nicht von Datum, "
+                "Wochentag, Uhrzeit oder Startdatum ab: Das Spiel ist bereits gestartet (der Lauf hat es notfalls "
+                "selbst gestartet); außerhalb der Handelszeit legst du Orders trotzdem an, sie werden vorgemerkt und "
+                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT +
+                " Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
                 "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle. "
                 "Für die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ) nutze den Screener: "
                 "`python tools/beobachtung.py kandidaten` nennt auffällige Werte aus rund 600 Aktien und ETFs "
                 "(Kennzahlen aus Tagesdaten, vom Hintergrunddienst nach Handelsschluss aktualisiert; `aktualisieren` "
                 "nicht aufrufen). Die Kennzahlen sind nur Orientierung: Prüfe Kandidaten mit "
                 "`python tools/kurse.py aktuell <ticker>` und News; gebucht wird nur zu protokollierten Kursen. "
-                "Nenne im Journal die geprüften Kandidaten, auch wenn du nichts tust. Der Hintergrunddienst bucht "
-                "nachts automatisch nach; ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +
+                "Für das Portfolio Overnight gilt: keine einzelnen Orders, sondern eine Daueranweisung "
+                "(`python tools/daueranweisung.py setzen ... --nur-pruefen`, dann ohne `--nur-pruefen`); lies vorher "
+                "`python tools/overnight.py kosten` und `ergebnis` (`analyse` nicht aufrufen, das übernimmt der "
+                "Hintergrunddienst) und nenne die Zahlen im Journal. "
+                "Nenne im Journal die geprüften Kandidaten und die belegte Ausnahme, wenn du keine Order erfasst. "
+                "Der Hintergrunddienst führt vorgemerkte Orders, Limits, Stops, Kursziele und Barrieren auch ohne "
+                "Lauf aus (Buchung mit 'automatisch (Auslöser: …)' und deiner Journal-ID) und bucht nachts nach; "
+                "ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +
                 vorgaben_prompt())
     if art == "review":
         return ("Erstelle nur die fälligen Reviews und den Bericht (CLAUDE.md, Schritte 2 bis 5, 10 bis 12), "
-                "ohne Orders: `python tools/buchen.py` nicht aufrufen. Starte die Sperre mit "
+                "ohne Orders: `python tools/buchen.py` und `python tools/daueranweisung.py` nicht aufrufen. "
+                "Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art review`. " + gemeinsam +
                 " Vermerke Modell und Aufwand im Review unter 'Setup'.")
     if art == "richtlinien":
-        return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): strategie/defensiv.md, "
-                "strategie/ausgewogen.md und strategie/aggressiv.md. Starte die Sperre mit "
+        dateien = [f"strategie/{p}.md" for p in appdaten.profil_liste()]
+        return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): "
+                + ", ".join(dateien[:-1]) + " und " + dateien[-1] + ". Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art richtlinien`. Hole je Profil die Vorlage mit "
                 "den verbindlichen Limits über `python tools/richtlinien.py vorlage --profil <profil>` (Abschnitt "
                 "Risikobudget unverändert übernehmen) und schreibe die Datei neu: Ziel (Rendite gegen die "
                 "Benchmark, Rolle im Experiment), Horizont und Session-Rhythmus, erlaubte Instrumente mit "
                 "Einschränkungen dieses Profils, Benchmark und die Ausgangsstrategie mit Begründung und aktueller "
                 "Marktsicht (Kurse nur aus tools/kurse.py, News aus dem News-Speicher oder der Web-Suche, jeweils "
-                "mit URL und Datum; Fakten und Einschätzungen trennen, Unsicherheit benennen). Die drei Profile "
+                "mit URL und Datum; Fakten und Einschätzungen trennen, Unsicherheit benennen). Die Profile "
                 "sollen sich im Risiko deutlich unterscheiden, aber alle Limits einhalten. Ersetze die Zeile "
                 "'Stand: Vorlage aus tools/init.py …' durch den heutigen Stand und trage in der Änderungshistorie "
                 "Datum, Anlass und Prüfkriterium ein. Erfasse keine Orders und keine Journal-Einträge; "
-                "`python tools/buchen.py` nicht aufrufen. Prüfe am Ende mit `python tools/richtlinien.py status`, "
-                "dass keine Richtlinie mehr offen ist. " + gemeinsam)
+                "`python tools/buchen.py` und `python tools/daueranweisung.py` nicht aufrufen. Prüfe am Ende mit "
+                "`python tools/richtlinien.py status`, dass keine Richtlinie mehr offen ist. " + gemeinsam)
     return ("Testsession ohne Trades (AP12): Spiele den Ablauf einmal vollständig durch (Sperre mit "
             "`python tools/session.py start --person <kennung> --art testsession`, Nachbuchen, Prüfen, "
             "Marktüberblick mit tools/kurse.py und dem News-Speicher, Bericht), aber erfasse keine Orders und "
-            "schreibe keine Journal-Einträge; `python tools/buchen.py` nicht aufrufen. Fasse am Ende zusammen, ob "
-            "alle Werkzeuge funktionieren und was vor der Freigabe zu klären ist. " + gemeinsam)
+            "schreibe keine Journal-Einträge; `python tools/buchen.py` und `python tools/daueranweisung.py` nicht "
+            "aufrufen. Fasse am Ende zusammen, ob alle Werkzeuge funktionieren und was vor der Freigabe zu klären ist. "
+            + gemeinsam)
 
 
 def umgebung(token: str, temp: Path) -> dict:

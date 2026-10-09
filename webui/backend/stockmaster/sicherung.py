@@ -35,7 +35,7 @@ from .config import einstellungen
 
 FORMAT = "stockmaster-sicherung"
 VERSION = 1
-AUSGESCHLOSSEN = {".cache", ".schreibsperre"}
+AUSGESCHLOSSEN = {".cache", ".schreibsperre", ".buchungssperre"}
 RESTORE_PFAD = "/api/sicherung/wiederherstellen"
 ERLAUBT = ("MANIFEST.json", "spielstand", "app/einstellungen.json", "app/geheimnisse.enc.json")
 MAX_ENTPACKT = 8 * 1024 * 1024 * 1024

@@ -145,12 +145,17 @@ Auftraggeber erlauben dafür ausdrücklich Änderungen an regeln.md, CLAUDE.md, 
 das ist eine Ausnahme zu CLAUDE.md Grundsatz 1 und gilt nur für diesen Auftrag. Unklarheiten entscheidet Claude
 selbst (regeln.md 12, Entscheidung 34); die Auslegungen stehen unter den Entscheidungen ab Nr. 40.
 
-| Stufe | Punkte | Branch |
-| --- | --- | --- |
-| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` |
-| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` |
-| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` |
-| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` |
+| Stufe | Punkte | Branch | Pull Request | Stand |
+| --- | --- | --- | --- | --- |
+| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` | #20 | umgesetzt, CI grün (Entscheidung 40) |
+| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` | #21 (baut auf A) | umgesetzt, CI grün (Entscheidungen 41, 42) |
+| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` | #22 (baut auf B) | umgesetzt, CI grün (Entscheidung 43) |
+| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` | #23 (baut auf C) | umgesetzt (Entscheidungen 44, 45) |
+
+Die Pull Requests sind gestapelt: Jeder hat den Branch der vorigen Stufe als Basis, damit der Diff nur die eigene Stufe
+zeigt. Zusammenführen in der Reihenfolge A, B, C, D (GitHub stellt die Basis des Folge-PR nach jedem Merge auf `main`
+um). Abnahme (lokal und in der CI): Werkzeuge 292 Tests, Backend 312, Oberfläche 45, E2E 4, `pruefe.py --historie` auf
+Demo- (mit simulierten Overnight-Nächten) und leerem Datenverzeichnis bestanden.
 
 Ausgangslage (geprüft am 2026-10-09 auf `main` nach Pull Request 19): Werkzeuge 234 Tests, Backend 292, Oberfläche 39
 (Komponenten) und E2E grün. Abweichungen zwischen Doku und Code, die dabei auffielen: (a) Entscheidung 37 und 39 sowie
@@ -332,7 +337,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
 32. Das Ergebnis eines Claude-Laufs wird vollständig gespeichert und als Markdown angezeigt (vorher
     gekürzt auf 2.000 Zeichen). Die Erlaubnisliste der Läufe kennt `git -C <pfad> log/status/diff/show`;
     `git push`, `remote`, `config` und `reset` sind auch mit `-C` verboten.
-33. Läufe lassen sich jederzeit manuell und geplant starten und stoppen; es gibt kein festes Enddatum
+33. (Teile ersetzt durch Entscheidung 41: Vorprüfung, Überspringen und Startdatum-Sperre entfallen.) Läufe lassen sich jederzeit manuell und geplant starten und stoppen; es gibt kein festes Enddatum
     (regeln.md: „Kein festes Enddatum“) und kein zwingendes Startdatum für die App:
     - **Manuell** startet jeder Lauf immer (Admin, Bestätigung, Token, höchstens ein Lauf, Session-Sperre).
       Der Startdialog zeigt nur Hinweise (`GET /api/laeufe/vorpruefung`): Spiel nicht gestartet,
@@ -514,7 +519,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Auftraggeber“ ein. Das Lauf-Log nennt die Versionen. Die Vorgaben gelten ab dem nächsten gestarteten Lauf; ein
     laufender Lauf behält seinen Stand. **Konservative Auslegungen, bitte bestätigen:** (1) Die Vorgaben ändern keine
     Zahl-Limits: Hebel, Exposure, Cash-Quote und Positionsgröße bleiben in regeln.md Abschnitt 7 bzw.
-    config/profile.json. (2) CLAUDE.md nennt Nichtstun eine gültige Entscheidung und verlangt Kapitalerhalt vor Rendite;
+    config/profile.json. (2) [ersetzt durch Entscheidung 42] CLAUDE.md nannte Nichtstun eine gültige Entscheidung und verlangt Kapitalerhalt vor Rendite;
     eine Vorgabe kann die Anforderungen an die Begründung des Nichtstuns erhöhen („mit den geprüften Screener-Kandidaten
     begründen“), aber keinen Zwangstrade erzwingen. Die Platzhalter-Beispiele im Editor sind so formuliert. (3) Die
     Vorgaben stehen in der App-Konfiguration, nicht im Spielstand: Das Journal zitiert sie (mit Version), die
@@ -551,6 +556,173 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Internet gestellt werden. Tests: Anmeldung ohne Code (auch mit vorhandenem TOTP), Administrator ohne Zwei-Faktor,
     Anlegen mit gültigem, falschem und fehlendem Code, andere Admin-Aktionen ohne Code mit Passwortprüfung, E2E.
 
+
+41. Keine Zeitfenster und Datumsmechanik mehr (Umbau v2, Stufe B, Punkt 2). **Umgesetzt.** Als „Zeitfenster“ wurde
+    ausgelegt: alles, was einen Lauf oder eine Order wegen Datum, Wochentag, Uhrzeit oder Startdatum verhindert oder
+    einschränkt. Entfernt sind: die Startdatum-Sperre in `buchen.py` (`portfolio_pruefen`), die Vorprüfung und die
+    Hinweise im Startdialog (`GET /api/laeufe/vorpruefung`, `hinweise()`), die Prompt-Passage „nur recherchieren“, das
+    Überspringen geplanter Trading-Termine (kein Handelstag, Startdatum in der Zukunft, Richtlinien offen), das
+    30-Minuten-Fenster, die Pflichtschritte „Spiel starten“ und „Anlagerichtlinien“ der Einrichtung und der Abschnitt
+    „Modus bestimmen“ in CLAUDE.md (Entwicklung und Trading trennt nur noch der Auftrag). **Bleibt:** Kein Backdating
+    (regeln.md 1.3), Handelszeiten als Ausführungsbedingung (außerhalb vorgemerkt, nächste Gelegenheit), Kursalter,
+    Review-Rhythmus nach Spielzeit, die Wochentage und Uhrzeiten des Zeitplans selbst (der Zeitplan ist eine Einstellung
+    der Auftraggeber, keine Sperre). **Auslegungen:** (1) Ein geplanter Lauf wird nie übersprungen. Ist eine Session
+    aktiv (Sperre), wird er sichtbar zurückgestellt (`zeitplan_offen`, Status „wartet“ im Plan, Cockpit und Laufseite)
+    und alle fünf Minuten erneut versucht. (2) Nachholfenster: Fiel der Worker aus, wird ein verpasster Termin bis
+    120 Minuten danach nachgeholt; ein wartender Termin gibt nach 24 Stunden mit sichtbarem Vermerk auf (sonst
+    stauen sich Läufe beim nächsten Termin). Beides sind Betriebsgrenzen, keine Handelssperren. (3) Ist das Spiel beim
+    Start eines Trading-Laufs nicht initialisiert, startet der Lauf es selbst: Startdatum heute, Standard-
+    Anlagerichtlinien, Audit-Eintrag, Auslöser `lauf` in `spiel.json` (`init.py --freigabe <auftraggeber> --ausloeser
+    lauf`). Die Freigabe nach AP12 erteilt damit der Auftraggeber, der den Lauf startet bzw. den Zeitplan eingerichtet
+    hat. (4) Nachbuchung und Standard-Richtlinien warten nicht mehr auf das Startdatum. **Ersetzt** die Regeln der
+    Entscheidung 33 zu Vorprüfung, Überspringen und Startdatum. Tests: Werkzeuge (Order am Starttag und davor
+    Startdatum nicht gesetzt), Backend (wartender Lauf, Nachholen, Aufgeben nach 24 h, Selbststart, Prompt), Oberfläche
+    und E2E.
+42. Handeln hat Vorrang vor Cash (Umbau v2, Stufe B, Punkt 3; Auftrag der Auftraggeber vom 2026-10-09). **Umgesetzt.**
+    CLAUDE.md (Rolle, Schritt 7 und 9, Session-Vorlage, Haltung), `config/richtlinien/*.md` (Standard-Richtlinie
+    Version 2), regeln.md 10 und 12 (v1.4) und die Prompts verlangen: Handeln ist der Normalfall, Cash die Ausnahme,
+    Nichthandeln ist nicht neutral (Cash bringt 2 %). Verzicht auf eine Order nur, wenn (a) keine Order alle harten
+    Limits einhält und einen positiven Szenario-Erwartungswert nach Kosten hat, (b) Drawdown-Stufe 2 oder Portfolio-
+    Stopp gilt oder (c) kein verlässlicher Kurs vorliegt. Beweislast je Session und Portfolio: eine Order (Journal-ID)
+    oder die belegte Ausnahme mit Zahlen (Verlust bis Stop gegen Limit, Erwartungswert nach Kosten, geprüfte
+    Kandidaten) in der neuen Pflichtzeile „Handlung oder Ausnahme“; zusätzlich die Zeile „Cashquote“ (Zielwert: die
+    Mindest-Cashquote des Profils). Kosten bleiben Teil der Abwägung (kein Churning). **Ersetzt** Entscheidung 39,
+    Auslegung 2 (Nichtstun gültig, Kapitalerhalt vor Rendite); Vorgaben der Auftraggeber bleiben nachrangig gegenüber den
+    Regeln, die Platzhaltertexte im Editor sind angepasst. **Prüfung:** `pruefe.py` und das Cockpit warnen (nie Fehler)
+    bei einer durchschnittlichen Cashquote über Mindestquote plus 25 Punkten in den letzten fünf NAV-Tagen (Cockpit und
+    `pruefe.py`, nur aktive Portfolios) und bei Sessions ohne Order und ohne belegte Ausnahme; die Session-Warnung gilt
+    erst für Sessions ab `handeln.pflicht_ab` (2026-10-09) in `config/projekt.json`, damit die Historie unverändert
+    bleibt. Schwellen stehen in `config/projekt.json` (`handeln`). **Migration:** Der Worker aktualisiert unveränderte ältere Standard-Richtlinien
+    selbst (Version im Kopf; Historie-Zeile „Standard-Update“); angepasste Richtlinien bleiben stehen und werden im
+    Befund genannt. **Auslegungen:** (1) „Verlässlicher Kurs“ heißt: Kurs aus `tools/kurse.py`, nicht älter als 30
+    Minuten während der Handelszeit, protokolliert; fehlt er, ist (c) erfüllt. (2) Für die Pflichtzeile gilt nur die Order bzw. Ausnahme
+    der jeweiligen Session. (3) Die harten Limits und Kosten bleiben unverändert.
+    Grenze: Eine Anweisung an ein Sprachmodell ist keine Prüfung; die Warnungen machen Abweichungen sichtbar.
+
+43. Ausführung ohne Claude-Lauf (Umbau v2, Stufe C, Punkt 5). **Umgesetzt.** Neues Werkzeug `tools/ausfuehrung.py`
+    (kein Sprachmodell, kein Token): Der Hintergrunddienst (`worker.py`, Schritt `ausfuehren`) ruft `tick` bei offenem
+    Markt alle 5 Minuten auf, außerdem eine Minute nach der Öffnung und zwei Minuten vor dem Schluss jeder Börse
+    (`ausfuehrung.faellig`/`ereignisse`; Zeitzonen, Sommerzeit-Unterschiede zwischen Europa und USA, Feiertage und
+    Frühschlüsse kommen aus `config/universum.json`, `kurse.boersen_fenster`). Nach fehlendem Kurs, belegter Sperre oder
+    Fehler wiederholt der Dienst nach einer Minute. Der Tick führt aus: vorgemerkte Market-Orders, Limit-Orders (Kurs auf
+    oder besser als das Limit) und je Position Knock-out vor Stop vor Kursziel, jeweils zum protokollierten Kurs
+    (`kurse.aktuell`, Kursalter höchstens 30 Minuten, ohne Kurs keine Ausführung und neuer Versuch). Die Order gilt erst ab
+    ihrer Erfassung (die Quellzeit des Kurses muss nach der Erfassung liegen); die Limits werden vor jeder Kaufausführung
+    mit `limits.pruefe_kauf` erneut geprüft (Verstoß: Order verfällt mit Vermerk, `verfall`-Zeile). Jede Buchung trägt die
+    ursprüngliche Journal-ID und in der Bemerkung `automatisch (Auslöser: Eröffnung|Markt|Limit|Stop|Kursziel|Knock-out)`
+    (Spalte `bemerkung`, damit sich die CSV-Köpfe bestehender Instanzen nicht ändern); Trade-Akte, Buchungstabelle und eine
+    Cockpit-Karte „Automatisch ausgeführt“ zeigen sie, `pruefe.py` prüft sie (bekannter Auslöser, Kursquelle `kurse`,
+    innerhalb der Handelszeit des Basiswerts, keine zweite Endbuchung je Order, keine Ausführung vor der Vormerkung).
+    **Buchungssperre:** `gemeinsam.buchungssperre` (flock auf `.buchungssperre`, wiedereintrittsfähig, Wartezeit mit
+    Abbruch) umfasst den ganzen Vorgang Laden–Prüfen–Schreiben. `buchen.py` (kaufen, verkaufen, aendern, storno),
+    `bewertung.nachbuchen_profil` und die Ausführung nehmen sie; das Portfolio wird erst in der Sperre geladen. Sie ist von
+    `session.lock` unabhängig: Eine laufende Claude-Session und die Ausführung buchen nacheinander, nie gleichzeitig;
+    Kurse für die Ausführung werden vor der Sperre geholt, damit sie kurz bleibt. Eine Order hat genau einen Endzustand
+    (Ausführung, Verfall, Storno steht in `trades/`); eine Order mit schon vorhandener Endbuchung führt der Tick nicht
+    erneut aus (Hinweis im Bericht, `pruefe.py` meldet die Inkonsistenz). **Nachbuchung bleibt der Abgleich:** Sie
+    bucht nachts weiter bis gestern, holt Eröffnungskurse und Zwischenberührungen (Tageshoch/-tief, ungünstigere Annahme)
+    nach und meldet automatische Kurse außerhalb der Tageskerze (`bewertung.abgleich_automatisch`, nur Hinweis, nie eine
+    Änderung vorhandener Buchungen). **Systemstatus** hat die Zeile „Ausführung“ (letzter Durchlauf, Warteschlange offener
+    Orders, Rückstand nicht ausgeführter Market-Orders bei offenem Markt, Fehler, Hinweise; rot, wenn bei offenem Markt
+    seit 15 Minuten kein Durchlauf stattfand). Protokoll: `data/ausfuehrung/JJJJ-MM-TT.jsonl` (nur Durchläufe mit Buchung,
+    Fehler oder Problem; Nur-Anhängen-Prüfung) und der Log des Dienstes. Der Dienst committet Ausführungen lokal
+    (`session: automatische Ausführung …`), solange keine Session aktiv ist; sonst übernimmt der Commit der Session.
+    **Auslegungen:** (1) Eine vorgemerkte Market-Order wird zum ersten protokollierten Kurs nach der Eröffnung
+    ausgeführt, sofern dessen Quellzeit höchstens 30 Minuten nach der Eröffnung liegt; sonst überlässt der Tick sie der
+    Nachbuchung (offizieller Eröffnungskurs). Das ist eine Näherung an den Eröffnungskurs (Xetra-Kurse sind bei yfinance
+    etwa 15 Minuten verzögert, gebucht wird nur zu protokollierten Kursen mit Quellzeit nach der Eröffnung). (2) Stops,
+    Kursziele und Limits lösen auf dem protokollierten Kurs aus, nicht auf Zwischenwerten: Ein Stop wird zum Kurs des
+    Ticks ausgeführt (nie besser als der Stop), Kursziel und Limit zum Kurs des Ticks (nie schlechter als vorgegeben); was
+    zwischen zwei Ticks geschieht, holt die Nachbuchung mit der ungünstigeren Annahme nach. (3) Ein geänderter Stop wirkt für
+    die laufende Ausführung sofort (Kurse nach der Änderung), für die nächtliche Kerzenprüfung weiter ab dem nächsten
+    Handelstag (Entscheidung zu `buchen.py aendern`, unverändert). (4) Solange Tage der Nachbuchung ausstehen (Worker
+    ausgefallen), führt der Dienst nicht aus, damit die Reihenfolge der Tage stimmt; der Systemstatus nennt es. (5) Stop und
+    Kursziel gehören zu einer Position und schließen sich aus: Das ist die OCO-Wirkung. **Nicht umgesetzt (Vorschlag an
+    die Auftraggeber):** Trailing-Stop, weil der Stop-Verlauf (`stop_historie`) und die Kerzenprüfung der Nachbuchung ihn
+    nicht abbilden; als Vorschlag: Stufe `trailing` mit festem Abstand, vom Tick nachgezogen und je Anpassung als `aenderung`
+    gebucht. **Grenzen:** yfinance liefert keine Tickdaten; die Ausführung ist so genau wie der 5-Minuten-Takt der
+    Kursquelle, und ein Ausfall des Dienstes bei offenem Markt wird erst von der nächsten Nachbuchung ausgeglichen.
+    Tests: Sonntagabend erfasst, Montag zur Eröffnung ohne Lauf ausgeführt (Kauf und Verkauf), verpasstes
+    Eröffnungsfenster, fehlender und veralteter Kurs, Stop, Kursziel, Knock-out, Limit, Limit-Verstoß, Rückstand der
+    Nachbuchung, gleichzeitige Ticks und Claude-Session ohne Doppelbuchung (Threads), Sperre prozessübergreifend, Uhr
+    (Sommerzeit-Unterschied, Frühschluss, Feiertag, Takt), Prüfungen, Abgleich, Worker-Schritt und Systemstatus.
+
+44. Profilliste aus der Konfiguration und Migration bestehender Instanzen (Umbau v2, Stufe D, Punkte 4 und 6).
+    **Umgesetzt.** Die Profile stehen nur noch in `config/profile.json` (Reihenfolge = Anzeige); `gemeinsam.profile()`
+    ersetzt die feste Liste `PROFILE` (das Kürzel `g.PROFILE` bleibt als Alias), alle Werkzeuge (`init`, `limits`, `buchen`,
+    `bewertung`, `pruefe`, `richtlinien`, Benchmark, Ranking), das Backend (Routen, Vorgaben, Prompts) und die Oberfläche
+    lesen sie von dort bzw. aus den Daten; ein Test der Oberfläche prüft, dass Namen und Farben alle Profile der
+    Konfiguration abdecken. regeln.md 7 hat die Spalte Overnight, `pruefe.py` gleicht Tabelle und `config/profile.json`
+    weiter ab (jetzt vier Spalten). **Migration:** Der Hintergrunddienst ergänzt fehlende Profile selbst (`worker.py`
+    `profile_ergaenzen`, `tools/init.py --profile-ergaenzen`): Sicherung im App-Verzeichnis (`/data-app/sicherungen`,
+    die letzten drei), lokaler Commit des Ist-Zustands, dann Portfolio, Trades, NAV, Standard-Anlagerichtlinie und die
+    Hypothese H-OVERNIGHT-1 in lessons.md, danach ein Commit. Idempotent (zweiter Lauf tut nichts), nie während einer
+    Session, nie rückwirkend (**Startdatum = Tag der Ergänzung, 1.000 EUR**); die drei bestehenden Portfolios, ihre
+    Trades, Journal und Reviews bleiben Byte für Byte unverändert (Test auf einer Kopie eines Datenverzeichnisses mit
+    Historie). Der Start eines neuen Spiels legt alle vier Profile gleich an. Das Redeploy in Portainer braucht keinen
+    manuellen Eingriff. **Unterschiedliche Startdaten:** Die Benchmark rechnet je Portfolio ab dessen erstem
+    Schlusskurs (`benchmark.csv` bekommt die Spalte `overnight`, Werte vor dem eigenen Start bleiben leer);
+    Rendite, Drawdown und Sharpe zählen je Portfolio ab dem eigenen Start, `ranking.md` zeigt das Startdatum und nennt
+    den Grund, warum Renditen dann an der eigenen Benchmark zu messen sind; Reviews bleiben nach Spielzeit
+    (frühestes Startdatum). Session-Einträge werden für ein Profil erst ab dessen Startdatum vollständig verlangt (keine
+    Rückwirkung auf alte Sessions). **Technisches:** `.buchungssperre` steht in der `.gitignore` der Datenverzeichnisse
+    (bestehende bekommen die Zeile beim nächsten Commit), im Export ausgeschlossen. Unbekannte Profile liefern jetzt 404
+    statt 422. Tests: Migration auf einer Kopie (Werkzeuge und Dienst), Idempotenz, Session-Sperre, Benchmark und Ranking
+    mit unterschiedlichen Startdaten, `pruefe.py --historie` danach.
+45. Viertes Portfolio „Overnight“ (Umbau v2, Stufe D, Punkt 4). **Umgesetzt**, mit einer **offenen Entscheidung** (unten).
+    *Mechanik:* Daueranweisung (`tools/daueranweisung.py`, regeln.md 6): Claude setzt Instrumente (ETF, Aktie, Knock-out
+    mit Hebel bis 3, höchstens drei), Gewichte, Einsatzanteil (Standard 97 %), Stop-Abstand (Standard 3 %), Gültigkeit
+    (höchstens 90 Tage), Aussetzkriterien (Drawdown-Stufe ab 1, Verlustnächte in Folge, Portfoliowert unter x) mit
+    Journal-ID; das Werkzeug rechnet vorher alle Limits mit den heutigen Kursen (Trockenlauf `--nur-pruefen`, sonst
+    abgelehnt). Der Hintergrunddienst kauft nach dem Handelsschluss zum ersten protokollierten Kurs, dessen Quellzeit (bei
+    Minutenkerzen der Beginn der letzten Minute) höchstens zwei Minuten vor dem Schluss liegt (Fenster: Schluss plus 5 bis 90 Minuten), und verkauft die Positionen der Anweisung am nächsten
+    Handelstag zum ersten Kurs nach der Eröffnung (höchstens 30 Minuten danach), sonst die Nachbuchung zum Eröffnungskurs
+    der Tageskerze. Wochenenden, Feiertage und Frühschlüsse folgen dem Börsenkalender (Test über Wochenende und
+    Weihnachten). Ohne gültige Anweisung geschieht nichts; eine Anweisung gilt erst ab ihrer Erfassung (wer sie nach
+    dem Schluss erfasst, kauft erst am nächsten Tag). Nächte werden aus den Trade-Zeilen abgerechnet (Ergebnis inklusive
+    Gebühren, Verlustserie), jeder Verkaufsweg zählt gleich. Protokoll `data/daueranweisung/overnight.jsonl` (nur
+    anhängen); `pruefe.py` prüft: Kauf nur mit Anweisung im Protokoll, nach Erfassung, bis zur Gültigkeit, nicht
+    während Aussetzung, Journal-ID gleich, liegengebliebene Positionen. *Preisquelle (konservativ, dokumentiert):*
+    protokollierte Kurse aus `tools/kurse.py` (yfinance verzögert Xetra um etwa 15 Minuten): Der Kauf wartet, bis die
+    Quelle einen Kurs nach dem Schluss liefert (nie vor dem Schluss), der Verkauf, bis sie einen nach der Eröffnung
+    liefert (nie davor); die Nachbuchung meldet Kurse außerhalb der Tageskerze. Positionen, die nach dem Schluss gekauft
+    wurden, zählen für die Tageskerze des Kauftags nicht (Stop und Barriere gelten ab der nächsten Kerze). *Limits
+    Overnight* (neu, regeln.md 7, `config/profile.json`): Zertifikate-Anteil 30 %, Hebel 3x, Exposure 1,5x,
+    **Einzelposition 100 %** (jede weitere Position kostet zwei Gebühren je Nacht), Mindest-Cashquote 2 %, Risiko je Trade
+    4 % (verlangt einen Stop), Drawdown-Bremse -10 % / -20 %, Benchmark 100 % MSCI World (EUNL.DE). Die Limits und Kosten
+    der drei bestehenden Profile sind unverändert. *Kostenmachbarkeit (gerechnet, `tools/overnight.py kosten`):* Bei
+    1.000 EUR kostet eine Nacht mit einer ETF-Position (970 EUR) 2,97 EUR = **0,31 %** des Einsatzes (2 EUR Gebühr, 0,10 %
+    Spread), mit zwei Positionen 4,97 EUR = **0,51 %**, mit einem Knock-out (Hebel 3, 300 EUR) 2,67 EUR = 0,89 % des
+    Einsatzes, auf den Basiswert umgerechnet wieder **0,30 %**: Die festen Gebühren fressen den Hebel, Hebel bessert die
+    Machbarkeit nicht. Der Basiswert müsste im Schnitt mindestens so viel zwischen Schluss und Eröffnung steigen. Die
+    Erwartung ist, dass breite Indizes das nicht tun (Größenordnung wenige hundertstel Prozent je Nacht, eine
+    Größenordnung darunter); das ist als **Hypothese H-OVERNIGHT-1** in lessons.md und in der Standard-Richtlinie
+    festgehalten und **hier nicht mit Marktdaten geprüft**: Die Entwicklungsumgebung hatte keinen Zugang zu den Kursquellen.
+    Das Rückblick-Werkzeug (`tools/overnight.py analyse`, Rohkurse eines Jahres aus den Listen von
+    `config/beobachtung.json`, 70 % Training / 30 % Test, Kosten des Spiels, Kennzahlen: Mittel, Median, Trefferquote,
+    5-%-Quantil, Wochenende gegen Wochentag, Streuung, Korrelation Xetra gegen US-Sitzung) läuft wöchentlich im
+    Hintergrunddienst (ab 23:30 Uhr) und liefert die Zahlen mit echten Daten; Ergebnis über `overnight.py ergebnis`.
+    Getestet ist es mit synthetischen Reihen (kein Netz). Rohkurse enthalten Dividendenabschläge (Aktien wirken zu
+    schlecht, ETFs nicht), ein Jahr ist kurz, bei rund 600 Werten gibt es Zufallstreffer: ein Kandidat ist eine
+    Hypothese. Die Demo (Zufallskurse ohne Vorteil) zeigt den Kostenverlust: 38 Nächte, Ergebnis rund -92 EUR (-0,24 %
+    je Nacht). *Beste Variante im Rahmen der Kosten:* eine breite ETF-Position, Einsatz bis zur Mindest-Cashquote, wenn
+    die Messung es stützt nur lange Nächte (`--nur-lange-naechte`: vor Wochenende und Feiertag), Aussetzen bei
+    Drawdown-Stufe 1. **Offene Entscheidung für die Auftraggeber:** Ist das Profil im Kostenmodell strukturell nicht
+    tragfähig (erwarteter Verlust von rund 0,3 % je Nacht gegenüber einem Ertrag von wenigen hundertstel Prozent), hat das
+    Experiment drei Wege: (1) behalten und messen (Ausnahme (a) in jeder Session belegen, kein Handel bis die
+    Messung einen positiven Erwartungswert zeigt; kostet nichts außer Aufmerksamkeit), (2) die Gebühr für dieses
+    Profil senken (kein Entscheid dieses Auftrags: Kosten werden nie still zugunsten eines Profils gesenkt) oder (3) das
+    Profil nach der ersten Messung schließen. Umgesetzt ist (1). *Oberfläche:* Profilfarbe `#F2AAE0` (dunkel) bzw.
+    `#8C1C67` (hell) mit Test auf Kontrast (mindestens 2,8) und paarweise Unterscheidbarkeit bei Rot-Grün- und
+    Blau-Gelb-Schwäche (CIELAB-Abstand mindestens 15, Simulation nach Machado); Reiter „Daueranweisung“ im Portfolio,
+    Cockpit-Karten in vier Spalten, App-Icon `assets/icons/vier-profile.svg` (Favicon), Vorgaben-Editor mit Overnight.
+    Gewinne und Verluste werden wie bisher zusätzlich über Vorzeichen und Symbol gezeigt. *Auslegungen:* (1) Die
+    Daueranweisung ist generisch (Zyklus in `config/profile.json`), derzeit nur für Overnight. (2) Positionen mit dem
+    Kennzeichen der Anweisung werden immer zur nächsten Eröffnung verkauft, auch wenn die Anweisung inzwischen
+    beendet, ausgesetzt oder abgelaufen ist (`beenden --positionen-behalten` nimmt das Kennzeichen weg). (3) Verpasst der
+    Dienst den Kauf zum Schluss (Ausfall), wird er nicht nachgeholt; der Verkauf wird nachgeholt. (4) Die Cash-Warnung in
+    `pruefe.py` trifft Overnight ohne Anweisung dauerhaft, weil Cash dort der Zustand ohne Anweisung ist; sie ist nur eine
+    Warnung, der Session-Eintrag belegt die Ausnahme.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

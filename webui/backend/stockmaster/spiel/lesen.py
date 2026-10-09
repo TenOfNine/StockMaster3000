@@ -89,7 +89,8 @@ def werkzeuge() -> dict[str, ModuleType]:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
                        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
-                                    "datenverzeichnis", "news", "richtlinien", "beobachtung")}
+                                    "datenverzeichnis", "news", "richtlinien", "beobachtung", "pruefe", "ausfuehrung",
+                                    "daueranweisung")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -99,7 +100,8 @@ def zuruecksetzen() -> None:
     """Für Tests: Werkzeuge neu laden (anderes Repository)."""
     for name in list(sys.modules):
         if name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine", "buchen", "pruefe", "init",
-                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien", "beobachtung"):
+                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien", "beobachtung",
+                    "ausfuehrung", "daueranweisung", "overnight"):
             del sys.modules[name]
     _module.clear()
 
@@ -235,7 +237,7 @@ def benchmark() -> list[dict]:
     """data/benchmark.csv (geschrieben von tools/bewertung.py bericht)."""
     w = werkzeuge()
     zeilen = w["gemeinsam"].csv_lesen(repo() / "data" / "benchmark.csv")
-    return [{k: (Decimal(v) if k != "datum" and v else v) for k, v in z.items()} for z in zeilen]
+    return [{k: (Decimal(v) if k != "datum" and v else (None if v == "" else v)) for k, v in z.items()} for z in zeilen]
 
 
 def profile() -> list[str]:
@@ -339,7 +341,7 @@ def portfolio(profil: str) -> dict:
     strategie = repo() / "strategie" / f"{profil}.md"
     return {
         "profil": profil,
-        "portfolio": {k: zahl(v) for k, v in daten.items() if k not in ("positionen",)},
+        "portfolio": {k: zahl(v) for k, v in daten.items() if k not in ("positionen", "daueranweisung")},
         "positionen": positionen,
         "bewertung": zahl({k: v for k, v in bewertung.items() if k != "positionen"}) if bewertung else None,
         "kennzahlen": kennzahlen(profil),
@@ -348,7 +350,18 @@ def portfolio(profil: str) -> dict:
         "max_risiko_trade": grenzen["max_risiko_trade"] / (2 if int(daten.get("drawdown_stufe", 0)) >= 1 else 1),
         "letzter_tageswert": {k: _num(v) if k not in ("datum", "status") else v for k, v in letzter.items()},
         "strategie": strategie.read_text(encoding="utf-8") if strategie.exists() else None,
+        "daueranweisung": _daueranweisung(profil, daten),
     }
+
+
+def _daueranweisung(profil: str, daten: dict) -> dict | None:
+    """Stand der Daueranweisung (Overnight-Zyklus) und die letzten Ereignisse des Protokolls; None ohne Zyklus."""
+    modul = werkzeuge()["daueranweisung"]
+    zyklus = modul.zyklus_profile().get(profil)
+    if zyklus is None:
+        return None
+    return {"zyklus": zyklus, "plan": daten.get("daueranweisung"),
+            "protokoll": list(reversed(modul.protokoll_lesen(profil)[-25:]))}
 
 
 def trades(profil: str) -> list[dict]:
@@ -589,6 +602,27 @@ def sperre() -> dict | None:
 
 def termine() -> list[dict]:
     return werkzeuge()["termine"].faellige_reviews()
+
+
+def automatische_buchungen(anzahl: int = 5) -> list[dict]:
+    """Die letzten automatisch (ohne Claude-Lauf) ausgeführten Buchungen mit Auslöser (regeln.md 6)."""
+    g = werkzeuge()["gemeinsam"]
+    treffer = []
+    for z in alle_trades():
+        m = g.AUTOMATISCH_MUSTER.match(z.get("bemerkung") or "")
+        if m:
+            treffer.append({"profil": z["profil"], "trade_id": z["trade_id"], "zeit": z["zeit"], "aktion": z["aktion"],
+                            "ticker": z["ticker"], "betrag_eur": z["betrag_eur"], "ausloeser": m.group(1),
+                            "journal_id": z["journal_id"], "order_id": z["order_id"]})
+    return sorted(treffer, key=lambda t: t["zeit"], reverse=True)[:anzahl]
+
+
+def handeln() -> list[dict]:
+    """Hinweise zum Handeln (regeln.md 12): hohe Cashquote, Sessions ohne Order und ohne belegte Ausnahme."""
+    try:
+        return werkzeuge()["pruefe"].handeln_hinweise()
+    except Exception:  # noqa: BLE001 - nur ein Hinweis, nie ein Grund, das Cockpit zu verweigern
+        return []
 
 
 # --------------------------------------------------------------------------

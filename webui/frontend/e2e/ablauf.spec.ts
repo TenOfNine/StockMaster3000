@@ -162,6 +162,8 @@ test("Lauf-Seite zeigt Läufe und Zeitplan und verträgt jede Form von Daten", a
   await expect(page.getByRole("heading", { name: "Claude-Läufe" })).toBeVisible();
   await expect(page.getByText("Automatik an")).toBeVisible();
   await expect(page.getByText(/Nächster Lauf/)).toBeVisible();
+  // Ein fälliger Termin, der auf eine aktive Session wartet, steht sichtbar da und wird nicht still übersprungen.
+  await expect(page.getByLabel("Wartende Termine")).toContainText("Wartet: Trading-Lauf vom 2026-10-07 09:35 – Session-Sperre von auftraggeber-b");
   await page.getByRole("button", { name: /Trading-Session.*fertig/ }).click();
   await page.waitForTimeout(800);
   expect(await page.locator('[role="alert"]').allInnerTexts(), "Bereichsfehler in der Lauf-Ansicht").toEqual([]);

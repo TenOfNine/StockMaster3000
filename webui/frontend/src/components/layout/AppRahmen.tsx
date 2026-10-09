@@ -287,7 +287,7 @@ function Kopfzeile({ oeffneMenue, oeffnePalette }: { oeffneMenue: () => void; oe
         </button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 hover:bg-flaeche-3" aria-label="Konto-Menü">
-            <span className="grid size-7 place-items-center rounded-full bg-gradient-to-br from-defensiv via-ausgewogen to-aggressiv text-[12px] font-semibold text-white">
+            <span className="grid size-7 place-items-center rounded-full bg-gradient-to-br from-defensiv via-ausgewogen via-60% to-overnight text-[12px] font-semibold text-white">
               {benutzer?.anzeigename.charAt(0).toUpperCase()}
             </span>
             <span className="hidden text-[13px] font-medium text-text sm:inline">{benutzer?.anzeigename}</span>
