@@ -20,7 +20,9 @@ Abschnitt 7 übereinstimmen.
 
 ## 2. Kapital und Zins
 
-- Startkapital: 1.000 EUR je Portfolio (defensiv, ausgewogen, aggressiv).
+- Startkapital: 1.000 EUR je Portfolio. Es gibt ein Portfolio je Profil der
+  Tabelle in Abschnitt 7 (defensiv, ausgewogen, aggressiv, overnight); die
+  Profile stehen in config/profile.json.
 - Spielbeginn: Das Spiel beginnt in dem Moment, in dem es gestartet wird:
   durch den ersten Trading-Lauf oder von Hand (tools/init.py, in der App
   Einrichtung → Spielstart). Der Starttag ist der heutige Kalendertag; ein
@@ -32,8 +34,15 @@ Abschnitt 7 übereinstimmen.
   Reviews oder Limits. Ein noch unberührtes Startdatum (keine Buchung,
   Order, Position, Nachbuchung oder Bewertung) darf auf heute vorgezogen
   werden, nie in die Vergangenheit.
+- Ergänzte Profile: Wird ein Profil in Abschnitt 7 ergänzt, während das
+  Spiel läuft (Migration, tools/init.py --profile-ergaenzen), startet sein
+  Portfolio am Tag der Ergänzung mit dem Startkapital, nie rückwirkend. Die
+  vorhandenen Portfolios und ihre Historie bleiben unberührt. Rendite,
+  Drawdown und Benchmark gelten je Portfolio seit seinem eigenen Startdatum;
+  Profile mit unterschiedlichem Start werden an der Rendite gegen die eigene
+  Benchmark verglichen.
 - Ein Arbeitsbereich ist eine eigenständige Spielinstanz mit eigenem
-  Repository, eigenen drei Portfolios und eigenen Auftraggebern. Diese
+  Repository, eigenen Portfolios (je Profil eines) und eigenen Auftraggebern. Diese
   Regeln gelten je Arbeitsbereich; Arbeitsbereiche sind strikt getrennt.
 - Cash-Zins: 2 % p. a., einfache Tageszinsen (Act/365) auf den
   Cash-Endbestand jedes Kalendertags, täglich gutgeschrieben. Die
@@ -138,7 +147,21 @@ prüfbar. Werte in Fremdwährung werden über EURUSD=X in EUR umgerechnet.
 ## 6. Orderarten und Nachbuchung
 
 Orderarten: Market, Limit, Stop-Loss, Kursziel (Take-Profit). Stops und
-Kursziele gehören zu einer Position.
+Kursziele gehören zu einer Position. Dazu die **Daueranweisung** (nur
+Profile mit Zyklus in config/profile.json, derzeit Overnight): Claude setzt in
+einer Session Instrumente mit Gewichten, Einsatz, Gültigkeit (höchstens 90
+Tage) und Aussetzkriterien (Drawdown-Stufe, Verlustnächte in Folge,
+Portfoliowert), mit Journal-ID und den üblichen Limitprüfungen
+(tools/daueranweisung.py, Trockenlauf mit den heutigen Kursen). Solange sie
+gültig und nicht ausgesetzt ist, kauft der Hintergrunddienst zum Schlusskurs
+und verkauft die Positionen der Anweisung am nächsten Handelstag zur
+Eröffnung (Börsenkalender: Wochenenden, Feiertage und verkürzte Handelstage
+gelten). Ohne gültige Anweisung geschieht nichts. Eine Anweisung gilt erst ab
+ihrer Erfassung; jede Buchung trägt ihre Journal-ID und "automatisch
+(Auslöser: Daueranweisung)". Fällt die Eröffnung eines Tages aus der
+Ausführung, verkauft die Nachbuchung zum Eröffnungskurs der Tageskerze. Die
+Nacht-Ergebnisse (Summe der Beträge inklusive Gebühren) zählen Nächte und
+Verlustnächte in Folge.
 
 **Tagsüber (Ausführung ohne Claude-Lauf).** Je Durchlauf von
 tools/ausfuehrung.py, jeweils zum protokollierten Kurs des Durchlaufs:
@@ -178,17 +201,28 @@ mit der ungünstigeren Annahme nach:
 
 ## 7. Profile und Risikolimits
 
-| Parameter | Defensiv | Ausgewogen | Aggressiv |
-| --- | --- | --- | --- |
-| Max. Anteil Zertifikate am Portfoliowert | 10 % | 30 % | 70 % |
-| Max. Hebel je Zertifikat (beim Kauf) | 3x | 5x | 10x |
-| Max. Gesamt-Exposure | 1,2x | 2,0x | 4,0x |
-| Max. Einzelposition (Marktwert) | 20 % | 25 % | 35 % |
-| Mindest-Cashquote | 10 % | 5 % | 0 % |
-| Max. Risiko je Trade | 1 % | 2 % | 5 % |
-| Drawdown-Bremse Stufe 1 | -8 % | -12 % | -20 % |
-| Drawdown-Bremse Stufe 2 | -15 % | -20 % | -35 % |
-| Benchmark | 30 % ETF / 70 % Cash | 60 % / 40 % | 100 % ETF |
+| Parameter | Defensiv | Ausgewogen | Aggressiv | Overnight |
+| --- | --- | --- | --- | --- |
+| Max. Anteil Zertifikate am Portfoliowert | 10 % | 30 % | 70 % | 30 % |
+| Max. Hebel je Zertifikat (beim Kauf) | 3x | 5x | 10x | 3x |
+| Max. Gesamt-Exposure | 1,2x | 2,0x | 4,0x | 1,5x |
+| Max. Einzelposition (Marktwert) | 20 % | 25 % | 35 % | 100 % |
+| Mindest-Cashquote | 10 % | 5 % | 0 % | 2 % |
+| Max. Risiko je Trade | 1 % | 2 % | 5 % | 4 % |
+| Drawdown-Bremse Stufe 1 | -8 % | -12 % | -20 % | -10 % |
+| Drawdown-Bremse Stufe 2 | -15 % | -20 % | -35 % | -20 % |
+| Benchmark | 30 % ETF / 70 % Cash | 60 % / 40 % | 100 % ETF | 100 % ETF |
+
+**Overnight** kauft zum Schlusskurs und verkauft zur nächsten Eröffnung
+(Daueranweisung, Abschnitt 6) und hält tagsüber Cash. Die Einzelposition darf
+bis 100 % betragen (Mindest-Cashquote 2 %), weil jede weitere Position zwei
+Gebühren je Nacht kostet; das Risiko je Trade bleibt auf 4 % begrenzt und
+verlangt einen Stop (Daueranweisung: Abstand unter dem Kaufkurs). Kosten und
+Spreads sind unverändert. Zu erwarten ist, dass die festen Kosten (rund 0,3 %
+je Nacht bei 1.000 EUR) die Nacht-Rendite breiter Indizes übersteigen;
+tools/overnight.py rechnet die Kosten vor und misst die Rendite (Hypothese
+H-OVERNIGHT-1 in lessons.md). Ohne belegten positiven Erwartungswert nach
+Kosten gilt Ausnahme (a) aus Abschnitt 12.
 
 Begriffe:
 - **Gesamt-Exposure** = Summe aus Positionswert mal Hebel, geteilt durch
@@ -220,8 +254,10 @@ Auftraggeber; die Historie bleibt erhalten.
 
 - ETF: iShares Core MSCI World UCITS ETF (EUNL.DE, IE00B4L5Y983).
 - Cash-Anteil verzinst mit 2 % p. a. wie in Abschnitt 2.
-- Einmalige Aufteilung zum ersten Schlusskurs ab dem Starttag, ohne
-  Rebalancing und ohne Kosten.
+- Einmalige Aufteilung zum ersten Schlusskurs ab dem Startdatum des
+  Portfolios (bei einem später ergänzten Profil ab dessen Startdatum), ohne
+  Rebalancing und ohne Kosten. Anteil des ETF je Profil: Tabelle in
+  Abschnitt 7.
 
 ## 10. Dokumentationspflichten
 
@@ -252,7 +288,7 @@ Auftraggeber; die Historie bleibt erhalten.
 - Reviews richten sich nach der Spielzeit, nicht nach dem Kalender. Ab
   dem Starttag zählen Zeiträume zu je 7 Tagen. Wochenreview: in der
   ersten Session nach Ablauf eines 7-Tage-Zeitraums, in reviews/.
-  Monatsvergleich der drei Profile nach je 4 Wochen (28 Tage),
+  Monatsvergleich der Profile nach je 4 Wochen (28 Tage),
   Meta-Review nach je 13 Wochen (91 Tage).
 - Erkenntnisse in lessons.md. Eine Erkenntnis aus einem einzelnen Trade
   bleibt Hypothese.
@@ -303,7 +339,15 @@ Auftraggeber; die Historie bleibt erhalten.
 
 - Synthetische Zertifikate statt realer Emittentenprodukte; kein
   Emittentenrisiko, keine Intraday-Resets, keine Dividendenanpassung.
-- Tagesdaten statt Intraday-Verlauf für Stops und Barrieren.
+- Tagesdaten statt Intraday-Verlauf für Stops und Barrieren; die
+  automatische Ausführung bucht zum protokollierten Kurs des Durchlaufs
+  (Takt 5 Minuten), die Nachbuchung gleicht mit Tageshoch und -tief ab.
+- Overnight: Der Schlusskurs ist der erste protokollierte Kurs, dessen
+  Quellzeit nach dem Handelsschluss liegt, der Eröffnungskurs der erste
+  Kurs nach der Eröffnung (höchstens 30 Minuten später); die Nachbuchung
+  meldet Abweichungen zur Tageskerze. Verzögerte Quellen (Xetra bei
+  yfinance etwa 15 Minuten) verschieben die Buchung entsprechend, nie
+  vor den Schluss oder die Eröffnung.
 - Feste Spreads und Gebühren, unabhängig von Markt und Volumen.
 - Kursdaten aus einer frei verfügbaren Quelle, die verzögert oder
   lückenhaft sein kann.
@@ -330,4 +374,8 @@ Auftraggeber; die Historie bleibt erhalten.
   und umgekehrter Beweislast (Abschnitte 10 und 12; ersetzt "Kapitalerhalt
   vor Rendite" und "Nichtstun ist gültig"); Ausführung vorgemerkter Orders,
   Limits, Stops, Kursziele und Barrieren ohne Claude-Lauf durch den
-  Hintergrunddienst, Nachbuchung als Abgleich (Abschnitte 5 und 6).
+  Hintergrunddienst, Nachbuchung als Abgleich (Abschnitte 5 und 6); viertes
+  Profil Overnight mit Daueranweisung (Abschnitte 2, 6, 7, 9, 11, 13),
+  Profile aus config/profile.json, später ergänzte Profile starten am Tag der
+  Ergänzung (Abschnitt 2); das Risikolimit-Profil Overnight ist neu, die
+  Limits der drei bestehenden Profile und alle Kosten sind unverändert.

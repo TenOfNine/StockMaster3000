@@ -135,3 +135,21 @@ def test_migration_mit_herkunftsvermerk(tmp_path, framework, monkeypatch):
     assert "Herkunft: Verzeichnis 'alt', Commit " in nachricht
     # zweite Migration in denselben Spielstand wird abgelehnt
     assert migriere.main(["--von", str(alt)]) == 1
+
+
+def test_commit_ergaenzt_die_gitignore_bestehender_datenverzeichnisse_um_die_buchungssperre(tmp_path, monkeypatch, framework):
+    import subprocess
+
+    ziel = tmp_path / "alt"
+    dv.einrichten(ziel)
+    ignore = ziel / ".gitignore"
+    ignore.write_text(ignore.read_text().replace(".buchungssperre\n", ""), encoding="utf-8")  # Stand vor dem Umbau
+    subprocess.run(["git", "add", "-A"], cwd=ziel, check=True)
+    subprocess.run(["git", "-c", "user.email=t@example.org", "-c", "user.name=T", "commit", "-q", "-m", "daten: alt"],
+                   cwd=ziel, check=True)
+    (ziel / ".buchungssperre").write_text("")
+    (ziel / "lessons.md").write_text("neu\n")
+    assert dv.commit("daten: test", ziel)
+    getrackt = subprocess.run(["git", "ls-files"], cwd=ziel, capture_output=True, text=True).stdout.split()
+    assert ".buchungssperre" not in getrackt and ".buchungssperre" in ignore.read_text()
+    assert dv.ignore_ergaenzen(ziel) is False  # idempotent

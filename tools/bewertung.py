@@ -181,6 +181,18 @@ def kauforder_ausfuehren(lauf, order, kurs, tag, daten, zeit, kursquelle) -> Non
 
 def orders_verarbeiten(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten) -> None:
     portfolio = lauf.portfolio
+    # Schritt 0: Positionen aus einer Daueranweisung (Overnight) am ersten Handelstag nach dem Kauf zur Eröffnung
+    # verkaufen, falls kein Durchlauf der Ausführung sie schon verkauft hat (Abgleich, regeln.md 6).
+    for position in [p for p in portfolio["positionen"] if p.get("daueranweisung")]:
+        kerze = daten.kerze(position["basiswert"], tag)
+        beginn = kurse.kerzen_beginn(position["basiswert"], tag)
+        if kerze is None or g.zeit_lesen(position["eroeffnet"]) >= beginn:
+            continue
+        eurusd = daten.fx(tag, True) if braucht_fx(position["basiswert"]) else None
+        buchen.verkauf_ausfuehren(lauf, position, EINS, kerze.open, eurusd, beginn, tag, "historie:open", tag.isoformat(),
+                                  "order", order_id=g.naechste_id(portfolio, "order"), journal_id=position["journal_id"],
+                                  zusatz=f"Daueranweisung {position['daueranweisung']}: Verkauf zur Eröffnung "
+                                         "(Nachbuchung, Eröffnungskurs der Tageskerze)")
     orders = sorted(portfolio["offene_orders"], key=lambda o: o["erfasst"])
     # Schritt 1: vorgemerkte Market-Orders zum Eröffnungskurs
     for order in [o for o in orders if o["art"] == "market"]:
@@ -224,6 +236,8 @@ def positionen_pruefen(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten) -> No
             continue
         long = position["richtung"] == "long"
         beginn = kurse.kerzen_beginn(ticker, tag)
+        if g.zeit_lesen(position["eroeffnet"]) >= kurse.schluss(ticker, tag):
+            continue  # nach Handelsschluss gekauft (Daueranweisung): die Kerze des Tages gilt für diese Position nicht
         kauftag = g.zeit_lesen(position["eroeffnet"]) >= beginn
         stop, ziel = wirksame_grenzen(position, tag)
         if kauftag:
@@ -487,11 +501,19 @@ def startdatum() -> date | None:
 
 
 def benchmark_berechnen() -> list[dict]:
-    """Benchmark je Profil: ETF-Anteil zum ersten Schlusskurs ab Startdatum, Rest Cash mit Zins."""
-    start = startdatum()
-    if start is None:
+    """Benchmark je Profil: ETF-Anteil zum ersten Schlusskurs ab dem Startdatum des Portfolios, Rest Cash mit Zins.
+
+    Jedes Portfolio hat ein eigenes Startdatum (ein später ergänztes Profil startet am Tag der Ergänzung, regeln.md
+    7); seine Benchmark beginnt mit dessen Startkapital am eigenen ersten Schlusskurs. Vor dem eigenen Start bleibt
+    der Wert leer.
+    """
+    vorhanden = g.vorhandene_profile()
+    if not vorhanden:
         return []
-    bis = max(date.fromisoformat(g.portfolio_laden(p)["verarbeitet_bis"]) for p in g.vorhandene_profile())
+    start = min(date.fromisoformat(g.portfolio_laden(p)["startdatum"]) for p in vorhanden)
+    profile = list(g.profile())  # Profile ohne Portfolio (noch nicht ergänzt) laufen ab dem frühesten Start
+    starts = {p: date.fromisoformat(g.portfolio_laden(p)["startdatum"]) if p in vorhanden else start for p in profile}
+    bis = max(date.fromisoformat(g.portfolio_laden(p)["verarbeitet_bis"]) for p in vorhanden)
     if bis < start:
         return []
     ticker = g.projekt()["benchmark_ticker"]
@@ -500,20 +522,27 @@ def benchmark_berechnen() -> list[dict]:
         return []
     kapital = D(g.projekt()["startkapital"])
     satz = D(g.kosten()["cash_zins_pa"]) / D(g.kosten()["tage_je_jahr"])
-    basis = kerzen[0].close
-    profile = {p: D(w["benchmark_etf_anteil"]) for p, w in g.config("profile")["profile"].items()}
-    anteile = {p: kapital * w / basis for p, w in profile.items()}
-    cash = {p: g.geld(kapital * (EINS - w)) for p, w in profile.items()}
+    gewichte = {p: D(g.limits_fuer(p)["benchmark_etf_anteil"]) for p in profile}
+    basis = {}
+    for p in profile:
+        erste = next((k for k in kerzen if k.datum >= starts[p]), None)
+        basis[p] = erste.close if erste else None
+    anteile = {p: kapital * gewichte[p] / basis[p] for p in profile if basis[p]}
+    cash = {p: g.geld(kapital * (EINS - gewichte[p])) for p in profile}
     nach_datum = {k.datum: k for k in kerzen}
+    erster_tag = {p: next((k.datum for k in kerzen if k.datum >= starts[p]), None) for p in profile}
     zeilen = []
     for tag in g.tage(start, bis):
         for p in profile:
-            if cash[p] > 0:
+            if tag >= starts[p] and cash[p] > 0:
                 cash[p] += g.geld(cash[p] * satz)
         if tag in nach_datum and tag >= kerzen[0].datum:
             zeile = {"datum": tag.isoformat(), "etf_kurs": nach_datum[tag].close}
             for p in profile:
-                zeile[p] = g.geld(anteile[p] * nach_datum[tag].close + cash[p])
+                if erster_tag[p] is not None and tag >= erster_tag[p]:
+                    zeile[p] = g.geld(anteile[p] * nach_datum[tag].close + cash[p])
+                else:
+                    zeile[p] = ""
             zeilen.append(zeile)
     return zeilen
 
@@ -527,7 +556,7 @@ def kennzahlen(profil: str, benchmark: list[dict]) -> dict:
     letzter = nav[-1] if nav else None
     wert = D(letzter["portfoliowert"]) if letzter else D(portfolio["cash"])
     rendite = wert / kapital - EINS
-    bench = {z["datum"]: D(z[profil]) for z in benchmark}
+    bench = {z["datum"]: D(z[profil]) for z in benchmark if z.get(profil) not in (None, "")}
     bench_rendite = (bench[letzter["datum"]] / kapital - EINS) if letzter and letzter["datum"] in bench else None
     hoch, max_dd = kapital, NULL
     for w in werte:
@@ -595,6 +624,7 @@ def ranking_text(alle: dict, erstellt: datetime) -> str:
     def reihe(name, funktion):
         zeilen.append(f"| {name} | " + " | ".join(funktion(alle[p]) for p in profile) + " |")
 
+    reihe("Startdatum", lambda k: k["portfolio"]["startdatum"])
     reihe("Portfoliowert", lambda k: _de(f"{g.geld(k['wert'])} EUR"))
     reihe("Rendite", lambda k: _p(k["rendite"]))
     reihe("Benchmark-Rendite", lambda k: _p(k["bench_rendite"]))
@@ -634,6 +664,10 @@ def ranking_text(alle: dict, erstellt: datetime) -> str:
         zeilen.append("")
     zeilen += ["Benchmarks: iShares Core MSCI World (EUNL.DE) und Cash (2 % p. a.), Aufteilung je Profil "
                "laut regeln.md Abschnitt 7, ohne Rebalancing und Kosten. Zahlen mit Dezimalkomma.", ""]
+    if len({alle[p]["portfolio"]["startdatum"] for p in profile}) > 1:
+        zeilen += ["Die Profile haben unterschiedliche Startdaten (ein später ergänztes Profil startet mit seinem "
+                   "Ergänzungstag, regeln.md 7): Rendite, Benchmark-Rendite und Drawdown gelten seit dem eigenen "
+                   "Startdatum; verglichen wird die Rendite gegen die eigene Benchmark.", ""]
     return "\n".join(zeilen)
 
 
@@ -641,7 +675,7 @@ def bericht() -> list[str]:
     g.aktive_sperre()
     benchmark = benchmark_berechnen()
     if benchmark:
-        g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.PROFILE], benchmark)
+        g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.profile()], benchmark)
     alle = {p: kennzahlen(p, benchmark) for p in g.vorhandene_profile()}
     g.atomar_schreiben(g.pfad("ranking.md"), ranking_text(alle, g.jetzt()))
     meldungen = ["ranking.md aktualisiert."]
@@ -657,7 +691,7 @@ def main(argv=None) -> int:
     unter.add_parser("nachbuchen", help="Alle Tage seit der letzten Verarbeitung nachbuchen")
     unter.add_parser("bericht", help="data/benchmark.csv und ranking.md schreiben")
     p = unter.add_parser("review", help="Pflicht-Review bei Drawdown-Stufe 2 vermerken")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--datei", required=True, help="Pfad der Review-Datei, z. B. reviews/2026-10-20_stufe2.md")
     args = parser.parse_args(argv)
     try:

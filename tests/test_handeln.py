@@ -8,7 +8,7 @@ from helfer import portfolio
 def session(projekt, handlung, datum="2026-10-12", nummer="01"):
     zeilen = [f"### S-{datum.replace('-', '')}-{nummer} | Session | auftraggeber-a", f"- Zeit: {datum} 11:00",
               "- Marktlage: ruhig (https://example.org, 2026-10-12)", "- Defensiv: x", "- Ausgewogen: x",
-              "- Aggressiv: x"]
+              "- Aggressiv: x", "- Overnight: x"]
     if handlung is not None:
         zeilen.append(f"- Handlung oder Ausnahme: {handlung}")
     zeilen.append("- Offene Punkte und Termine für die nächste Session: keine")
@@ -23,23 +23,23 @@ def test_session_mit_order_oder_belegter_ausnahme_ist_in_ordnung(projekt):
     session(projekt, "Defensiv: Order J-20261012-01 (Verlust bis Stop 0,8 % gegen Limit 1 %); "
                      "Ausgewogen: Ausnahme (a): kleinste Order hätte 2,4 % Verlust bis Stop gegen Limit 2 %, "
                      "Erwartungswert nach Kosten -1,20 EUR, geprüft SAP.DE, NVDA; "
-                     "Aggressiv: Order J-20261012-02")
+                     "Aggressiv: Order J-20261012-02; Overnight: Order J-20261012-03")
     assert texte() == []
 
 
 def test_fehlende_zeile_und_fehlende_portfolios_werden_gemeldet(projekt):
     session(projekt, None)
     assert any("'Handlung oder Ausnahme' fehlt" in t for t in texte())
-    session(projekt, "Defensiv: Order J-20261012-01; Ausgewogen: Order J-20261012-02")
+    session(projekt, "Defensiv: Order J-20261012-01; Ausgewogen: Order J-20261012-02; Overnight: Order J-20261012-04")
     hinweise = texte()
     assert len(hinweise) == 1 and "aggressiv ohne Order und ohne belegte Ausnahme" in hinweise[0]
 
 
 def test_ausnahme_ohne_zahlen_zaehlt_nicht(projekt):
-    session(projekt, "Defensiv: Ausnahme (c): kein Kurs; Ausgewogen: Order J-20261012-02; Aggressiv: Order J-20261012-03")
+    session(projekt, "Defensiv: Ausnahme (c): kein Kurs; Ausgewogen: Order J-20261012-02; Aggressiv: Order J-20261012-03; Overnight: Order J-20261012-04")
     hinweise = texte()
     assert len(hinweise) == 1 and "defensiv ohne Order; die Ausnahme braucht Zahlen" in hinweise[0]
-    session(projekt, "Defensiv: nichts passt; Ausgewogen: Order J-20261012-02; Aggressiv: Order J-20261012-03")
+    session(projekt, "Defensiv: nichts passt; Ausgewogen: Order J-20261012-02; Aggressiv: Order J-20261012-03; Overnight: Order J-20261012-04")
     assert len(texte()) == 1  # ohne das Wort Ausnahme gilt auch das nicht
 
 

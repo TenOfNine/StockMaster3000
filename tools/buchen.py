@@ -58,7 +58,9 @@ def verwendete_journal_ids() -> set[str]:
     ids = set()
     for profil in g.vorhandene_profile():
         for zeile in g.trades_lesen(profil):
-            if zeile["grund"] == "order" and zeile["aktion"] in ("kauf", "verkauf", "vormerkung"):
+            if zeile["grund"] == "order" and (zeile["aktion"] in ("kauf", "verkauf", "vormerkung") or (
+                    zeile["aktion"] == "aenderung" and zeile["bemerkung"].startswith("Daueranweisung ")
+                    and " gesetzt" in zeile["bemerkung"])):
                 ids.add(zeile["journal_id"])
         for order in g.portfolio_laden(profil)["offene_orders"]:
             ids.add(order["journal_id"])
@@ -371,7 +373,7 @@ def parser_bauen() -> argparse.ArgumentParser:
     unter = parser.add_subparsers(dest="befehl", required=True)
 
     p = unter.add_parser("kaufen", help="Kauforder erfassen")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--typ", required=True, choices=["aktie", "etf", "ko", "faktor"])
     p.add_argument("--richtung", default="long", choices=["long", "short"], help="Standard: long")
     p.add_argument("--ticker", help="Ticker bei Aktien und ETFs, z. B. SAP.DE")
@@ -385,20 +387,20 @@ def parser_bauen() -> argparse.ArgumentParser:
     p.add_argument("--journal-id", required=True, help="ID des vorher geschriebenen Journal-Eintrags")
 
     p = unter.add_parser("verkaufen", help="Position (teilweise) verkaufen")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--position-id", required=True)
     p.add_argument("--anteil", default="1", help="Anteil der Position, 0 < Anteil <= 1 (Standard 1)")
     p.add_argument("--journal-id", required=True)
 
     p = unter.add_parser("aendern", help="Stop und/oder Kursziel einer Position ändern")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--position-id", required=True)
     p.add_argument("--stop", help="neuer Stop oder 'keiner'")
     p.add_argument("--kursziel", help="neues Kursziel oder 'keiner'")
     p.add_argument("--journal-id", required=True)
 
     p = unter.add_parser("storno", help="Offene Order stornieren")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--order-id", required=True)
     p.add_argument("--journal-id", required=True)
     return parser

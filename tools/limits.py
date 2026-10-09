@@ -348,7 +348,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Geplante Kauforder gegen die Limits prüfen (ohne Buchung).")
     unter = parser.add_subparsers(dest="befehl", required=True)
     p = unter.add_parser("pruefen", help="Kauforder prüfen")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     p.add_argument("--typ", required=True, choices=["aktie", "etf", "ko", "faktor"])
     p.add_argument("--richtung", default="long", choices=["long", "short"])
     p.add_argument("--ticker", help="Ticker bei Aktien und ETFs")

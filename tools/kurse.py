@@ -404,6 +404,25 @@ def boersentag(ticker: str, zeitpunkt: datetime | None = None) -> date:
     return (zeitpunkt or g.jetzt()).astimezone(zone).date()
 
 
+def naechster_handelstag(ticker: str, datum: date) -> date:
+    """Der nächste Handelstag nach `datum` (Wochenende und Feiertage der Börse übersprungen)."""
+    tag = datum + timedelta(days=1)
+    for _ in range(14):
+        if ist_handelstag(ticker, tag):
+            return tag
+        tag += timedelta(days=1)
+    return tag
+
+
+def im_handelsfenster(ticker: str, zeitpunkt: datetime, nachlauf_minuten: int = 0) -> bool:
+    """Liegt der Zeitpunkt zwischen Eröffnung und Schluss (plus Nachlauf) eines Handelstags der Börse?"""
+    zeitpunkt = zeitpunkt.astimezone(g.TZ)
+    tag = boersentag(ticker, zeitpunkt)
+    if not ist_handelstag(ticker, tag):
+        return False
+    return oeffnung(ticker, tag) <= zeitpunkt < schluss(ticker, tag) + timedelta(minutes=nachlauf_minuten)
+
+
 def boersen_fenster(name: str, datum: date) -> tuple[datetime, datetime] | None:
     """Handelsfenster (Eröffnung, Schluss; deutsche Zeit) der Börse `name` am Börsentag `datum`, sonst None.
 

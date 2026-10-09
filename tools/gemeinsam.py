@@ -34,7 +34,19 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 TZ = ZoneInfo("Europe/Berlin")
-PROFILE = ("defensiv", "ausgewogen", "aggressiv")
+
+
+def profile() -> tuple[str, ...]:
+    """Die Profile (Portfolios) des Spiels in der Reihenfolge von config/profile.json (Abschnitt 7 in regeln.md)."""
+    return tuple(config("profile")["profile"])
+
+
+def __getattr__(name: str):  # g.PROFILE bleibt als Kürzel für profile() erhalten
+    if name == "PROFILE":
+        return profile()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 ZERTIFIKATE = ("ko", "faktor")
 AKTIEN = ("aktie", "etf")
 
@@ -375,7 +387,7 @@ def config(name: str) -> dict:
 def limits_fuer(profil: str) -> dict:
     profile = config("profile")["profile"]
     if profil not in profile:
-        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(PROFILE)}.")
+        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(profile())}.")
     return {k: D(v) for k, v in profile[profil].items()}
 
 
@@ -445,13 +457,13 @@ def richtlinie_unveraendert(profil: str) -> bool:
 
 def richtlinien_veraltet() -> list[str]:
     """Unveränderte Standard-Richtlinien einer älteren Version (werden automatisch aktualisiert)."""
-    return [p for p in PROFILE if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
+    return [p for p in profile() if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
             and (richtlinie_standard_version(p) or 0) < RICHTLINIE_STANDARD_VERSION]
 
 
 def richtlinien_offen() -> list[str]:
     """Profile ohne ausformulierte Anlagerichtlinie."""
-    return [p for p in PROFILE if not richtlinie_ausformuliert(p)]
+    return [p for p in profile() if not richtlinie_ausformuliert(p)]
 
 
 def portfolio_pfad(profil: str) -> Path:
@@ -470,11 +482,11 @@ def portfolio_speichern(portfolio: dict) -> None:
 
 
 def vorhandene_profile() -> list[str]:
-    return [p for p in PROFILE if portfolio_pfad(p).exists()]
+    return [p for p in profile() if portfolio_pfad(p).exists()]
 
 
 def naechste_id(portfolio: dict, art: str) -> str:
-    praefix = {"order": "O", "position": "P", "trade": "T"}[art]
+    praefix = {"order": "O", "position": "P", "trade": "T", "plan": "D"}[art]
     zaehler = portfolio.setdefault("zaehler", {"order": 0, "position": 0, "trade": 0})
     zaehler[art] = int(zaehler.get(art, 0)) + 1
     return f"{praefix}-{zaehler[art]:04d}"

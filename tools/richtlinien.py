@@ -29,14 +29,14 @@ def status() -> dict:
     spiel = g.spiel_lesen()
     return {"startdatum": spiel.get("startdatum"),
             "profile": {p: {"vorhanden": g.richtlinie_pfad(p).exists(), "ausformuliert": g.richtlinie_ausformuliert(p)}
-                        for p in g.PROFILE},
+                        for p in g.profile()},
             "offen": g.richtlinien_offen(), "veraltet": g.richtlinien_veraltet(),
             "standard_version": g.RICHTLINIE_STANDARD_VERSION}
 
 
 def vorlage_text(profil: str) -> str:
-    if profil not in g.PROFILE:
-        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(g.PROFILE)}.")
+    if profil not in g.profile():
+        raise Fehler(f"Unbekanntes Profil '{profil}'. Erlaubt: {', '.join(g.profile())}.")
     return init.vorlage(profil, g.heute())
 
 
@@ -67,7 +67,7 @@ def standard_uebernehmen() -> list[str]:
         g.atomar_schreiben(g.richtlinie_pfad(profil), _aktualisiert(profil))
         meldungen.append(f"strategie/{profil}.md auf Standard-Richtlinie v{g.RICHTLINIE_STANDARD_VERSION} aktualisiert "
                          "(bisherige Historie bleibt).")
-    for profil in g.PROFILE:
+    for profil in g.profile():
         version = g.richtlinie_standard_version(profil)
         if (g.richtlinie_ausformuliert(profil) and version is not None and not g.richtlinie_unveraendert(profil)
                 and version < g.RICHTLINIE_STANDARD_VERSION):
@@ -83,7 +83,7 @@ def main(argv=None) -> int:
     unter.add_parser("status", help="offene Richtlinien als JSON")
     unter.add_parser("standard", help="Standard-Anlagerichtlinien übernehmen (nur wo noch die Vorlage steht)")
     p = unter.add_parser("vorlage", help="Vorlage mit den verbindlichen Limits ausgeben")
-    p.add_argument("--profil", required=True, choices=g.PROFILE)
+    p.add_argument("--profil", required=True, choices=g.profile())
     args = parser.parse_args(argv)
     try:
         if args.befehl == "status":

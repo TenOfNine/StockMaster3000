@@ -21,7 +21,7 @@ FRAMEWORK_VARIABLE = "STOCKMASTER_FRAMEWORK_DIR"
 SPIELSTAND = ("portfolios", "trades", "data", "journal", "reviews", "strategie", "news",
               "lessons.md", "ranking.md", "session.lock", "spiel.json")
 # Nicht versioniert, nicht exportiert: Zwischenspeicher und Sperrdatei.
-NICHT_VERSIONIERT = (".cache", ".schreibsperre")
+NICHT_VERSIONIERT = (".cache", ".schreibsperre", ".buchungssperre")
 
 
 class Fehler(Exception):

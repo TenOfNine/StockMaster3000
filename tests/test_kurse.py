@@ -135,3 +135,19 @@ def test_feiertage_bis_2028_gepflegt(projekt):
     for jahr in (2026, 2027, 2028):
         assert kurse.feiertage_gepflegt(jahr) == []
     assert kurse.feiertage_gepflegt(2029) == ["xetra", "nyse"]
+
+
+def test_naechster_handelstag_und_handelsfenster(framework):
+    from datetime import date, datetime
+
+    import gemeinsam as g
+
+    assert kurse.naechster_handelstag("SAP.DE", date(2026, 10, 16)) == date(2026, 10, 19)  # Freitag -> Montag
+    assert kurse.naechster_handelstag("SAP.DE", date(2026, 12, 23)) == date(2026, 12, 28)  # Weihnachten
+    assert kurse.naechster_handelstag("AAPL", date(2026, 11, 25)) == date(2026, 11, 27)  # Thanksgiving
+    mo = lambda h, m: datetime(2026, 10, 12, h, m, tzinfo=g.TZ)  # noqa: E731
+    assert kurse.im_handelsfenster("SAP.DE", mo(9, 0)) and not kurse.im_handelsfenster("SAP.DE", mo(17, 30))
+    assert kurse.im_handelsfenster("SAP.DE", mo(17, 45), nachlauf_minuten=60)
+    assert not kurse.im_handelsfenster("SAP.DE", datetime(2026, 10, 11, 12, 0, tzinfo=g.TZ))  # Sonntag
+    assert kurse.boersentag("AAPL", datetime(2026, 10, 12, 23, 30, tzinfo=g.TZ)) == date(2026, 10, 12)
+    assert kurse.boersentag("AAPL", datetime(2026, 10, 13, 5, 0, tzinfo=g.TZ)) == date(2026, 10, 12)  # New Yorker Vorabend
