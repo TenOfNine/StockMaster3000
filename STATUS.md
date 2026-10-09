@@ -138,6 +138,77 @@ webui/PORTAINER.md.
   neue Seite „Claude-Läufe“, Cockpit-Hinweis auf offene Pflichtschritte, „Markt & Kurse“ mit Quelle,
   Zeitstempel und Verzögerung, News im Cockpit und je Wert, Sicherung (Export/Restore).
 
+## Umbau v2 (2026-10-09)
+
+Auftrag der Auftraggeber: sechs Änderungen in vier Stufen (je Stufe ein Branch und ein Pull Request). Die
+Auftraggeber erlauben dafür ausdrücklich Änderungen an regeln.md, CLAUDE.md, config/ und den Anlagerichtlinien;
+das ist eine Ausnahme zu CLAUDE.md Grundsatz 1 und gilt nur für diesen Auftrag. Unklarheiten entscheidet Claude
+selbst (regeln.md 12, Entscheidung 34); die Auslegungen stehen unter den Entscheidungen ab Nr. 40.
+
+| Stufe | Punkte | Branch |
+| --- | --- | --- |
+| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` |
+| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` |
+| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` |
+| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` |
+
+Ausgangslage (geprüft am 2026-10-09 auf `main` nach Pull Request 19): Werkzeuge 234 Tests, Backend 292, Oberfläche 39
+(Komponenten) und E2E grün. Abweichungen zwischen Doku und Code, die dabei auffielen: (a) Entscheidung 37 und 39 sowie
+`einrichtung.py` sprechen von „Administratoren mit Zwei-Faktor“; mit Stufe A gilt das nicht mehr. (b) CLAUDE.md
+beschreibt „Modus bestimmen“ über das Startdatum, `buchen.py` lehnt Orders vor dem Startdatum ab, und der Lauf-Prompt
+beschränkt Läufe dann auf Recherche (Entscheidung 33); alles entfällt mit Stufe B. (c) Ein Verzeichnis `webui/worker`
+gibt es nicht; der Hintergrunddienst ist `webui/backend/stockmaster/worker.py` (Dienst `worker` im Compose).
+(d) „Drei Profile“ ist in `tools/gemeinsam.py` (`PROFILE`), `appdaten.py` (`VORGABEN_PROFILE`), im Frontend
+(`Profil`-Typ, Farben, Namen) und in regeln.md fest verdrahtet.
+
+Inventur je Punkt (alle betroffenen Stellen, Stand vor der Umsetzung):
+
+1. **Zwei-Faktor.** Backend: `auth.py` (Schritte `totp` und `zwei_faktor_einrichten` in `naechster_schritt`, Route
+   `POST /api/auth/totp`, `totp/einrichten`, `totp/aktivieren`, `totp/deaktivieren`; Admins ohne TOTP kommen nicht
+   über die Anmeldung hinaus), `auftraege.py` (`admin_2fa`/`Admin2FA`: Admin und `totp_aktiv`), verwendet in
+   `einrichtung.py` (Router und rund 20 Routen), `auftraege.py` (Läufe starten und abbrechen), `freigaben.py`,
+   `sicherung.py`; `admin.py` (`benutzer_anlegen` verlangt nur das Passwort, `zwei-faktor-zuruecksetzen`);
+   `__main__.py` (Text der Admin-Erstanlage). Frontend: `Anmeldung.tsx` (TotpFormular, ZweiFaktorEinrichten),
+   `Verwaltung.tsx` (Konto: Zwei-Faktor, Benutzer anlegen), `api.ts` (`Schritt`), Hinweistexte in `Einrichtung.tsx`.
+   Tests: `conftest.py` (`anmelden` mit TOTP-Schritt, Fixture `admin` mit TOTP), `test_auth.py`, `test_admin.py`,
+   `test_einrichtung.py`, E2E (`ablauf.spec.ts`, TOTP-Hilfen). Doku: AUFTRAG_WEBUI.md (Abschnitte 6 und 7),
+   BETRIEB.md, PORTAINER.md, README.md, STATUS.md (W3, Entscheidungen 16, 37, 39).
+2. **Zeitfenster und Datumsmechanik.** `tools/buchen.py` (`portfolio_pruefen`: „Das Spiel beginnt erst am …“),
+   `tools/init.py` (`--vorziehen`, `vorziehen_pruefen`), `auftraege.py` (`lauf_pruefen(geplant=True)`, `hinweise`,
+   `GET /api/laeufe/vorpruefung`), `worker.py` (`zeitplan`: Termin ohne Handelstag wird „kein Handelstag“, Fenster von
+   30 Minuten, `geplanten_lauf_anlegen` meldet „übersprungen“ und markiert den Termin als erledigt;
+   `richtlinien_standard` und `nachbuchen` warten auf das Startdatum), `claude_lauf.py` (Prompt: „nur Marktüberblick …
+   keine Order versuchen“), `einrichtung.py` (Pflichtschritt „Spiel starten“, Checkliste, `vorziehen`),
+   `tools/session.py`/`richtlinien.py` (Anzeige „Startdatum fehlt“), Frontend `Laeufe.tsx` (Hinweise im Startdialog)
+   und `Einrichtung.tsx` (Spielstart, Vorziehen), CLAUDE.md („Modus bestimmen“, Entwicklungsmodus), STATUS.md
+   (Entscheidungen 26, 33, 34). Bewusst nicht betroffen: die Wochentage und Uhrzeiten des Zeitplans selbst (fester
+   Termin nur für geplante Läufe), Handelszeiten als Bedingung der Ausführung (regeln.md 5), das Kursalter, der
+   Review-Rhythmus nach Spielzeit und die Kalendertage der Nachbuchung.
+3. **Handeln priorisieren.** CLAUDE.md (Rolle, Haltung, Schritt 7, Session-Vorlage), `config/richtlinien/*.md`,
+   `claude_lauf.py` (Trading-Prompt, `vorgaben_prompt`), regeln.md 10 und 12, STATUS.md Entscheidung 39 (Auslegung 2),
+   Platzhalter im Editor „Vorgaben je Portfolio“ (`Einrichtung.tsx`), Warnungen in `pruefe.py` und im Cockpit
+   (`Cockpit.tsx`, Backend `spiel/lesen.py`).
+4. **Viertes Portfolio.** `tools/gemeinsam.py` (`PROFILE`, `limits_fuer`, `richtlinien_offen`, `vorhandene_profile`),
+   `init.py`, `limits.py`, `buchen.py` (argparse `choices`), `bewertung.py` (Benchmark je Profil, Ranking, NAV),
+   `pruefe.py` (Prüfungen je Profil, Abschnitt 7 gegen `config/profile.json`), `termine.py` (Monatsvergleich),
+   `richtlinien.py`, `config/profile.json`, `config/richtlinien/`, `appdaten.py` (`VORGABEN_PROFILE`),
+   `spiel/lesen.py` und `spiel/router.py` (Portfolios, Ranking), `einrichtung.py` (Vorgaben), `claude_lauf.py`,
+   `webui/demo/demo_daten.py`, Frontend (`Profil`-Typ in `api.ts`, `PROFIL_NAME`/`PROFIL_FARBE` in `ui.tsx`,
+   `styles.css`, `Bausteine.tsx`, `AppRahmen.tsx`, Cockpit, Portfolio, Analyse, Anmeldung, App-Icon
+   `assets/icons/drei-profile.svg`), Tests (`tests/` und `webui/backend/tests/`), regeln.md 2, 7, 9, 11, README,
+   CLAUDE.md, KONZEPT.md.
+5. **Ausführung ohne Lauf.** Heute führt nur `buchen.py` (Market-Order bei offenem Markt, sonst Vormerkung) und
+   `bewertung.py nachbuchen` (Tageskerzen, nur bis gestern, mit Session-Sperre) Orders aus; der Worker bucht nachts um
+   00:30 nach (Entscheidung 38). Es gibt keine fortlaufende Ausführung während der Handelszeit. Vorhandene Bausteine:
+   `kurse.py` (protokollierte aktuelle Kurse, `markt_offen`, Eröffnung und Schluss je Börse mit Frühschlüssen),
+   `buchen.kauf_ausfuehren`/`verkauf_ausfuehren`/`wertlos_ausbuchen`, `limits.pruefe_kauf`, `gemeinsam.schreibsperre`
+   (kurze Sperre je Schreibvorgang, nicht über Lesen-Ändern-Schreiben), Kurstakt des Workers (`planen`, 5 Minuten).
+   Es fehlen: Ausführung von Stops, Kurszielen, Knock-outs und Limits in Echtzeit, eine Sperre über den ganzen
+   Buchungsvorgang, ein idempotenter Orderzustand, die Anzeige „automatisch ausgeführt“ und der Systemstatus
+   „Ausführung“.
+6. **Regeln.** regeln.md Abschnitte 2, 5, 6, 7, 9, 11, 12, 13, 14; `config/profile.json`; Prüfung
+   `pruefe_config_regeln` gleicht Abschnitt 7 mit `config/profile.json` ab (liest die Profile aus der Tabelle).
+
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
