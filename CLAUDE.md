@@ -73,7 +73,10 @@ Entwicklung und Trading nie in derselben Session.
   unberührtes Startdatum lässt sich mit `python tools/init.py --vorziehen` auf
   heute vorziehen (nie davor). Trading-Sessions sind an kein Datum, keinen
   Wochentag und keine Uhrzeit gebunden: Orders außerhalb der Handelszeit
-  werden vorgemerkt und bei nächster Gelegenheit ausgeführt.
+  werden vorgemerkt und bei nächster Gelegenheit ausgeführt, ohne dass ein
+  Claude-Lauf nötig ist (`tools/ausfuehrung.py`, vom Hintergrunddienst im
+  Takt und zu Börsenöffnung und -schluss aufgerufen, unter der
+  Buchungssperre; Nachbuchung als nächtlicher Abgleich).
 - Wenn regeln.md für die Umsetzung nicht eindeutig ist: wähle die
   konservativere Auslegung, markiere sie im Code mit einem Kommentar
   und frage am Ende des Arbeitspakets nach.
@@ -143,6 +146,11 @@ Entwicklung und Trading nie in derselben Session.
 8. Für jede Order: erst Journal-Eintrag schreiben (Vorlage unten), dann
    `python tools/buchen.py ...` mit der Journal-ID. Lehnt das Werkzeug
    die Order ab, umgehst du das nicht.
+   Was du erfasst, führt der Hintergrunddienst auch ohne Lauf aus: vorgemerkte
+   Orders zur Eröffnung, Limits bei Berührung, Stops, Kursziele und Barrieren
+   laufend (Buchungen mit "automatisch (Auslöser: …)" in der Bemerkung und
+   deiner Journal-ID). Setze Stop und Kursziel deshalb bewusst; sie wirken
+   ohne dich.
 9. Schreibe den Session-Eintrag (Vorlage unten) ans Ende der
    Journal-Datei dieser Session: je Portfolio die Entscheidung, die
    erwogenen und verworfenen Alternativen und die Begründung, dazu die

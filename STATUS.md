@@ -594,6 +594,54 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     der jeweiligen Session. (3) Die harten Limits und Kosten bleiben unverändert.
     Grenze: Eine Anweisung an ein Sprachmodell ist keine Prüfung; die Warnungen machen Abweichungen sichtbar.
 
+43. Ausführung ohne Claude-Lauf (Umbau v2, Stufe C, Punkt 5). **Umgesetzt.** Neues Werkzeug `tools/ausfuehrung.py`
+    (kein Sprachmodell, kein Token): Der Hintergrunddienst (`worker.py`, Schritt `ausfuehren`) ruft `tick` bei offenem
+    Markt alle 5 Minuten auf, außerdem eine Minute nach der Öffnung und zwei Minuten vor dem Schluss jeder Börse
+    (`ausfuehrung.faellig`/`ereignisse`; Zeitzonen, Sommerzeit-Unterschiede zwischen Europa und USA, Feiertage und
+    Frühschlüsse kommen aus `config/universum.json`, `kurse.boersen_fenster`). Nach fehlendem Kurs, belegter Sperre oder
+    Fehler wiederholt der Dienst nach einer Minute. Der Tick führt aus: vorgemerkte Market-Orders, Limit-Orders (Kurs auf
+    oder besser als das Limit) und je Position Knock-out vor Stop vor Kursziel, jeweils zum protokollierten Kurs
+    (`kurse.aktuell`, Kursalter höchstens 30 Minuten, ohne Kurs keine Ausführung und neuer Versuch). Die Order gilt erst ab
+    ihrer Erfassung (die Quellzeit des Kurses muss nach der Erfassung liegen); die Limits werden vor jeder Kaufausführung
+    mit `limits.pruefe_kauf` erneut geprüft (Verstoß: Order verfällt mit Vermerk, `verfall`-Zeile). Jede Buchung trägt die
+    ursprüngliche Journal-ID und in der Bemerkung `automatisch (Auslöser: Eröffnung|Markt|Limit|Stop|Kursziel|Knock-out)`
+    (Spalte `bemerkung`, damit sich die CSV-Köpfe bestehender Instanzen nicht ändern); Trade-Akte, Buchungstabelle und eine
+    Cockpit-Karte „Automatisch ausgeführt“ zeigen sie, `pruefe.py` prüft sie (bekannter Auslöser, Kursquelle `kurse`,
+    innerhalb der Handelszeit des Basiswerts, keine zweite Endbuchung je Order, keine Ausführung vor der Vormerkung).
+    **Buchungssperre:** `gemeinsam.buchungssperre` (flock auf `.buchungssperre`, wiedereintrittsfähig, Wartezeit mit
+    Abbruch) umfasst den ganzen Vorgang Laden–Prüfen–Schreiben. `buchen.py` (kaufen, verkaufen, aendern, storno),
+    `bewertung.nachbuchen_profil` und die Ausführung nehmen sie; das Portfolio wird erst in der Sperre geladen. Sie ist von
+    `session.lock` unabhängig: Eine laufende Claude-Session und die Ausführung buchen nacheinander, nie gleichzeitig;
+    Kurse für die Ausführung werden vor der Sperre geholt, damit sie kurz bleibt. Eine Order hat genau einen Endzustand
+    (Ausführung, Verfall, Storno steht in `trades/`); eine Order mit schon vorhandener Endbuchung führt der Tick nicht
+    erneut aus (Hinweis im Bericht, `pruefe.py` meldet die Inkonsistenz). **Nachbuchung bleibt der Abgleich:** Sie
+    bucht nachts weiter bis gestern, holt Eröffnungskurse und Zwischenberührungen (Tageshoch/-tief, ungünstigere Annahme)
+    nach und meldet automatische Kurse außerhalb der Tageskerze (`bewertung.abgleich_automatisch`, nur Hinweis, nie eine
+    Änderung vorhandener Buchungen). **Systemstatus** hat die Zeile „Ausführung“ (letzter Durchlauf, Warteschlange offener
+    Orders, Rückstand nicht ausgeführter Market-Orders bei offenem Markt, Fehler, Hinweise; rot, wenn bei offenem Markt
+    seit 15 Minuten kein Durchlauf stattfand). Protokoll: `data/ausfuehrung/JJJJ-MM-TT.jsonl` (nur Durchläufe mit Buchung,
+    Fehler oder Problem; Nur-Anhängen-Prüfung) und der Log des Dienstes. Der Dienst committet Ausführungen lokal
+    (`session: automatische Ausführung …`), solange keine Session aktiv ist; sonst übernimmt der Commit der Session.
+    **Auslegungen:** (1) Eine vorgemerkte Market-Order wird zum ersten protokollierten Kurs nach der Eröffnung
+    ausgeführt, sofern dessen Quellzeit höchstens 30 Minuten nach der Eröffnung liegt; sonst überlässt der Tick sie der
+    Nachbuchung (offizieller Eröffnungskurs). Das ist eine Näherung an den Eröffnungskurs (Xetra-Kurse sind bei yfinance
+    etwa 15 Minuten verzögert, gebucht wird nur zu protokollierten Kursen mit Quellzeit nach der Eröffnung). (2) Stops,
+    Kursziele und Limits lösen auf dem protokollierten Kurs aus, nicht auf Zwischenwerten: Ein Stop wird zum Kurs des
+    Ticks ausgeführt (nie besser als der Stop), Kursziel und Limit zum Kurs des Ticks (nie schlechter als vorgegeben); was
+    zwischen zwei Ticks geschieht, holt die Nachbuchung mit der ungünstigeren Annahme nach. (3) Ein geänderter Stop wirkt für
+    die laufende Ausführung sofort (Kurse nach der Änderung), für die nächtliche Kerzenprüfung weiter ab dem nächsten
+    Handelstag (Entscheidung zu `buchen.py aendern`, unverändert). (4) Solange Tage der Nachbuchung ausstehen (Worker
+    ausgefallen), führt der Dienst nicht aus, damit die Reihenfolge der Tage stimmt; der Systemstatus nennt es. (5) Stop und
+    Kursziel gehören zu einer Position und schließen sich aus: Das ist die OCO-Wirkung. **Nicht umgesetzt (Vorschlag an
+    die Auftraggeber):** Trailing-Stop, weil der Stop-Verlauf (`stop_historie`) und die Kerzenprüfung der Nachbuchung ihn
+    nicht abbilden; als Vorschlag: Stufe `trailing` mit festem Abstand, vom Tick nachgezogen und je Anpassung als `aenderung`
+    gebucht. **Grenzen:** yfinance liefert keine Tickdaten; die Ausführung ist so genau wie der 5-Minuten-Takt der
+    Kursquelle, und ein Ausfall des Dienstes bei offenem Markt wird erst von der nächsten Nachbuchung ausgeglichen.
+    Tests: Sonntagabend erfasst, Montag zur Eröffnung ohne Lauf ausgeführt (Kauf und Verkauf), verpasstes
+    Eröffnungsfenster, fehlender und veralteter Kurs, Stop, Kursziel, Knock-out, Limit, Limit-Verstoß, Rückstand der
+    Nachbuchung, gleichzeitige Ticks und Claude-Session ohne Doppelbuchung (Threads), Sperre prozessübergreifend, Uhr
+    (Sommerzeit-Unterschied, Frühschluss, Feiertag, Takt), Prüfungen, Abgleich, Worker-Schritt und Systemstatus.
+
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere

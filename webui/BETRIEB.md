@@ -132,6 +132,14 @@ die Nur-Anhängen-Regeln über diese lokale Historie. Kein Code-Pfad pusht Spiel
   danach Bericht, Prüfung und lokaler Commit „session: Nachbuchung …“), damit vorgemerkte Orders nicht bis zur
   nächsten Session liegen. Status: Einrichtung → Systemstatus → „Nachbuchung“. Bei Fehlern wiederholt er
   stündlich; eine laufende Session oder ein laufender Lauf geht vor.
+- **Ausführung ohne Claude-Lauf:** Der Worker ruft `tools/ausfuehrung.py tick` bei offenem Markt alle 5 Minuten
+  sowie kurz nach Öffnung und kurz vor Schluss jeder Börse auf (nach Fehler oder fehlendem Kurs nach einer
+  Minute erneut). Er führt vorgemerkte Orders, Limits, Stops, Kursziele und Knock-outs zu protokollierten Kursen aus,
+  ohne Sprachmodell und ohne Token, unter der Buchungssperre (`/data/.buchungssperre`, unabhängig von
+  `session.lock`). Status: Einrichtung → Systemstatus → „Ausführung“ (letzter Durchlauf, Warteschlange, Rückstand,
+  Fehler). Protokoll: `data/ausfuehrung/JJJJ-MM-TT.jsonl`; Buchungen tragen „automatisch (Auslöser: …)“. Von Hand,
+  mit Netzwerk: `docker compose exec worker python /app/framework/tools/ausfuehrung.py tick`; Termine eines
+  Tages: `ausfuehrung.py ereignisse --tag JJJJ-MM-TT`. Steht die Nachbuchung aus, wartet die Ausführung.
 - **News:** `tools/news.py` ruft die Feeds aus `config/news.json` und der Einrichtung alle 15 Minuten ab,
   dedupliziert und speichert nur Titel, Kurztext und Link in `news/` (nur anhängen).
 
