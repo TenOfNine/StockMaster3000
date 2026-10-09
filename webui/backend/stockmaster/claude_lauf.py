@@ -153,8 +153,10 @@ def prompt(art: str, auftrag) -> str:
                 "(Kennzahlen aus Tagesdaten, vom Hintergrunddienst nach Handelsschluss aktualisiert; `aktualisieren` "
                 "nicht aufrufen). Die Kennzahlen sind nur Orientierung: Prüfe Kandidaten mit "
                 "`python tools/kurse.py aktuell <ticker>` und News; gebucht wird nur zu protokollierten Kursen. "
-                "Nenne im Journal die geprüften Kandidaten, auch wenn du nichts tust. Der Hintergrunddienst bucht "
-                "nachts automatisch nach; ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +
+                "Nenne im Journal die geprüften Kandidaten und die belegte Ausnahme, wenn du keine Order erfasst. "
+                "Der Hintergrunddienst führt vorgemerkte Orders, Limits, Stops, Kursziele und Barrieren auch ohne "
+                "Lauf aus (Buchung mit 'automatisch (Auslöser: …)' und deiner Journal-ID) und bucht nachts nach; "
+                "ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +
                 vorgaben_prompt())
     if art == "review":
         return ("Erstelle nur die fälligen Reviews und den Bericht (CLAUDE.md, Schritte 2 bis 5, 10 bis 12), "

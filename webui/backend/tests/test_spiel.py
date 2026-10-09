@@ -210,3 +210,15 @@ def test_beobachtung_kandidaten(nutzer, monkeypatch):
 def test_beobachtung_nur_angemeldet(client):
     assert client.get("/api/spiel/beobachtung").status_code == 401
     assert client.get("/api/spiel/beobachtung/kandidaten").status_code == 401
+
+
+def test_ueberblick_zeigt_automatisch_ausgefuehrte_buchungen(nutzer, demo_repo, monkeypatch):
+    from stockmaster.spiel import lesen
+
+    zeile = {"profil": "ausgewogen", "trade_id": "T-0042", "zeit": "2026-10-12T09:03:00+02:00", "aktion": "kauf",
+             "ticker": "SAP.DE", "betrag_eur": -201.0, "journal_id": "J-20261011-01", "order_id": "O-0007",
+             "bemerkung": "automatisch (Auslöser: Eröffnung): erster Kurs 200"}
+    monkeypatch.setattr(lesen, "alle_trades", lambda: [zeile, {**zeile, "trade_id": "T-0001", "bemerkung": ""}])
+    daten = nutzer.get("/api/spiel/ueberblick").json()
+    assert [b["trade_id"] for b in daten["automatisch"]] == ["T-0042"]
+    assert daten["automatisch"][0]["ausloeser"] == "Eröffnung" and daten["automatisch"][0]["order_id"] == "O-0007"

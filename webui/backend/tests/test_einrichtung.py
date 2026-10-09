@@ -28,8 +28,8 @@ def test_ueberblick_ohne_secrets(admin):
     assert daten["geheimnisse"]["claude_token"]["gesetzt"] is False
     assert {m["wert"] for m in daten["optionen"]["claude"]["modelle"]} >= {"opus", "sonnet", "haiku"}
     assert {a["wert"] for a in daten["optionen"]["claude"]["aufwand"]} >= {"low", "medium", "high"}
-    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "beobachtung", "nachbuchung", "claude",
-                                                       "worker"}
+    assert {s["id"] for s in daten["systemstatus"]} == {"daten", "git", "kurse", "news", "beobachtung", "nachbuchung",
+                                                       "ausfuehrung", "claude", "worker"}
     schritte = [s["schritt"] for s in daten["pflichtschritte"]]
     assert schritte == ["kursdaten", "claude"]  # Demo-Spiel ist gestartet
 
@@ -572,3 +572,31 @@ def test_trading_prompt_stellt_handeln_in_den_vordergrund_und_kennt_keine_zeitfe
     # Die frühere Beschränkung auf Recherche vor dem Startdatum ist weg.
     assert "keine Order versuchen" not in prompt and "nur Marktüberblick" not in prompt
     assert "Kapitalerhalt vor Rendite" not in prompt and "Nichtstun ist eine gültige" not in prompt
+
+
+def test_systemstatus_ausfuehrung(admin, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from stockmaster import appdaten, einrichtung
+
+    g = einrichtung._werkzeuge()
+    monkeypatch.setattr(g["ausfuehrung"], "irgendeine_boerse_offen", lambda jetzt: True)
+
+    def zeile(stand):
+        monkeypatch.setattr(appdaten, "zustand_lesen", lambda name: {"ausfuehrung": stand} if stand else {})
+        return einrichtung._ausfuehrung_ampel()
+
+    def stand(vor=timedelta(minutes=2), **zusatz):
+        return {"versuch": (datetime.now(UTC) - vor).isoformat(), "ausloeser": "takt", "ok": True, "buchungen": 0,
+                "offen": 2, "rueckstand": 0, "fehler": [], "probleme": [], "wiederholen": False, **zusatz}
+
+    assert zeile(None)["stufe"] == "gelb"  # Markt offen, aber noch kein Durchlauf
+    gut = zeile(stand(letzte_buchung={"zeit": datetime.now(UTC).isoformat(), "text": "Kauf 1 SAP.DE"}))
+    assert gut["stufe"] == "gruen" and "2 Orders in der Warteschlange" in gut["text"] and "Kauf 1 SAP.DE" in gut["text"]
+    rueckstand = zeile(stand(rueckstand=1))
+    assert rueckstand["stufe"] == "gelb" and "1 Market-Order" in rueckstand["text"]
+    kaputt = zeile(stand(ok=False, fehler=["SAP.DE: Kein verlässlicher Kurs"]))
+    assert kaputt["stufe"] == "gelb" and kaputt["details"][0]["text"] == "SAP.DE: Kein verlässlicher Kurs"
+    assert zeile(stand(vor=timedelta(minutes=40)))["stufe"] == "rot"  # bei offenem Markt überfällig
+    monkeypatch.setattr(g["ausfuehrung"], "irgendeine_boerse_offen", lambda jetzt: False)
+    assert zeile(stand(vor=timedelta(hours=9)))["stufe"] == "gruen"  # Markt zu: nichts überfällig

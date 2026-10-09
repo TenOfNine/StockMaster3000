@@ -89,7 +89,7 @@ def werkzeuge() -> dict[str, ModuleType]:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
                        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
-                                    "datenverzeichnis", "news", "richtlinien", "beobachtung", "pruefe")}
+                                    "datenverzeichnis", "news", "richtlinien", "beobachtung", "pruefe", "ausfuehrung")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -99,7 +99,8 @@ def zuruecksetzen() -> None:
     """Für Tests: Werkzeuge neu laden (anderes Repository)."""
     for name in list(sys.modules):
         if name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine", "buchen", "pruefe", "init",
-                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien", "beobachtung"):
+                    "session", "pfade", "news", "datenverzeichnis", "migriere", "richtlinien", "beobachtung",
+                    "ausfuehrung"):
             del sys.modules[name]
     _module.clear()
 
@@ -589,6 +590,19 @@ def sperre() -> dict | None:
 
 def termine() -> list[dict]:
     return werkzeuge()["termine"].faellige_reviews()
+
+
+def automatische_buchungen(anzahl: int = 5) -> list[dict]:
+    """Die letzten automatisch (ohne Claude-Lauf) ausgeführten Buchungen mit Auslöser (regeln.md 6)."""
+    g = werkzeuge()["gemeinsam"]
+    treffer = []
+    for z in alle_trades():
+        m = g.AUTOMATISCH_MUSTER.match(z.get("bemerkung") or "")
+        if m:
+            treffer.append({"profil": z["profil"], "trade_id": z["trade_id"], "zeit": z["zeit"], "aktion": z["aktion"],
+                            "ticker": z["ticker"], "betrag_eur": z["betrag_eur"], "ausloeser": m.group(1),
+                            "journal_id": z["journal_id"], "order_id": z["order_id"]})
+    return sorted(treffer, key=lambda t: t["zeit"], reverse=True)[:anzahl]
 
 
 def handeln() -> list[dict]:

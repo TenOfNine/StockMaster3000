@@ -1159,3 +1159,83 @@ def test_beobachtung_gehoert_zur_schleife(app, werkzeug_attrappe, beobachtung_at
 
     w = Worker()
     assert BEOBACHTUNG_ZEILE in w.einmal(_um(12, "23:20"))
+
+
+# --------------------------------------------------------------------------
+# Automatische Ausführung ohne Claude-Lauf (Entscheidung 43)
+
+AUSFUEHRUNG_BERICHT = {"zeit": "2026-10-12T09:03:00+02:00", "ausloeser": "eroeffnung", "uebersprungen": [], "probleme": [],
+                       "fehler": [], "offen": 0, "rueckstand": 0, "wiederholen": False, "rueckstand_nachbuchung": False,
+                       "hinweis": "", "ausgefuehrt": [{"profil": "ausgewogen", "trade_id": "T-0001", "aktion": "kauf"}],
+                       "meldungen": ["ausgewogen: Kauf 1 SAP.DE zu 200 EUR"]}
+
+
+def _ausfuehrung_attrappe(monkeypatch, bericht, returncode=0):
+    from stockmaster import worker
+
+    aufrufe = []
+
+    class Ergebnis:
+        stderr = ""
+
+        def __init__(self, stdout):
+            self.stdout, self.returncode = stdout, returncode
+
+    def falsch(name, *argumente, **kw):
+        aufrufe.append((name, *argumente))
+        if name == "ausfuehrung":
+            return Ergebnis(json.dumps(bericht) if isinstance(bericht, dict) else bericht)
+        return Ergebnis("ok")
+
+    monkeypatch.setattr(worker, "werkzeug", falsch)
+    return aufrufe
+
+
+def test_worker_fuehrt_im_takt_aus_und_committet_buchungen(app, monkeypatch):
+    from stockmaster.worker import Worker
+
+    aufrufe = _ausfuehrung_attrappe(monkeypatch, AUSFUEHRUNG_BERICHT)
+    w = Worker()
+    assert w.ausfuehren(_um(12, "07:30")) is None  # vor der ersten Eröffnung (Rohstoffe 08:00): nichts offen
+    meldung = w.ausfuehren(_um(12, "09:03"))
+    assert meldung.startswith("Ausführung (eroeffnung): 1 Buchung(en)")
+    assert ("ausfuehrung", "tick", "--ausloeser", "eroeffnung", "--json") in aufrufe
+    assert any(a[:2] == ("datenverzeichnis", "commit") and "automatische Ausführung" in a[3] for a in aufrufe)
+    assert w.zustand["ausfuehrung"]["buchungen"] == 1 and w.zustand["ausfuehrung"]["ok"] is True
+    assert w.zustand["ausfuehrung"]["letzte_buchung"]["anzahl"] == 1
+    # innerhalb des Takts nichts Neues
+    aufrufe.clear()
+    assert w.ausfuehren(_um(12, "09:05")) is None and aufrufe == []
+    assert w.ausfuehren(_um(12, "09:08")).startswith("Ausführung (takt)")  # nach 5 Minuten wieder fällig
+
+
+def test_worker_wiederholt_nach_fehler_im_minutentakt(app, monkeypatch):
+    from stockmaster.worker import Worker
+
+    fehlerbericht = {**AUSFUEHRUNG_BERICHT, "ausgefuehrt": [], "meldungen": [], "wiederholen": True,
+                     "fehler": [{"ticker": "SAP.DE", "text": "Kein verlässlicher Kurs"}]}
+    aufrufe = _ausfuehrung_attrappe(monkeypatch, fehlerbericht)
+    w = Worker()
+    assert w.ausfuehren(_um(12, "09:03")) == "Ausführung: SAP.DE: Kein verlässlicher Kurs"
+    assert w.zustand["ausfuehrung"]["ok"] is False and w.zustand["ausfuehrung"]["wiederholen"] is True
+    assert not any(a[0] == "datenverzeichnis" for a in aufrufe)
+    aufrufe.clear()
+    assert w.ausfuehren(_um(12, "09:03") + timedelta(seconds=30)) is None and aufrufe == []
+    w.ausfuehren(_um(12, "09:05"))  # nach einer Minute erneut
+    assert [a[0] for a in aufrufe] == ["ausfuehrung"]
+
+
+def test_worker_meldet_werkzeugfehler_ohne_abzustuerzen(app, monkeypatch):
+    from stockmaster.worker import Worker
+
+    _ausfuehrung_attrappe(monkeypatch, "Traceback ...\nFehler: kaputt", returncode=1)
+    w = Worker()
+    assert w.ausfuehren(_um(12, "09:03")) == "Ausführung: Fehler: kaputt"
+    assert w.zustand["ausfuehrung"]["ok"] is False and w.zustand["ausfuehrung"]["wiederholen"] is True
+
+
+def test_ausfuehrung_gehoert_zur_schleife(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    Worker().einmal(_um(12, "09:03"))
+    assert ("ausfuehrung", "tick", "--ausloeser", "eroeffnung", "--json") in [a[:5] for a in werkzeug_attrappe]

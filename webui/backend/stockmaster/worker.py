@@ -251,6 +251,56 @@ class Worker:
         meldung += "; Prüfung bestanden" if pruefung.returncode == 0 else f"; Prüfung mit Fehlern: {_letzte_zeile(pruefung)}"
         return ergebnis(True, meldung, pruefung.returncode == 0)
 
+    def ausfuehren(self, jetzt: datetime) -> str | None:
+        """Automatische Ausführung ohne Claude-Lauf (regeln.md 6, Entscheidung 43).
+
+        Im Takt bei offenem Markt sowie zu Öffnung und Schluss jeder Börse: vorgemerkte Orders, Limits, Stops,
+        Kursziele und Knock-outs zu protokollierten Kursen. Der Code rechnet und bucht (tools/ausfuehrung.py, unter
+        der Buchungssperre, unabhängig von der Session-Sperre); ein Fehler oder fehlender Kurs wird nach kurzer Pause
+        erneut versucht. Weder Claude noch ein Token sind beteiligt.
+        """
+        werkzeuge = _werkzeuge()
+        if not werkzeuge["gemeinsam"].spiel_lesen().get("startdatum"):
+            return None
+        stand = self.zustand.get("ausfuehrung") or {}
+        zuletzt = datetime.fromisoformat(stand["versuch"]) if stand.get("versuch") else None
+        ausloeser = werkzeuge["ausfuehrung"].faellig(zuletzt, jetzt.astimezone(TZ), wiederholen=bool(stand.get("wiederholen")))
+        if not ausloeser:
+            return None
+        lauf = werkzeug("ausfuehrung", "tick", "--ausloeser", ausloeser, "--json", timeout=300)
+        ergebnis: dict = {"versuch": jetzt.isoformat(timespec="seconds"), "ausloeser": ausloeser,
+                          "letzte_buchung": stand.get("letzte_buchung")}
+        try:
+            bericht = json.loads((lauf.stdout.strip().splitlines() or [""])[-1])
+        except ValueError:
+            bericht = None
+        if bericht is None or lauf.returncode != 0:
+            ergebnis.update(ok=False, wiederholen=True, meldung=_letzte_zeile(lauf) or "Ausführung ohne Ergebnis.",
+                            fehler=[], offen=stand.get("offen", 0), rueckstand=stand.get("rueckstand", 0))
+            self._merken(ausfuehrung=ergebnis)
+            return f"Ausführung: {ergebnis['meldung']}"
+        fehler = [f"{f.get('ticker') or f.get('profil')}: {f['text']}" for f in bericht["fehler"]][:5]
+        probleme = [f"{p['profil']}: {p['text']}" for p in bericht.get("probleme", [])][:5]
+        ergebnis.update(ok=not fehler, wiederholen=bool(bericht["wiederholen"]), fehler=fehler, probleme=probleme,
+                        offen=bericht["offen"], rueckstand=bericht["rueckstand"],
+                        rueckstand_nachbuchung=bool(bericht.get("rueckstand_nachbuchung")),
+                        buchungen=len(bericht["ausgefuehrt"]), hinweis=bericht.get("hinweis", ""),
+                        meldung=bericht["meldungen"][-1] if bericht["meldungen"] else "")
+        meldung = None
+        if bericht["ausgefuehrt"]:
+            ergebnis["letzte_buchung"] = {"zeit": bericht["zeit"], "anzahl": len(bericht["ausgefuehrt"]),
+                                          "text": "; ".join(bericht["meldungen"])[:300]}
+            anzahl = len(bericht["ausgefuehrt"])
+            meldung = f"Ausführung ({ausloeser}): {anzahl} Buchung(en): " + ergebnis["letzte_buchung"]["text"]
+            if not auftraege.session_sperre_aktiv() and not self.lauf_aktiv():
+                werkzeug("datenverzeichnis", "commit", "-m",
+                         f"session: automatische Ausführung ({len(bericht['ausgefuehrt'])} Buchungen, automatisch)",
+                         timeout=120)
+        elif fehler:
+            meldung = f"Ausführung: {fehler[0]}"
+        self._merken(ausfuehrung=ergebnis)
+        return meldung
+
     def committen(self, jetzt: datetime) -> str | None:
         """Abrufe höchstens stündlich lokal committen; nie während einer Session oder eines Laufs."""
         if not self._faellig(self.zustand.get("commit_zeit"), 60, jetzt) or self.lauf_aktiv():
@@ -612,8 +662,8 @@ class Worker:
             self.herzschlag("Wartung (Wiederherstellung)")
             return ["Wartung"]
         self.auftraege_bearbeiten()
-        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.beobachtung_aktualisieren,
-                        self.nachbuchen, self.committen):
+        for schritt in (self.zeitplan, self.richtlinien_standard, self.planen, self.ausfuehren,
+                        self.beobachtung_aktualisieren, self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht
