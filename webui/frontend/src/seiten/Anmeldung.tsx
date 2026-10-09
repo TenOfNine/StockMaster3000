@@ -64,7 +64,7 @@ function Markenflaeche() {
         </h2>
         <p className="mt-4 text-[14.5px] leading-relaxed text-text-2">
           Rechnen macht Code, Entscheiden macht Claude. Hier verfolgt ihr Kennzahlen, Trade-Akten und das Reasoning hinter
-          jeder Abwägung – auch hinter begründetem Nichtstun.
+          jeder Abwägung – und die Begründung, wenn einmal nicht gehandelt wird.
         </p>
         <div className="mt-6 flex gap-2">
           {PROFILE.map((p) => (

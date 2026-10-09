@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Flag, History, Newspaper, NotebookPen, Rocket } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Flag, History, Newspaper, NotebookPen, Rocket, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
 import { EntscheidungsZeile, SessionKarte, TerminZeile } from "@/components/Bausteine";
@@ -98,6 +98,20 @@ export function Cockpit() {
                   {daten.termine.length > 4 && <p className="px-3 text-[12px] text-text-3">und {daten.termine.length - 4} weitere</p>}
                 </div>
               </Karte>
+              {!!daten.handeln?.length && (
+                <Karte>
+                  <KarteKopf titel="Handeln" icon={<TrendingUp className="size-4" />} untertitel="Handeln ist der Normalfall, Cash die Ausnahme" />
+                  <ul className="space-y-2 px-4 pb-4 text-[12.5px] text-text-2" aria-label="Hinweise zum Handeln">
+                    {daten.handeln.slice(0, 4).map((h) => (
+                      <li key={h.text} className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warnung" aria-hidden />
+                        <span>{h.text}</span>
+                      </li>
+                    ))}
+                    {daten.handeln.length > 4 && <li className="text-text-3">und {daten.handeln.length - 4} weitere</li>}
+                  </ul>
+                </Karte>
+              )}
               <LaufKarte lauf={daten.letzter_lauf} />
               <Karte className="flex-1">
                 <KarteKopf

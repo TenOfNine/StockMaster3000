@@ -186,7 +186,7 @@ function Zusammensetzung({ d }: { d: PortfolioDetail }) {
 const TYP_NAME: Record<Position["typ"], string> = { aktie: "Aktie", etf: "ETF", ko: "Knock-out", faktor: "Faktor" };
 
 function Positionen({ positionen }: { positionen: Position[] }) {
-  if (!positionen.length) return <Karte><Leer titel="Keine offenen Positionen" text="Nichtstun ist eine gültige Entscheidung – die Begründung steht im Session-Eintrag." /></Karte>;
+  if (!positionen.length) return <Karte><Leer titel="Keine offenen Positionen" text="Handeln ist der Normalfall, Cash die Ausnahme: Warum keine Position besteht, steht als belegte Ausnahme im Session-Eintrag." /></Karte>;
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {positionen.map((p) => {

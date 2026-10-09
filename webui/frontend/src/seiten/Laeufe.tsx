@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bot, CalendarClock, CircleStop, Info, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
+import { Bot, CalendarClock, CircleStop, Loader2, Play, ScrollText, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Geschuetzt } from "@/components/Fehlergrenze";
@@ -100,11 +100,6 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
   const [modell, setModell] = useState("");
   const [aufwand, setAufwand] = useState("");
   const d = einrichtung.data;
-  const vorpruefung = useQuery({
-    queryKey: ["vorpruefung", art],
-    queryFn: () => api<{ hinweise: string[] }>(`/api/laeufe/vorpruefung?art=${art}`),
-    enabled: offen,
-  });
   useEffect(() => {
     if (d && !auftraggeber) setAuftraggeber(d.einstellungen.zeitplan.auftraggeber || d.optionen.auftraggeber[0]);
   }, [d, auftraggeber]);
@@ -120,7 +115,7 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
   });
   const auswahlKlasse = "h-10 w-full rounded-lg border border-rand bg-flaeche-2 px-3 text-sm text-text";
   return (
-    <Dialog offen={offen} setOffen={setOffen} titel="Claude-Lauf starten" beschreibung="Manuell jederzeit möglich. Der Lauf startet im Container mit dem hinterlegten Pro-Abo; es läuft nie mehr als ein Lauf, und bis zum Startdatum bucht das Werkzeug nichts." breit>
+    <Dialog offen={offen} setOffen={setOffen} titel="Claude-Lauf starten" beschreibung="Jederzeit möglich, unabhängig von Datum, Wochentag und Uhrzeit. Der Lauf startet im Container mit dem hinterlegten Pro-Abo; es läuft nie mehr als ein Lauf. Ist das Spiel noch nicht gestartet, startet der Trading-Lauf es selbst." breit>
       {!d ? (
         <Skelett className="h-48" />
       ) : (
@@ -188,17 +183,6 @@ function StartDialog({ offen, setOffen }: { offen: boolean; setOffen: (o: boolea
               </div>
             )}
           </div>
-          {!!vorpruefung.data?.hinweise.length && (
-            <ul className="space-y-1.5 rounded-xl border border-warnung/30 bg-warnung-flaeche p-3.5 text-[12.5px] text-text" aria-label="Hinweise zum Start">
-              {vorpruefung.data.hinweise.map((h) => (
-                <li key={h} className="flex items-start gap-2">
-                  <Info className="mt-0.5 size-3.5 shrink-0 text-warnung" aria-hidden />
-                  <span>{h}</span>
-                </li>
-              ))}
-              <li className="pl-5 text-text-3">Das ist nur ein Hinweis: Der Lauf lässt sich trotzdem jederzeit starten.</li>
-            </ul>
-          )}
           {start.isError && (
             <p className="text-[12.5px] text-schlecht" role="alert">
               {start.error instanceof ApiFehler ? start.error.message : "Start fehlgeschlagen."}
@@ -247,7 +231,7 @@ function PlanLeiste({ admin }: { admin: boolean }) {
                 ? naechster
                   ? `Nächster Lauf: ${ARTKURZ[naechster.art] ?? naechster.art} am ${zeit(naechster.zeit)} (${p.zeitzone}) für ${p.auftraggeber}.`
                   : "Kein Termin in den nächsten zwei Wochen."
-                : "Es starten nur manuelle Läufe. Mit der Automatik laufen die Termine aus der Einrichtung von selbst, nur an Handelstagen."}
+                : "Es starten nur manuelle Läufe. Mit der Automatik laufen die Termine aus der Einrichtung von selbst, an jedem eingestellten Tag, auch an Wochenenden und Feiertagen."}
               {p.automatik && zuletzt && ` Zuletzt: ${String(zuletzt.termin).replace("T", " ")} – ${zuletzt.ergebnis}.`}
             </p>
           </div>
@@ -263,6 +247,15 @@ function PlanLeiste({ admin }: { admin: boolean }) {
           </Link>
         </div>
       </div>
+      {p.automatik && !!p.wartend?.length && (
+        <ul className="mx-5 mb-3 space-y-1 rounded-lg border border-warnung/30 bg-warnung-flaeche px-3 py-2 text-[12.5px] text-text" aria-label="Wartende Termine">
+          {p.wartend.map((w) => (
+            <li key={w.termin}>
+              Wartet: {ARTKURZ[w.art] ?? w.art}-Lauf vom {String(w.termin).slice(0, 16).replace("T", " ")} – {w.grund}. Der Lauf startet, sobald das möglich ist.
+            </li>
+          ))}
+        </ul>
+      )}
       {schalten.isError && (
         <p className="px-5 pb-3 text-[12.5px] text-schlecht" role="alert">
           {schalten.error instanceof ApiFehler ? schalten.error.message : "Umschalten fehlgeschlagen."}

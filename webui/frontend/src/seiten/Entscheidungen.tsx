@@ -152,7 +152,7 @@ export function Sessions() {
     <div className="einblenden">
       <Seitenkopf
         titel="Sessions & Abwägungen"
-        untertitel="Jede Session endet mit einem Session-Eintrag: je Portfolio die Entscheidung, die erwogenen und verworfenen Alternativen und die Begründung – auch bei Nichtstun."
+        untertitel="Jede Session endet mit einem Session-Eintrag: je Portfolio die Handlung (Order) oder die belegte Ausnahme mit Zahlen, die erwogenen und verworfenen Alternativen und die Begründung."
       />
       {kennungen.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-1.5">

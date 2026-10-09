@@ -73,6 +73,9 @@ auftraege.log_pfad("lauf-e2e-1").write_text("Lauf lauf-e2e-1: trading, Modell so
 import os, pathlib
 _sperre = pathlib.Path(os.environ["STOCKMASTER_DATA_DIR"]) / "session.lock"
 _sperre.write_text(json.dumps({"person": "auftraggeber-a", "start": datetime.now().astimezone().isoformat(timespec="seconds"), "art": "trading"}))
+appdaten.zustand_schreiben("planer", {"zeitplan_offen": {"2026-10-07T09:35-trading": {
+    "art": "trading", "auftraggeber": "auftraggeber-a", "seit": "2026-10-07T07:36:00+00:00",
+    "grund": "Session-Sperre von auftraggeber-b seit 2026-10-07T09:00:00+02:00 (tools/session.py)."}}})
 appdaten.bereich_speichern("zeitplan", {"automatik": True, "zeitzone": "Europe/Berlin", "auftraggeber": "auftraggeber-a",
                                         "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"}]})
 PY

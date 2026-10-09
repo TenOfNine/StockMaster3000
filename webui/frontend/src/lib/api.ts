@@ -82,6 +82,14 @@ export interface Ueberblick {
   einrichtung_offen: Pflichtschritt[];
   letzter_lauf: Lauf | null;
   news: NewsMeldung[];
+  handeln: HandelnHinweis[];
+}
+
+export interface HandelnHinweis {
+  art: "cash" | "session";
+  profil: Profil | null;
+  text: string;
+  ref?: string;
 }
 
 export interface Pflichtschritt {
@@ -303,6 +311,7 @@ export interface LaufPlan {
   zeitzone: string;
   auftraggeber: string;
   naechste: { zeit: string; art: "trading" | "review" }[];
+  wartend: { termin: string; art: "trading" | "review"; seit: string; grund: string }[];
   token_gesetzt: boolean;
   letzte: { termin: string; ergebnis: string }[];
 }
