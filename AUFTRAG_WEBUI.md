@@ -588,7 +588,8 @@ W10 kann nach W3 parallel zu W5 bis W9 beginnen.
   Akzentfarbe je Risikoprofil (Blau defensiv, Grün ausgewogen, Orange
   aggressiv) durchgängig in Karten, Diagrammen, Badges und der
   Profilauswahl. Umgesetzt mit den im Palette-Validator auf
-  Farbsehschwäche und Kontrast geprüften Stufen: dunkel `#3987E5` /
+  Farbsehschwäche und Kontrast geprüften Stufen (vier Profile seit Umbau v2,
+  viertes: Rosa für Overnight): dunkel `#3987E5` /
   `#199E70` / `#D95926`, hell `#2A78D6` / `#1BAF7A` / `#EB6834`
   (die ursprünglichen Töne `#38BDF8` / `#22C55E` / `#F59E0B` fielen durch;
   STATUS.md, Web-UI Stufe 1).
@@ -596,10 +597,12 @@ W10 kann nach W3 parallel zu W5 bis W9 beginnen.
   Vorzeichen und Symbol (Barrierefreiheit).
 - Trade-Akten als gut lesbare Dokumentseiten mit Seitenleiste
   (Kennzahlen, Status, Verknüpfungen) statt reiner Tabellen.
-- App-Icon und Favicon: `assets/icons/drei-profile.svg` (drei Balken in
-  den Profilfarben Blau, Grün, Orange mit steigender Linie;
-  Entscheidung 14). Die Profilfarben im Icon und in der UI sind
-  identisch.
+- App-Icon und Favicon: `assets/icons/vier-profile.svg` (seit Umbau v2
+  vier Balken in den Profilfarben Blau, Grün, Orange, Rosa mit steigender
+  Linie; vorher `drei-profile.svg`, Entscheidung 14). Die Profilfarben im
+  Icon und in der UI sind identisch. Viertes Profil Overnight: dunkel
+  `#F2AAE0`, hell `#8C1C67`, geprüft im Test `palette.test.ts` auf Kontrast
+  (mindestens 2,8) und paarweise Unterscheidbarkeit bei Farbsehschwäche.
 
 ## 13. Nicht Teil dieses Auftrags
 
@@ -626,7 +629,8 @@ Benchmarks (spätere Regeländerung).
 ## 15. Offene Punkte
 
 1. **Regelgrundlage für die Profilauswahl** (betrifft W6, Teil
-   Profilauswahl): regeln.md legt an drei Stellen fest drei Portfolios fest
+   Profilauswahl; durch Umbau v2 überholt, regeln.md v1.4 kennt vier Profile aus
+  config/profile.json, STATUS.md Entscheidung 44): regeln.md legt an drei Stellen fest drei Portfolios fest
    (Abschnitt 2: "Startkapital: 1.000 EUR je Portfolio (defensiv,
    ausgewogen, aggressiv)" und "eigenen drei Portfolios"; Abschnitt 11:
    "Monatsvergleich der drei Profile"). Die einmalige Änderungsfreigabe

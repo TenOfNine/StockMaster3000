@@ -642,6 +642,83 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Nachbuchung, gleichzeitige Ticks und Claude-Session ohne Doppelbuchung (Threads), Sperre prozessübergreifend, Uhr
     (Sommerzeit-Unterschied, Frühschluss, Feiertag, Takt), Prüfungen, Abgleich, Worker-Schritt und Systemstatus.
 
+44. Profilliste aus der Konfiguration und Migration bestehender Instanzen (Umbau v2, Stufe D, Punkte 4 und 6).
+    **Umgesetzt.** Die Profile stehen nur noch in `config/profile.json` (Reihenfolge = Anzeige); `gemeinsam.profile()`
+    ersetzt die feste Liste `PROFILE` (das Kürzel `g.PROFILE` bleibt als Alias), alle Werkzeuge (`init`, `limits`, `buchen`,
+    `bewertung`, `pruefe`, `richtlinien`, Benchmark, Ranking), das Backend (Routen, Vorgaben, Prompts) und die Oberfläche
+    lesen sie von dort bzw. aus den Daten; ein Test der Oberfläche prüft, dass Namen und Farben alle Profile der
+    Konfiguration abdecken. regeln.md 7 hat die Spalte Overnight, `pruefe.py` gleicht Tabelle und `config/profile.json`
+    weiter ab (jetzt vier Spalten). **Migration:** Der Hintergrunddienst ergänzt fehlende Profile selbst (`worker.py`
+    `profile_ergaenzen`, `tools/init.py --profile-ergaenzen`): Sicherung im App-Verzeichnis (`/data-app/sicherungen`,
+    die letzten drei), lokaler Commit des Ist-Zustands, dann Portfolio, Trades, NAV, Standard-Anlagerichtlinie und die
+    Hypothese H-OVERNIGHT-1 in lessons.md, danach ein Commit. Idempotent (zweiter Lauf tut nichts), nie während einer
+    Session, nie rückwirkend (**Startdatum = Tag der Ergänzung, 1.000 EUR**); die drei bestehenden Portfolios, ihre
+    Trades, Journal und Reviews bleiben Byte für Byte unverändert (Test auf einer Kopie eines Datenverzeichnisses mit
+    Historie). Der Start eines neuen Spiels legt alle vier Profile gleich an. Das Redeploy in Portainer braucht keinen
+    manuellen Eingriff. **Unterschiedliche Startdaten:** Die Benchmark rechnet je Portfolio ab dessen erstem
+    Schlusskurs (`benchmark.csv` bekommt die Spalte `overnight`, Werte vor dem eigenen Start bleiben leer);
+    Rendite, Drawdown und Sharpe zählen je Portfolio ab dem eigenen Start, `ranking.md` zeigt das Startdatum und nennt
+    den Grund, warum Renditen dann an der eigenen Benchmark zu messen sind; Reviews bleiben nach Spielzeit
+    (frühestes Startdatum). Session-Einträge werden für ein Profil erst ab dessen Startdatum vollständig verlangt (keine
+    Rückwirkung auf alte Sessions). **Technisches:** `.buchungssperre` steht in der `.gitignore` der Datenverzeichnisse
+    (bestehende bekommen die Zeile beim nächsten Commit), im Export ausgeschlossen. Unbekannte Profile liefern jetzt 404
+    statt 422. Tests: Migration auf einer Kopie (Werkzeuge und Dienst), Idempotenz, Session-Sperre, Benchmark und Ranking
+    mit unterschiedlichen Startdaten, `pruefe.py --historie` danach.
+45. Viertes Portfolio „Overnight“ (Umbau v2, Stufe D, Punkt 4). **Umgesetzt**, mit einer **offenen Entscheidung** (unten).
+    *Mechanik:* Daueranweisung (`tools/daueranweisung.py`, regeln.md 6): Claude setzt Instrumente (ETF, Aktie, Knock-out
+    mit Hebel bis 3, höchstens drei), Gewichte, Einsatzanteil (Standard 97 %), Stop-Abstand (Standard 3 %), Gültigkeit
+    (höchstens 90 Tage), Aussetzkriterien (Drawdown-Stufe ab 1, Verlustnächte in Folge, Portfoliowert unter x) mit
+    Journal-ID; das Werkzeug rechnet vorher alle Limits mit den heutigen Kursen (Trockenlauf `--nur-pruefen`, sonst
+    abgelehnt). Der Hintergrunddienst kauft nach dem Handelsschluss zum ersten protokollierten Kurs, dessen Quellzeit nach
+    dem Schluss liegt (Fenster: Schluss plus 5 bis 90 Minuten), und verkauft die Positionen der Anweisung am nächsten
+    Handelstag zum ersten Kurs nach der Eröffnung (höchstens 30 Minuten danach), sonst die Nachbuchung zum Eröffnungskurs
+    der Tageskerze. Wochenenden, Feiertage und Frühschlüsse folgen dem Börsenkalender (Test über Wochenende und
+    Weihnachten). Ohne gültige Anweisung geschieht nichts; eine Anweisung gilt erst ab ihrer Erfassung (wer sie nach
+    dem Schluss erfasst, kauft erst am nächsten Tag). Nächte werden aus den Trade-Zeilen abgerechnet (Ergebnis inklusive
+    Gebühren, Verlustserie), jeder Verkaufsweg zählt gleich. Protokoll `data/daueranweisung/overnight.jsonl` (nur
+    anhängen); `pruefe.py` prüft: Kauf nur mit Anweisung im Protokoll, nach Erfassung, bis zur Gültigkeit, nicht
+    während Aussetzung, Journal-ID gleich, liegengebliebene Positionen. *Preisquelle (konservativ, dokumentiert):*
+    protokollierte Kurse aus `tools/kurse.py` (yfinance verzögert Xetra um etwa 15 Minuten): Der Kauf wartet, bis die
+    Quelle einen Kurs nach dem Schluss liefert (nie vor dem Schluss), der Verkauf, bis sie einen nach der Eröffnung
+    liefert (nie davor); die Nachbuchung meldet Kurse außerhalb der Tageskerze. Positionen, die nach dem Schluss gekauft
+    wurden, zählen für die Tageskerze des Kauftags nicht (Stop und Barriere gelten ab der nächsten Kerze). *Limits
+    Overnight* (neu, regeln.md 7, `config/profile.json`): Zertifikate-Anteil 30 %, Hebel 3x, Exposure 1,5x,
+    **Einzelposition 100 %** (jede weitere Position kostet zwei Gebühren je Nacht), Mindest-Cashquote 2 %, Risiko je Trade
+    4 % (verlangt einen Stop), Drawdown-Bremse -10 % / -20 %, Benchmark 100 % MSCI World (EUNL.DE). Die Limits und Kosten
+    der drei bestehenden Profile sind unverändert. *Kostenmachbarkeit (gerechnet, `tools/overnight.py kosten`):* Bei
+    1.000 EUR kostet eine Nacht mit einer ETF-Position (970 EUR) 2,97 EUR = **0,31 %** des Einsatzes (2 EUR Gebühr, 0,10 %
+    Spread), mit zwei Positionen 4,97 EUR = **0,51 %**, mit einem Knock-out (Hebel 3, 300 EUR) 2,67 EUR = 0,89 % des
+    Einsatzes, auf den Basiswert umgerechnet wieder **0,30 %**: Die festen Gebühren fressen den Hebel, Hebel bessert die
+    Machbarkeit nicht. Der Basiswert müsste im Schnitt mindestens so viel zwischen Schluss und Eröffnung steigen. Die
+    Erwartung ist, dass breite Indizes das nicht tun (Größenordnung wenige hundertstel Prozent je Nacht, eine
+    Größenordnung darunter); das ist als **Hypothese H-OVERNIGHT-1** in lessons.md und in der Standard-Richtlinie
+    festgehalten und **hier nicht mit Marktdaten geprüft**: Die Entwicklungsumgebung hatte keinen Zugang zu den Kursquellen.
+    Das Rückblick-Werkzeug (`tools/overnight.py analyse`, Rohkurse eines Jahres aus den Listen von
+    `config/beobachtung.json`, 70 % Training / 30 % Test, Kosten des Spiels, Kennzahlen: Mittel, Median, Trefferquote,
+    5-%-Quantil, Wochenende gegen Wochentag, Streuung, Korrelation Xetra gegen US-Sitzung) läuft wöchentlich im
+    Hintergrunddienst (ab 23:30 Uhr) und liefert die Zahlen mit echten Daten; Ergebnis über `overnight.py ergebnis`.
+    Getestet ist es mit synthetischen Reihen (kein Netz). Rohkurse enthalten Dividendenabschläge (Aktien wirken zu
+    schlecht, ETFs nicht), ein Jahr ist kurz, bei rund 600 Werten gibt es Zufallstreffer: ein Kandidat ist eine
+    Hypothese. Die Demo (Zufallskurse ohne Vorteil) zeigt den Kostenverlust: 38 Nächte, Ergebnis rund -92 EUR (-0,24 %
+    je Nacht). *Beste Variante im Rahmen der Kosten:* eine breite ETF-Position, Einsatz bis zur Mindest-Cashquote, wenn
+    die Messung es stützt nur lange Nächte (`--nur-lange-naechte`: vor Wochenende und Feiertag), Aussetzen bei
+    Drawdown-Stufe 1. **Offene Entscheidung für die Auftraggeber:** Ist das Profil im Kostenmodell strukturell nicht
+    tragfähig (erwarteter Verlust von rund 0,3 % je Nacht gegenüber einem Ertrag von wenigen hundertstel Prozent), hat das
+    Experiment drei Wege: (1) behalten und messen (Ausnahme (a) in jeder Session belegen, kein Handel bis die
+    Messung einen positiven Erwartungswert zeigt; kostet nichts außer Aufmerksamkeit), (2) die Gebühr für dieses
+    Profil senken (kein Entscheid dieses Auftrags: Kosten werden nie still zugunsten eines Profils gesenkt) oder (3) das
+    Profil nach der ersten Messung schließen. Umgesetzt ist (1). *Oberfläche:* Profilfarbe `#F2AAE0` (dunkel) bzw.
+    `#8C1C67` (hell) mit Test auf Kontrast (mindestens 2,8) und paarweise Unterscheidbarkeit bei Rot-Grün- und
+    Blau-Gelb-Schwäche (CIELAB-Abstand mindestens 15, Simulation nach Machado); Reiter „Daueranweisung“ im Portfolio,
+    Cockpit-Karten in vier Spalten, App-Icon `assets/icons/vier-profile.svg` (Favicon), Vorgaben-Editor mit Overnight.
+    Gewinne und Verluste werden wie bisher zusätzlich über Vorzeichen und Symbol gezeigt. *Auslegungen:* (1) Die
+    Daueranweisung ist generisch (Zyklus in `config/profile.json`), derzeit nur für Overnight. (2) Positionen mit dem
+    Kennzeichen der Anweisung werden immer zur nächsten Eröffnung verkauft, auch wenn die Anweisung inzwischen
+    beendet, ausgesetzt oder abgelaufen ist (`beenden --positionen-behalten` nimmt das Kennzeichen weg). (3) Verpasst der
+    Dienst den Kauf zum Schluss (Ausfall), wird er nicht nachgeholt; der Verkauf wird nachgeholt. (4) Die Cash-Warnung in
+    `pruefe.py` trifft Overnight ohne Anweisung dauerhaft, weil Cash dort der Zustand ohne Anweisung ist; sie ist nur eine
+    Warnung, der Session-Eintrag belegt die Ausnahme.
+
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere

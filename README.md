@@ -1,11 +1,11 @@
-<img src="assets/icons/drei-profile.svg" alt="StockMaster 3000 Icon" width="96" height="96">
+<img src="assets/icons/vier-profile.svg" alt="StockMaster 3000 Icon" width="96" height="96">
 
 # StockMaster 3000 – Claude-Börsenexperiment
 
 [![Prüfung](https://github.com/TenOfNine/StockMaster3000/actions/workflows/pruefung.yml/badge.svg)](https://github.com/TenOfNine/StockMaster3000/actions/workflows/pruefung.yml)
 
-Claude handelt als institutioneller Portfoliomanager drei
-Spielgeld-Portfolios mit je 1.000 EUR und entwickelt daraus die
+Claude handelt als institutioneller Portfoliomanager vier
+Spielgeld-Portfolios (defensiv, ausgewogen, aggressiv und Overnight) mit je 1.000 EUR und entwickelt daraus die
 bestmögliche Strategie. Jede Entscheidung ist begründet, jede Buchung
 nachrechenbar, jede Änderung in Git nachvollziehbar.
 
@@ -137,7 +137,7 @@ initialisiertes und ein Demo-Datenverzeichnis aus.
     tests/                      Tests ohne Netzwerk, inkl. Szenario-Tests
     vorlagen/datenverzeichnis/  leere Vorlage des Datenverzeichnisses (Spielstand
                                 liegt nie im Repository, sondern im Volume)
-    assets/icons/               App-Icon (drei Profile)
+    assets/icons/               App-Icon (vier Profile)
     webui/                      Web-UI: backend/ (FastAPI), frontend/ (React),
                                 deploy/ (Docker, Caddy), demo/ (Demo-Daten)
     docker-compose.yml          Betrieb der Web-UI (webui/BETRIEB.md)
