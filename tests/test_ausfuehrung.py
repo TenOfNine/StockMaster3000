@@ -346,6 +346,7 @@ def test_ereignisse_beruecksichtigen_sommerzeit_unterschiede_zwischen_europa_und
     # 3.11.2026: beide in Winterzeit: NYSE 15:30
     assert ("15:31", "eroeffnung", "nyse") in ereignis_zeiten("2026-11-03")
     assert ("21:58", "schluss", "nyse") in ereignis_zeiten("2026-11-03")
+    assert ("22:06", "schlusskurs", "nyse") in ereignis_zeiten("2026-11-03")
 
 
 def test_ereignisse_fruehschluss_und_feiertag():
@@ -363,7 +364,9 @@ def test_faellig_im_takt_und_zu_oeffnung_und_schluss():
     assert ausfuehrung.faellig(zeit("2026-10-12T09:01:10"), zeit("2026-10-12T09:06:20")) == "takt"
     assert ausfuehrung.faellig(zeit("2026-10-12T09:06:20"), zeit("2026-10-12T09:07:30"), wiederholen=True) == "takt"
     assert ausfuehrung.faellig(zeit("2026-10-12T17:00:00"), zeit("2026-10-12T17:28:30")) == "schluss"
-    assert ausfuehrung.faellig(zeit("2026-10-12T22:05:00"), zeit("2026-10-12T22:30:00")) is None  # alles geschlossen
+    assert ausfuehrung.faellig(zeit("2026-10-12T17:28:30"), zeit("2026-10-12T17:36:30")) == "schlusskurs"  # Xetra
+    assert ausfuehrung.faellig(zeit("2026-10-12T22:10:00"), zeit("2026-10-12T22:30:00")) is None  # alles geschlossen
+    assert ausfuehrung.faellig(zeit("2026-10-12T22:10:00"), zeit("2026-10-12T22:12:00"), wiederholen=True) == "takt"
 
 
 # --------------------------------------------------------------------------

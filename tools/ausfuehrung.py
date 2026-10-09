@@ -26,6 +26,7 @@ from decimal import Decimal
 
 import bewertung
 import buchen
+import daueranweisung
 import gemeinsam as g
 import kurse
 import limits
@@ -52,6 +53,7 @@ def ereignisse(von: datetime, bis: datetime) -> list[dict]:
     """
     einst = einstellungen()
     nach, vor = timedelta(minutes=einst["nach_oeffnung_minuten"]), timedelta(minutes=einst["vor_schluss_minuten"])
+    danach = timedelta(minutes=int(daueranweisung.einstellungen()["schluss_abstand_minuten"]) + 1)
     gefunden = []
     tag = von.astimezone(g.TZ).date() - timedelta(days=1)
     ende = bis.astimezone(g.TZ).date() + timedelta(days=1)
@@ -60,7 +62,8 @@ def ereignisse(von: datetime, bis: datetime) -> list[dict]:
             fenster = kurse.boersen_fenster(name, tag)
             if fenster is None:
                 continue
-            for art, zeit in (("eroeffnung", fenster[0] + nach), ("schluss", fenster[1] - vor)):
+            for art, zeit in (("eroeffnung", fenster[0] + nach), ("schluss", fenster[1] - vor),
+                              ("schlusskurs", fenster[1] + danach)):
                 if von < zeit <= bis:
                     gefunden.append({"zeit": zeit, "art": art, "boerse": name})
         tag += timedelta(days=1)
@@ -78,7 +81,7 @@ def irgendeine_boerse_offen(jetzt: datetime) -> bool:
 
 
 def faellig(zuletzt: datetime | None, jetzt: datetime, wiederholen: bool = False) -> str | None:
-    """Auslöser des nächsten Ticks (`eroeffnung`, `schluss`, `takt`) oder None.
+    """Auslöser des nächsten Ticks (`eroeffnung`, `schluss`, `schlusskurs`, `takt`) oder None.
 
     Ein Ereignis (Öffnung, Schluss) seit dem letzten Tick löst sofort aus; sonst gilt bei offenem Markt der Takt
     (bei `wiederholen`, etwa nach fehlendem Kurs oder belegter Sperre, die kürzere Wiederholung).
@@ -87,7 +90,7 @@ def faellig(zuletzt: datetime | None, jetzt: datetime, wiederholen: bool = False
     ereignis = ereignisse(zuletzt or jetzt - timedelta(minutes=10), jetzt)
     if ereignis:
         return ereignis[-1]["art"]
-    if not irgendeine_boerse_offen(jetzt):
+    if not wiederholen and not irgendeine_boerse_offen(jetzt):
         return None
     minuten = einst["wiederholung_minuten"] if wiederholen else einst["takt_minuten"]
     if zuletzt is None or jetzt - zuletzt >= timedelta(minutes=minuten):
@@ -112,8 +115,10 @@ def _bedarf(portfolio: dict, jetzt: datetime) -> tuple[set[str], set[str]]:
     """(Ticker mit offenem Markt, die etwas auslösen können; weitere Ticker für die Bewertung bei Käufen)."""
     ausloeser = {x["basiswert"] for x in portfolio["offene_orders"] + portfolio["positionen"]
                  if kurse.markt_offen(x["basiswert"], jetzt)}
-    kauf_faellig = any(o["aktion"] == "kauf" and kurse.markt_offen(o["basiswert"], jetzt)
-                       for o in portfolio["offene_orders"])
+    plan_kauf = daueranweisung.bedarf(portfolio, jetzt)  # Kauf zum Schlusskurs: Börse schon zu, Kurs wird gebraucht
+    ausloeser |= plan_kauf
+    kauf_faellig = bool(plan_kauf) or any(o["aktion"] == "kauf" and kurse.markt_offen(o["basiswert"], jetzt)
+                                          for o in portfolio["offene_orders"])
     bewertung_ = {p["basiswert"] for p in portfolio["positionen"]} if kauf_faellig else set()
     return ausloeser, bewertung_ - ausloeser
 
@@ -124,8 +129,9 @@ def _gebuchte_order_ids(profil: str) -> set[str]:
             if z["order_id"] and z["aktion"] in ("kauf", "verkauf", "verfall", "storno", "knockout")}
 
 
-def _markt(portfolio: dict, quotes: dict, fx, zusaetzlich: str, heute: date) -> limits.Markt:
-    tickers = {p["basiswert"] for p in portfolio["positionen"]} | {zusaetzlich}
+def _markt(portfolio: dict, quotes: dict, fx, zusaetzlich: str | set, heute: date) -> limits.Markt:
+    tickers = {p["basiswert"] for p in portfolio["positionen"]} | ({zusaetzlich} if isinstance(zusaetzlich, str)
+                                                                    else set(zusaetzlich))
     fehlend = sorted(t for t in tickers if t not in quotes)
     if fehlend:
         raise g.KursFehler(f"Für {', '.join(fehlend)} liegt kein verlässlicher Kurs vor.")
@@ -153,6 +159,7 @@ class _Ctx:
     def __init__(self, bericht: dict, quotes: dict, fx, jetzt: datetime):
         self.bericht, self.quotes, self.fx, self.jetzt = bericht, quotes, fx, jetzt
         self.einst = einstellungen()
+        self.geaendert = False  # Portfolio ohne Trade-Zeile geändert (z. B. Anweisung ausgesetzt)
 
     def uebersprungen(self, profil: str, text: str, wiederholen: bool = False, protokoll: bool = False) -> None:
         self.bericht["uebersprungen"].append({"profil": profil, "text": text})
@@ -279,6 +286,93 @@ def _positionen(lauf: g.Buchungslauf, ctx: _Ctx) -> None:
                                           "Kursziel", f"Kurs {q.kurs} {'>=' if long else '<='} Kursziel {ziel}"))
 
 
+def _daueranweisung(lauf: g.Buchungslauf, ctx: _Ctx) -> None:
+    """Daueranweisung (Overnight): Verkauf zur Eröffnung, Abrechnung, Aussetzen, Kauf zum Schlusskurs."""
+    portfolio = lauf.portfolio
+    profil = portfolio["profil"]
+    if profil not in daueranweisung.zyklus_profile():
+        return
+    plan = portfolio.get("daueranweisung")
+    fenster = timedelta(minutes=ctx.einst["eroeffnung_fenster_minuten"])
+    # 1. Positionen aus der Anweisung zur Eröffnung verkaufen (unabhängig davon, ob die Anweisung noch gültig ist)
+    for position in list(portfolio["positionen"]):
+        if not daueranweisung.verkauf_faellig(position, ctx.jetzt):
+            continue
+        ticker = position["basiswert"]
+        q = ctx.quotes.get(ticker)
+        oeffnung = kurse.oeffnung(ticker, kurse.boersentag(ticker, ctx.jetzt))
+        if q is None or q.kurs_zeit < oeffnung:
+            ctx.uebersprungen(profil, f"{position['id']}: noch kein Kurs nach der Eröffnung von {ticker}; "
+                                      "nächster Versuch folgt.", wiederholen=True)
+            continue
+        if q.kurs_zeit - oeffnung > fenster:
+            ctx.uebersprungen(profil, f"{position['id']}: Eröffnungsfenster verpasst; die Nachbuchung verkauft zum "
+                                      "Eröffnungskurs.", protokoll=True)
+            continue
+        try:
+            eurusd = _fx_fuer(ticker, ctx.fx)
+        except g.KursFehler as exc:
+            ctx.uebersprungen(profil, f"{position['id']}: {exc}", wiederholen=True)
+            continue
+        buchen.verkauf_ausfuehren(lauf, position, EINS, q.kurs, eurusd, q.zeit, q.zeit.date(), "kurse", g.iso(q.zeit),
+                                  "order", order_id=g.naechste_id(portfolio, "order"),
+                                  journal_id=position["journal_id"], zusatz=daueranweisung.verkauf_zusatz(position, q))
+    if plan is None:
+        return
+    # 2. Beendete Nächte abrechnen (Nächte, Verlustserie, Ergebnis)
+    abgerechnet = daueranweisung.abrechnen(portfolio, plan, lauf.zeilen)
+    ctx.bericht["meldungen"] += abgerechnet
+    ctx.geaendert = ctx.geaendert or bool(abgerechnet)
+    if plan["status"] != "aktiv":
+        return
+    heute_tage = {kurse.boersentag(i["ticker"], ctx.jetzt) for i in plan["instrumente"]}
+    if all(tag > date.fromisoformat(plan["gueltig_bis"]) for tag in heute_tage):
+        plan["status"], plan["status_grund"] = "abgelaufen", f"gültig bis {plan['gueltig_bis']}"
+        daueranweisung.protokollieren(profil, plan["id"], "abgelaufen", plan["status_grund"])
+        ctx.geaendert = True
+        return
+    # 3. Kauf zum Schlusskurs
+    faellig = [i for i in plan["instrumente"] if daueranweisung.kauf_zu_planen(plan, i, ctx.jetzt) == ""]
+    if not faellig:
+        return
+    ohne_kurs = [i["ticker"] for i in faellig if ctx.quotes.get(i["ticker"]) is None]
+    if ohne_kurs:
+        ctx.uebersprungen(profil, f"Daueranweisung {plan['id']}: kein verlässlicher Kurs für {', '.join(ohne_kurs)}; "
+                                  "nächster Versuch folgt.", wiederholen=True)
+        return
+    noch_nicht = [i["ticker"] for i in faellig
+                  if ctx.quotes[i["ticker"]].kurs_zeit < kurse.schluss(i["ticker"], kurse.boersentag(i["ticker"], ctx.jetzt))]
+    if noch_nicht:
+        ctx.uebersprungen(profil, f"Daueranweisung {plan['id']}: die Quelle liefert den Schlusskurs von "
+                                  f"{', '.join(noch_nicht)} noch nicht; nächster Versuch folgt.", wiederholen=True)
+        return
+    try:
+        markt = _markt(portfolio, ctx.quotes, ctx.fx, {i["ticker"] for i in faellig}, ctx.jetzt.date())
+    except g.KursFehler as exc:
+        ctx.uebersprungen(profil, f"Daueranweisung {plan['id']}: {exc}", wiederholen=True)
+        return
+    nav = limits.portfolio_bewerten(portfolio, markt)["nav"]
+    grund = daueranweisung.aussetzgrund(portfolio, plan, nav)
+    if grund:
+        daueranweisung.aussetzen(portfolio, plan, grund, ctx.bericht["meldungen"])
+        ctx.geaendert = True
+        return
+    for ergebnis in daueranweisung.kaeufe_planen(portfolio, plan, markt, faellig, ctx.quotes, ctx.jetzt):
+        instrument = ergebnis["instrument"]
+        ticker = instrument["ticker"]
+        if ergebnis["verstoesse"]:  # kein Kauf heute für dieses Instrument; die Anweisung bleibt bestehen
+            text = (f"Daueranweisung {plan['id']}: kein Kauf von {ticker} (Einsatz {ergebnis['einsatz']} EUR), "
+                    "Limits: " + "; ".join(map(str, ergebnis["verstoesse"])))
+            plan["letzter_kauf"][ticker] = kurse.boersentag(ticker, ctx.jetzt).isoformat()
+            daueranweisung.protokollieren(profil, plan["id"], "uebersprungen", text)
+            ctx.uebersprungen(profil, text, protokoll=True)
+            ctx.geaendert = True
+            continue
+        daueranweisung.kauf_ausfuehren(lauf, plan, ergebnis, markt, ctx.quotes[ticker])
+        # die nächsten Käufe sehen Cash und Positionen des vorigen
+        markt = _markt(portfolio, ctx.quotes, ctx.fx, {i["ticker"] for i in faellig}, ctx.jetzt.date())
+
+
 def _profil(profil: str, ctx: _Ctx) -> None:
     portfolio = g.portfolio_laden(profil)  # frisch, innerhalb der Buchungssperre
     if portfolio.get("status") != "aktiv":
@@ -291,7 +385,8 @@ def _profil(profil: str, ctx: _Ctx) -> None:
     lauf = g.Buchungslauf(portfolio)
     _orders(lauf, ctx, _gebuchte_order_ids(profil))
     _positionen(lauf, ctx)
-    if lauf.zeilen:
+    _daueranweisung(lauf, ctx)
+    if lauf.zeilen or ctx.geaendert:
         zeilen = list(lauf.zeilen)
         lauf.speichern()
         ctx.bericht["ausgefuehrt"] += [{"profil": profil, "trade_id": z["trade_id"], "aktion": z["aktion"],
@@ -324,7 +419,11 @@ def tick(ausloeser: str = "takt", jetzt: datetime | None = None) -> dict:
         a, w = _bedarf(portfolio, jetzt)
         ausloesende |= a
         weitere |= w
-    if not ausloesende:
+    # Beendete Nächte einer Daueranweisung werden auch ohne offenen Markt abgerechnet (Verkauf durch die Nachbuchung).
+    nachbereiten = [profil for profil, p in portfolios.items()
+                    if (p.get("daueranweisung") or {}).get("zyklen") and any(
+                        not z["abgerechnet"] for z in p["daueranweisung"]["zyklen"])]
+    if not ausloesende and not nachbereiten:
         bericht["offen"] = sum(len(p["offene_orders"]) for p in portfolios.values())
         bericht["hinweis"] = "Kein offener Markt mit Orders oder Positionen."
         return bericht
@@ -343,7 +442,7 @@ def tick(ausloeser: str = "takt", jetzt: datetime | None = None) -> dict:
             bericht["fehler"].append({"ticker": g.projekt()["devisen_ticker"], "text": str(exc)[:300]})
             bericht["wiederholen"] = True
     ctx = _Ctx(bericht, quotes, fx, jetzt)
-    for profil in portfolios:
+    for profil in (portfolios if ausloesende else nachbereiten):
         try:
             with g.buchungssperre(einst["sperre_wartezeit_sekunden"]):
                 _profil(profil, ctx)
@@ -375,7 +474,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Automatische Ausführung ohne Claude-Lauf.")
     unter = parser.add_subparsers(dest="befehl", required=True)
     p = unter.add_parser("tick", help="Einen Durchlauf ausführen")
-    p.add_argument("--ausloeser", default="takt", choices=["takt", "eroeffnung", "schluss"])
+    p.add_argument("--ausloeser", default="takt", choices=["takt", "eroeffnung", "schluss", "schlusskurs"])
     p.add_argument("--json", action="store_true", help="Bericht als eine JSON-Zeile ausgeben")
     p = unter.add_parser("ereignisse", help="Eröffnungs- und Schlussereignisse eines Tages anzeigen")
     p.add_argument("--tag", help="JJJJ-MM-TT (Standard: heute)")
