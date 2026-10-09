@@ -13,7 +13,7 @@ vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/
 const LEER = { text: "", version: 0, zeit: null, von: null };
 
 function daten(zusatz: Partial<VorgabenDaten["profile"]> = {}, historie: VorgabenDaten["historie"] = []): VorgabenDaten {
-  return { profile: { defensiv: LEER, ausgewogen: LEER, aggressiv: LEER, ...zusatz }, max_zeichen: 4000, historie };
+  return { profile: { defensiv: LEER, ausgewogen: LEER, aggressiv: LEER, overnight: LEER, ...zusatz }, max_zeichen: 4000, historie };
 }
 
 function anzeigen(ui: React.ReactElement) {

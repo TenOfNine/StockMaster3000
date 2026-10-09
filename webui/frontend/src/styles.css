@@ -30,6 +30,7 @@
   --defensiv: #3987e5;
   --ausgewogen: #199e70;
   --aggressiv: #d95926;
+  --overnight: #f2aae0;
   --benchmark: #8b96a5;
   --raster: #1f2731;
   --schatten: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.6);
@@ -58,6 +59,7 @@
   --defensiv: #2a78d6;
   --ausgewogen: #1baf7a;
   --aggressiv: #eb6834;
+  --overnight: #8c1c67;
   --benchmark: #7d8794;
   --raster: #edf0f4;
   --schatten: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -16px rgba(15, 23, 42, 0.18);
@@ -86,6 +88,7 @@
   --color-defensiv: var(--defensiv);
   --color-ausgewogen: var(--ausgewogen);
   --color-aggressiv: var(--aggressiv);
+  --color-overnight: var(--overnight);
   --color-benchmark: var(--benchmark);
   --shadow-karte: var(--schatten);
 }

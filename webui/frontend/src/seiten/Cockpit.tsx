@@ -11,7 +11,7 @@ import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, 
 import { api, PROFILE, type Kennzahlen, type Lauf, type NavDaten, type NewsMeldung, type Pflichtschritt, type Profil } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { datum, euro, faktor, prozent, relativ, zeit } from "@/lib/format";
+import { datum, datumKompakt, euro, faktor, prozent, relativ, zeit } from "@/lib/format";
 import { LaufStatusAbzeichen, laufText } from "@/seiten/Laeufe";
 
 function gruss(): string {
@@ -54,8 +54,8 @@ export function Cockpit() {
       {daten && daten.einrichtung_offen.length > 0 && <EinrichtungsHinweis schritte={daten.einrichtung_offen} />}
 
       {!daten ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {[0, 1, 2].map((i) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
             <Skelett key={i} className="h-[208px] rounded-2xl" />
           ))}
         </div>
@@ -69,7 +69,7 @@ export function Cockpit() {
         </>
       ) : (
         <>
-          <section className="grid gap-4 md:grid-cols-3" aria-label="Portfolios">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Portfolios">
             {profile.map((p) => (
               <PortfolioKarte key={p} profil={p} k={daten.profile[p]!} werte={(nav.data?.profile[p] ?? []).map((z) => z.portfoliowert)} />
             ))}
@@ -217,7 +217,7 @@ function PortfolioKarte({ profil, k, werte }: { profil: Profil; k: Kennzahlen; w
           <div className="zahl mt-3 text-[30px] font-semibold tracking-[-0.025em] text-text">{euro(k.wert)}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-text-3">
             <span className="flex items-center gap-1">
-              <Delta wert={k.rendite} /> seit Start
+              <Delta wert={k.rendite} /> seit {datumKompakt(k.startdatum)}
             </span>
             <span className="flex items-center gap-1">
               <Delta wert={k.gegen_bench} /> ggü. Benchmark

@@ -207,7 +207,7 @@ function SessionEintrag({ s, hervorheben }: { s: JournalEintrag; hervorheben: bo
       ) : (
         <>
           {s.felder.marktlage && <p className="mt-3 text-[13.5px] leading-relaxed text-text-2">{s.felder.marktlage}</p>}
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
             {PROFILE.map((p) => (
               <div key={p} className="rounded-xl border border-rand bg-flaeche-2 p-3.5">
                 <div className="mb-1.5 flex items-center gap-2 text-[12.5px] font-semibold text-text">

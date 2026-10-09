@@ -131,8 +131,13 @@ export function Abzeichen({ ton = "neutral", children, className, icon }: { ton?
   );
 }
 
-export const PROFIL_NAME: Record<Profil, string> = { defensiv: "Defensiv", ausgewogen: "Ausgewogen", aggressiv: "Aggressiv" };
-export const PROFIL_FARBE: Record<Profil, string> = { defensiv: "var(--defensiv)", ausgewogen: "var(--ausgewogen)", aggressiv: "var(--aggressiv)" };
+export const PROFIL_NAME: Record<Profil, string> = { defensiv: "Defensiv", ausgewogen: "Ausgewogen", aggressiv: "Aggressiv", overnight: "Overnight" };
+export const PROFIL_FARBE: Record<Profil, string> = {
+  defensiv: "var(--defensiv)",
+  ausgewogen: "var(--ausgewogen)",
+  aggressiv: "var(--aggressiv)",
+  overnight: "var(--overnight)",
+};
 
 export function ProfilMarke({ profil, className, nurPunkt }: { profil: Profil; className?: string; nurPunkt?: boolean }) {
   return (

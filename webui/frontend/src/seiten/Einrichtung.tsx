@@ -980,6 +980,8 @@ function ZeitplanBereich({ d }: { d: EinrichtungDaten }) {
 const VORGABE_BEISPIEL: Record<Profil, string> = {
   defensiv: "Beispiel: Breit gestreute ETFs als Kern, Einzelwerte nur mit engem Stop; die Cashquote bleibt nahe der Mindestquote. Auf einen Trade nur verzichten, wenn der Verlust bis zum Stop das Limit sprengt (mit Zahlen belegen).",
   ausgewogen: "Beispiel: Nur mit konkretem Katalysator und Zeithorizont einsteigen, Gewinne nach Plan realisieren. Cash ist die Ausnahme: Jede Session eine konkrete Order oder die belegte Ausnahme mit Zahlen.",
+  overnight:
+    "Beispiel: Daueranweisung nur setzen, wenn `python tools/overnight.py ergebnis` für das Instrument nach Kosten (rund 0,3 % je Nacht) im Testzeitraum positiv ist; sonst die belegte Ausnahme mit Netto-Rendite und Kosten je Nacht in den Session-Eintrag.",
   aggressiv:
     "Beispiel: Handeln ist der Normalfall, Nichthandeln ist nie neutral. Prüfe in jeder Session die Screener-Kandidaten und handle, sobald du nach Kosten einen positiven Erwartungswert siehst. Kein Churning: Ohne solchen Kandidaten belege die Ausnahme mit den geprüften Werten und Zahlen.",
 };
@@ -1125,7 +1127,7 @@ function SpielstartBereich({ d }: { d: EinrichtungDaten }) {
       id="spielstart"
       titel="Spielstart"
       icon={<Rocket className="size-4" />}
-      untertitel="Das Spiel startet von selbst mit dem ersten Trading-Lauf (Startdatum heute, Standard-Anlagerichtlinien, Freigabe nach AP12 durch den Auftraggeber des Laufs). Hier lässt es sich auch von Hand starten (tools/init.py): drei Portfolios mit je 1.000 EUR. Es gibt weder ein festes Start- noch ein Enddatum; ein früher gesetztes, noch unberührtes Startdatum zieht der Lauf auf heute vor – nie rückwirkend."
+      untertitel="Das Spiel startet von selbst mit dem ersten Trading-Lauf (Startdatum heute, Standard-Anlagerichtlinien, Freigabe nach AP12 durch den Auftraggeber des Laufs). Hier lässt es sich auch von Hand starten (tools/init.py): ein Portfolio je Profil (Defensiv, Ausgewogen, Aggressiv, Overnight) mit je 1.000 EUR. Es gibt weder ein festes Start- noch ein Enddatum; ein früher gesetztes, noch unberührtes Startdatum zieht der Lauf auf heute vor – nie rückwirkend."
       status={s.gestartet ? <Abzeichen ton="gut">gestartet {s.spiel.startdatum}</Abzeichen> : <Abzeichen ton="warnung">nicht gestartet</Abzeichen>}
     >
       <ul className="space-y-1.5">
