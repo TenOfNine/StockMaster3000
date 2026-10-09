@@ -341,7 +341,7 @@ def _daueranweisung(lauf: g.Buchungslauf, ctx: _Ctx) -> None:
                                   "nächster Versuch folgt.", wiederholen=True)
         return
     noch_nicht = [i["ticker"] for i in faellig
-                  if ctx.quotes[i["ticker"]].kurs_zeit < kurse.schluss(i["ticker"], kurse.boersentag(i["ticker"], ctx.jetzt))]
+                  if not daueranweisung.kurs_ist_schlusskurs(i["ticker"], ctx.jetzt, ctx.quotes[i["ticker"]].kurs_zeit)]
     if noch_nicht:
         ctx.uebersprungen(profil, f"Daueranweisung {plan['id']}: die Quelle liefert den Schlusskurs von "
                                   f"{', '.join(noch_nicht)} noch nicht; nächster Versuch folgt.", wiederholen=True)

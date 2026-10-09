@@ -674,8 +674,8 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     mit Hebel bis 3, höchstens drei), Gewichte, Einsatzanteil (Standard 97 %), Stop-Abstand (Standard 3 %), Gültigkeit
     (höchstens 90 Tage), Aussetzkriterien (Drawdown-Stufe ab 1, Verlustnächte in Folge, Portfoliowert unter x) mit
     Journal-ID; das Werkzeug rechnet vorher alle Limits mit den heutigen Kursen (Trockenlauf `--nur-pruefen`, sonst
-    abgelehnt). Der Hintergrunddienst kauft nach dem Handelsschluss zum ersten protokollierten Kurs, dessen Quellzeit nach
-    dem Schluss liegt (Fenster: Schluss plus 5 bis 90 Minuten), und verkauft die Positionen der Anweisung am nächsten
+    abgelehnt). Der Hintergrunddienst kauft nach dem Handelsschluss zum ersten protokollierten Kurs, dessen Quellzeit (bei
+    Minutenkerzen der Beginn der letzten Minute) höchstens zwei Minuten vor dem Schluss liegt (Fenster: Schluss plus 5 bis 90 Minuten), und verkauft die Positionen der Anweisung am nächsten
     Handelstag zum ersten Kurs nach der Eröffnung (höchstens 30 Minuten danach), sonst die Nachbuchung zum Eröffnungskurs
     der Tageskerze. Wochenenden, Feiertage und Frühschlüsse folgen dem Börsenkalender (Test über Wochenende und
     Weihnachten). Ohne gültige Anweisung geschieht nichts; eine Anweisung gilt erst ab ihrer Erfassung (wer sie nach

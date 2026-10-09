@@ -344,7 +344,8 @@ Auftraggeber; die Historie bleibt erhalten.
   automatische Ausführung bucht zum protokollierten Kurs des Durchlaufs
   (Takt 5 Minuten), die Nachbuchung gleicht mit Tageshoch und -tief ab.
 - Overnight: Der Schlusskurs ist der erste protokollierte Kurs, dessen
-  Quellzeit nach dem Handelsschluss liegt, der Eröffnungskurs der erste
+  Quellzeit (bei Minutenkerzen der Beginn der letzten Minute) höchstens
+  zwei Minuten vor dem Handelsschluss liegt, der Eröffnungskurs der erste
   Kurs nach der Eröffnung (höchstens 30 Minuten später); die Nachbuchung
   meldet Abweichungen zur Tageskerze. Verzögerte Quellen (Xetra bei
   yfinance etwa 15 Minuten) verschieben die Buchung entsprechend, nie

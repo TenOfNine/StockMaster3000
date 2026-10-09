@@ -5,8 +5,8 @@ Claude setzt in einer Session eine Daueranweisung für ein Profil mit Zyklus "na
 Profil Overnight): Instrumente mit Gewichten, Einsatz, Gültigkeit und Aussetzkriterien, mit Journal-ID wie bei jeder
 Order. Der Hintergrunddienst führt sie ohne Claude-Lauf aus (tools/ausfuehrung.py):
 
-- **Kauf zum Schlusskurs:** nach dem Handelsschluss der Börse, zum ersten protokollierten Kurs, dessen Quellzeit nach
-  dem Schluss liegt (der Schlusskurs, soweit die Quelle ihn liefert; die Nachbuchung gleicht ihn mit der Tageskerze
+- **Kauf zum Schlusskurs:** nach dem Handelsschluss der Börse, zum ersten protokollierten Kurs, dessen Quellzeit
+  (Beginn der letzten Minutenkerze) höchstens zwei Minuten vor dem Schluss liegt (der Schlusskurs, soweit die Quelle ihn liefert; die Nachbuchung gleicht ihn mit der Tageskerze
   ab), nur während die Anweisung gültig und nicht ausgesetzt ist.
 - **Verkauf zur Eröffnung:** am nächsten Handelstag zum ersten protokollierten Kurs nach der Eröffnung (innerhalb
   des Eröffnungsfensters); sonst verkauft die Nachbuchung zum Eröffnungskurs der Tageskerze.
@@ -42,7 +42,8 @@ from gemeinsam import D, Fehler
 EINS = Decimal("1")
 PLAN_MUSTER = re.compile(r"Daueranweisung\)?:? (D-\d{4})")
 INSTRUMENT_TYPEN = ("etf", "aktie", "ko")
-STANDARD = {"max_tage": 90, "max_instrumente": 3, "schluss_abstand_minuten": 5, "schluss_fenster_minuten": 90}
+STANDARD = {"max_tage": 90, "max_instrumente": 3, "schluss_abstand_minuten": 5, "schluss_fenster_minuten": 90,
+            "schluss_toleranz_minuten": 2}
 
 
 def einstellungen() -> dict:
@@ -171,6 +172,14 @@ def kauf_zu_planen(plan: dict, instrument: dict, jetzt: datetime) -> str:
     if plan["nur_lange_naechte"] and (kurse.naechster_handelstag(ticker, tag) - tag).days < 3:
         return "kurze Nacht (nur lange Nächte)"
     return ""
+
+
+def kurs_ist_schlusskurs(ticker: str, jetzt: datetime, kurs_zeit: datetime) -> bool:
+    """Liefert die Quelle den Kurs des Handelsschlusses? Die Quellzeit ist bei Minutenkerzen der Beginn der letzten
+    Minute, deshalb gilt sie ab zwei Minuten vor dem Schluss (Einstellung `schluss_toleranz_minuten`)."""
+    tag = kurse.boersentag(ticker, jetzt)
+    toleranz = timedelta(minutes=int(einstellungen()["schluss_toleranz_minuten"]))
+    return kurs_zeit >= kurse.schluss(ticker, tag) - toleranz
 
 
 def bedarf(portfolio: dict, jetzt: datetime) -> set[str]:

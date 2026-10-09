@@ -124,10 +124,11 @@ def test_wochenendzyklus_kauf_freitag_zum_schluss_verkauf_montag_zur_eroeffnung(
     assert ausfuehrung.tick("schluss")["ausgefuehrt"] == []
     # Quelle liefert den Schlusskurs noch nicht (Kurs vor dem Schluss), dann kommt er
     uhr.stellen("2026-10-16T17:36:00")
-    quelle.kurs("EUNL.DE", "100.5", zeit("2026-10-16T17:28:00"))
+    quelle.kurs("EUNL.DE", "100.5", zeit("2026-10-16T17:20:00"))
     bericht = ausfuehrung.tick("schlusskurs")
     assert bericht["ausgefuehrt"] == [] and bericht["wiederholen"]
-    kurs_nach_schluss(quelle, uhr, "2026-10-16", "101")
+    # Minutenkerze: Beginn der letzten Minute 17:29 (Kurs zum Schluss 17:30) zählt als Schlusskurs
+    kurs_nach_schluss(quelle, uhr, "2026-10-16", "101", quellzeit="17:29")
     bericht = ausfuehrung.tick("schlusskurs")
     assert [a["aktion"] for a in bericht["ausgefuehrt"]] == ["kauf"]
     kauf = trades("kauf")[0]
