@@ -557,3 +557,18 @@ def test_vorgaben_im_trading_prompt(app):
     assert claude_lauf.vorgaben_versionen() == "defensiv v1, aggressiv v1"
     # Nur der Trading-Lauf bekommt sie.
     assert "Vorgaben der Auftraggeber" not in claude_lauf.prompt("review", auftrag)
+
+
+def test_trading_prompt_stellt_handeln_in_den_vordergrund_und_kennt_keine_zeitfenster(app):
+    from types import SimpleNamespace
+
+    from stockmaster import claude_lauf
+
+    auftrag = SimpleNamespace(aufwand="high", auftraggeber="auftraggeber-a", modell="opus", id="lauf-1", ausloeser="zeitplan")
+    prompt = claude_lauf.prompt("trading", auftrag)
+    assert "Handeln ist der Normalfall, Cash die Ausnahme" in prompt and "Nichthandeln ist nicht neutral" in prompt
+    assert "Handlung oder Ausnahme" in prompt and "Erwartungswert nach Kosten" in prompt and "Mindest-Cashquote" in prompt
+    assert "Der Lauf hängt nicht von Datum, Wochentag, Uhrzeit oder Startdatum ab" in prompt
+    # Die frühere Beschränkung auf Recherche vor dem Startdatum ist weg.
+    assert "keine Order versuchen" not in prompt and "nur Marktüberblick" not in prompt
+    assert "Kapitalerhalt vor Rendite" not in prompt and "Nichtstun ist eine gültige" not in prompt

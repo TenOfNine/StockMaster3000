@@ -36,6 +36,9 @@ NACHBUCHUNG_WIEDERHOLUNG_MINUTEN = 60
 # Xetra und NYSE (22:00 Berlin), vor der Nachbuchung; bei Fehlern stündlich erneut.
 BEOBACHTUNG_AB = (23, 15)
 BEOBACHTUNG_WIEDERHOLUNG_MINUTEN = 60
+# Zeitplan (Umbau v2): verpasste Termine werden so lange nachgeholt, wartende so lange wiederholt.
+NACHHOLEN_MINUTEN = 120
+WARTEN_STUNDEN = 24
 
 
 def _werkzeuge():
@@ -168,17 +171,23 @@ class Worker:
         return meldung if meldung.startswith("Beobachtungsliste") else f"Beobachtungsliste: {meldung}"
 
     def richtlinien_standard(self, jetzt: datetime) -> str | None:
-        """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt."""
+        """Nach dem Spielstart gelten die Standard-Anlagerichtlinien, solange keine eigene vorliegt.
+
+        Fehlt eine Richtlinie oder ist sie noch die Vorlage, wird die Standard-Richtlinie übernommen; eine unveränderte
+        ältere Standardfassung wird aktualisiert (Umbau v2: Handeln ist der Normalfall), die bisherige Historie bleibt.
+        Eine angepasste Richtlinie bleibt unberührt.
+        """
         if self.lauf_aktiv() or auftraege.session_sperre_aktiv() is not None:
             return None
         g = _werkzeuge()["gemeinsam"]
-        if not g.spiel_lesen().get("startdatum") or not g.richtlinien_offen():
+        if not g.spiel_lesen().get("startdatum") or not (g.richtlinien_offen() or g.richtlinien_veraltet()):
             return None
         lauf = werkzeug("richtlinien", "standard", timeout=60)
         if lauf.returncode != 0:
             return "Standard-Anlagerichtlinien: " + _letzte_zeile(lauf)
-        werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen", timeout=60)
-        return "Standard-Anlagerichtlinien übernommen."
+        werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Standard-Anlagerichtlinien übernommen bzw. aktualisiert",
+                 timeout=60)
+        return "Standard-Anlagerichtlinien übernommen bzw. aktualisiert."
 
     def _nachbuchung_rueckstand(self, gestern: date) -> list[str]:
         """Aktive Portfolios, die noch nicht bis gestern verarbeitet sind (Kennungen)."""
@@ -255,42 +264,71 @@ class Worker:
     # ------------------------------------------------------------------ Zeitplan
 
     def zeitplan(self, jetzt: datetime) -> str | None:
+        """Geplante Läufe starten (Umbau v2, Entscheidung 41).
+
+        Der Zeitplan (Wochentage, Uhrzeiten, Zeitzone) ist der einzige feste Termin. Ein fälliger Termin läuft immer:
+        unabhängig von Handelstag, Feiertag, Startdatum und Spielzustand. Ist gerade eine Session oder ein anderer
+        Lauf aktiv (oder fehlt das Token), bleibt der Termin sichtbar „wartend“ (GET /api/laeufe/plan) und wird
+        bei jedem Takt wiederholt; nach `WARTEN_STUNDEN` ohne Erfolg gilt er sichtbar als nicht gestartet.
+        Ein Termin, den der Dienst wegen eines Ausfalls verpasst hat, wird bis `NACHHOLEN_MINUTEN` danach nachgeholt.
+        """
         plan = appdaten.laden()["zeitplan"]
         if not plan["automatik"]:
             return None
         zone = ZoneInfo(plan["zeitzone"])
         lokal = jetzt.astimezone(zone)
-        kurse = _werkzeuge()["kurse"]
-        handelstag = any(kurse.ist_handelstag(t, lokal.date()) for t in ("EUNL.DE", "^GSPC"))
-        erledigt = self.zustand.get("zeitplan_erledigt", {})
+        erledigt = dict(self.zustand.get("zeitplan_erledigt", {}))
+        offen = {k: dict(v) for k, v in self.zustand.get("zeitplan_offen", {}).items()}
+        vorher = (dict(erledigt), json.dumps(offen, sort_keys=True))
+        meldungen = []
         for termin in plan["termine"]:
             stunde, minute = map(int, termin["uhrzeit"].split(":"))
             beginn = lokal.replace(hour=stunde, minute=minute, second=0, microsecond=0)
             schluessel = f"{beginn:%Y-%m-%dT%H:%M}-{termin['art']}"
-            if lokal.weekday() not in termin["wochentage"] or not (beginn <= lokal < beginn + timedelta(minutes=30)):
+            nachholfenster = beginn + timedelta(minutes=NACHHOLEN_MINUTEN)
+            if lokal.weekday() not in termin["wochentage"] or not (beginn <= lokal < nachholfenster):
                 continue
-            if schluessel in erledigt:
+            if schluessel in erledigt or schluessel in offen:
                 continue
-            erledigt = {k: v for k, v in erledigt.items() if k >= f"{lokal - timedelta(days=7):%Y-%m-%d}"}
-            if not handelstag:
-                erledigt[schluessel] = "kein Handelstag"
-                self._merken(zeitplan_erledigt=erledigt)
-                continue
-            erledigt[schluessel] = self.geplanten_lauf_anlegen(termin["art"], plan["auftraggeber"])
-            self._merken(zeitplan_erledigt=erledigt)
-            return f"Zeitplan {schluessel}: {erledigt[schluessel]}"
-        return None
+            offen[schluessel] = {"art": termin["art"], "auftraggeber": plan["auftraggeber"], "seit": jetzt.isoformat(),
+                                 "grund": "fällig"}
+        for schluessel, eintrag in sorted(offen.items(), key=lambda kv: kv[1]["seit"]):
+            status, text = self.geplanten_lauf_anlegen(eintrag["art"], eintrag["auftraggeber"])
+            if status == "angelegt":
+                erledigt[schluessel] = text
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: {text}")
+            elif status == "fehler":
+                erledigt[schluessel] = f"nicht gestartet: {text}"
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: nicht gestartet: {text}")
+            elif jetzt - datetime.fromisoformat(eintrag["seit"]) >= timedelta(hours=WARTEN_STUNDEN):
+                erledigt[schluessel] = f"nicht gestartet: {text} (nach {WARTEN_STUNDEN} Stunden aufgegeben)"
+                del offen[schluessel]
+                meldungen.append(f"Zeitplan {schluessel}: aufgegeben: {text}")
+            else:
+                eintrag["grund"] = text
+        grenze = f"{lokal - timedelta(days=7):%Y-%m-%d}"
+        erledigt = {k: v for k, v in erledigt.items() if k >= grenze}
+        if (erledigt, json.dumps(offen, sort_keys=True)) != vorher:
+            self._merken(zeitplan_erledigt=erledigt, zeitplan_offen=offen)
+        return "; ".join(meldungen) or None
 
-    def geplanten_lauf_anlegen(self, art: str, auftraggeber: str) -> str:
+    def geplanten_lauf_anlegen(self, art: str, auftraggeber: str) -> tuple[str, str]:
+        """Legt den geplanten Lauf an. Ergebnis: ("angelegt" | "wartet" | "fehler", Klartext).
+
+        „wartet“ (HTTP 409: Session aktiv, Lauf aktiv, Token fehlt) wird wiederholt, „fehler“ (422: Eingaben der
+        Konfiguration ungültig) nicht.
+        """
         from fastapi import HTTPException
 
         zweck = claude_optionen.optionen()["laufarten"][art]["zweck"]
         vorgabe = appdaten.laden()["claude"]["voreinstellungen"][zweck]
         with neue_sitzung() as db:
             try:
-                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber, geplant=True)
+                auftraege.lauf_pruefen(db, art, vorgabe["modell"], vorgabe["aufwand"], auftraggeber)
             except HTTPException as exc:
-                return f"übersprungen: {exc.detail}"
+                return ("wartet" if exc.status_code == 409 else "fehler"), f"{exc.detail}"
             auftrag = auftraege.anlegen(db, art, {}, modell=vorgabe["modell"], aufwand=vorgabe["aufwand"],
                                         auftraggeber=auftraggeber, ausloeser="zeitplan")
             db.add(AuditEintrag(akteur=None, aktion="lauf_geplant", ziel=auftrag.id,
@@ -298,7 +336,46 @@ class Worker:
                                                  "aufwand": vorgabe["aufwand"] or "standard",
                                                  "auftraggeber": auftraggeber})))
             db.commit()
-            return f"Lauf {auftrag.id} angelegt"
+            return "angelegt", f"Lauf {auftrag.id} angelegt"
+
+    def spiel_vorbereiten(self, auftrag, log_datei: Path, schwaerzen) -> list[str]:
+        """Trading-Lauf: Ist das Spiel noch nicht initialisiert, initialisiert der Lauf es selbst (Entscheidung 41).
+
+        Startdatum ist heute, die Standard-Anlagerichtlinien legt init.py an, die Freigabe nach AP12 trägt die Kennung
+        des Auftraggebers dieses Laufs; dazu ein Audit-Eintrag und ein lokaler Commit. Liegt ein älteres Startdatum
+        in der Zukunft (frühere Version), wird es auf heute vorgezogen, soweit noch nichts gebucht wurde.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        meldungen: list[str] = []
+        spiel = g.spiel_lesen()
+        if not spiel.get("startdatum") or not g.vorhandene_profile():
+            lauf = werkzeug("init", "--freigabe", auftrag.auftraggeber, "--ausloeser", "lauf", timeout=120)
+            if lauf.returncode != 0:
+                meldungen.append("Spielstart durch den Lauf fehlgeschlagen: " + _letzte_zeile(lauf))
+            else:
+                werkzeug("datenverzeichnis", "commit", "-m",
+                         f"aufbau: Spielstart durch Trading-Lauf (Freigabe AP12: {auftrag.auftraggeber})", timeout=120)
+                with neue_sitzung() as db:
+                    db.add(AuditEintrag(akteur=None, aktion="spielstart_automatisch", ziel=auftrag.id,
+                                        meta=json.dumps({"freigabe": auftrag.auftraggeber,
+                                                         "startdatum": g.spiel_lesen().get("startdatum")})))
+                    db.commit()
+                meldungen.append(f"Spiel noch nicht gestartet: Der Lauf hat es gestartet (Startdatum "
+                                 f"{g.spiel_lesen().get('startdatum')}, Standard-Anlagerichtlinien, Freigabe "
+                                 f"{auftrag.auftraggeber}).")
+        elif spiel["startdatum"] > g.heute().isoformat():
+            lauf = werkzeug("init", "--vorziehen", timeout=120)
+            if lauf.returncode == 0:
+                werkzeug("datenverzeichnis", "commit", "-m", "aufbau: Startdatum durch Trading-Lauf vorgezogen",
+                         timeout=120)
+                meldungen.append(f"Startdatum {spiel['startdatum']} lag in der Zukunft: auf heute vorgezogen.")
+            else:
+                meldungen.append("Startdatum liegt in der Zukunft und ließ sich nicht vorziehen: " + _letzte_zeile(lauf))
+        if meldungen:
+            with open(log_datei, "a", encoding="utf-8") as datei:
+                for zeile in meldungen:
+                    datei.write(schwaerzen(zeile) + "\n")
+        return meldungen
 
     # ------------------------------------------------------------------ Aufträge
 
@@ -464,6 +541,13 @@ class Worker:
             datei.write(f"Lauf {auftrag_id}: {auftrag.art}, Modell {auftrag.modell}, Aufwand "
                         f"{auftrag.aufwand or 'Standard'}, Auftraggeber {auftrag.auftraggeber}"
                         + (f", Vorgaben: {claude_lauf.vorgaben_versionen()}" if auftrag.art == "trading" else "") + "\n")
+        if auftrag.art == "trading":
+            try:
+                self.spiel_vorbereiten(auftrag, log_datei, schwaerzen)
+            except Exception as exc:  # noqa: BLE001 - der Lauf selbst meldet, was fehlt
+                log.exception("Spielstart durch den Lauf %s fehlgeschlagen", auftrag_id)
+                with open(log_datei, "a", encoding="utf-8") as datei:
+                    datei.write(f"Spielstart durch den Lauf fehlgeschlagen: {type(exc).__name__}: {exc}\n")
 
         def abbrechen() -> bool:
             with neue_sitzung() as db:

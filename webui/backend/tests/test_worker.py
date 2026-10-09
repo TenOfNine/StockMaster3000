@@ -308,6 +308,162 @@ def test_zeitplan_legt_lauf_an(admin, werkzeug_attrappe):
     assert w.zeitplan(datetime(2026, 10, 17, 7, 40, tzinfo=UTC)) is None         # Samstag: kein Termin
 
 
+def _plan_einstellen(admin, termine=None, auftraggeber="auftraggeber-a"):
+    plan = {"automatik": True, "zeitzone": "Europe/Berlin", "auftraggeber": auftraggeber,
+            "termine": termine or [{"wochentage": list(range(7)), "uhrzeit": "09:35", "art": "trading"}]}
+    assert admin.put("/api/einrichtung/zeitplan", json=plan).status_code == 200
+
+
+def test_geplanter_lauf_laeuft_auch_an_feiertag_und_wochenende(admin, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    _plan_einstellen(admin)
+    w = Worker()
+    # 25.12.2026 ist ein Freitag und Feiertag an Xetra und NYSE; 2026-10-17 ein Samstag.
+    for tag in (datetime(2026, 12, 25, 8, 40, tzinfo=UTC), datetime(2026, 10, 17, 7, 40, tzinfo=UTC)):
+        assert "angelegt" in w.zeitplan(tag)
+        lauf = admin.get("/api/laeufe").json()[0]
+        assert lauf["ausloeser"] == "zeitplan" and lauf["status"] == "wartet"
+        admin.post(f"/api/laeufe/{lauf['id']}/abbrechen")
+
+
+def test_geplanter_lauf_wartet_sichtbar_auf_aktive_session_und_wird_nicht_uebersprungen(admin, demo_repo, werkzeug_attrappe):
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    _plan_einstellen(admin)
+    sperre = demo_repo / "session.lock"
+    sperre.write_text(json.dumps({"person": "auftraggeber-b", "start": "2026-10-12T09:00:00+02:00"}))
+    try:
+        lesen.zuruecksetzen()
+        w = Worker()
+        assert w.zeitplan(datetime(2026, 10, 12, 7, 40, tzinfo=UTC)) is None  # 09:40 Berlin: wartet
+        plan = admin.get("/api/laeufe/plan").json()
+        assert len(plan["wartend"]) == 1 and "Session-Sperre von auftraggeber-b" in plan["wartend"][0]["grund"]
+        assert not [z for z in admin.get("/api/laeufe").json() if z["ausloeser"] == "zeitplan"]
+        assert w.zeitplan(datetime(2026, 10, 12, 8, 10, tzinfo=UTC)) is None  # Wiederholung, weiter wartend
+        assert len(admin.get("/api/laeufe/plan").json()["wartend"]) == 1
+        # Session vorbei: der nächste Takt startet den Lauf und räumt den wartenden Termin ab.
+        sperre.unlink()
+        meldung = w.zeitplan(datetime(2026, 10, 12, 8, 15, tzinfo=UTC))
+        assert "angelegt" in meldung
+        plan = admin.get("/api/laeufe/plan").json()
+        assert plan["wartend"] == [] and "angelegt" in plan["letzte"][0]["ergebnis"]
+        assert w.zeitplan(datetime(2026, 10, 12, 8, 20, tzinfo=UTC)) is None  # nur einmal je Termin
+    finally:
+        sperre.unlink(missing_ok=True)
+        lesen.zuruecksetzen()
+
+
+def test_wartender_termin_wird_nach_24_stunden_sichtbar_aufgegeben(admin, werkzeug_attrappe):
+    from stockmaster import appdaten
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    _plan_einstellen(admin)
+    assert admin.delete("/api/einrichtung/geheimnis/claude_token").status_code == 200  # ohne Token wartet der Termin
+    w = Worker()
+    assert w.zeitplan(datetime(2026, 10, 12, 7, 40, tzinfo=UTC)) is None
+    assert "Kein Claude-Token" in admin.get("/api/laeufe/plan").json()["wartend"][0]["grund"]
+    assert "aufgegeben" in w.zeitplan(datetime(2026, 10, 13, 7, 45, tzinfo=UTC))
+    plan = admin.get("/api/laeufe/plan").json()
+    assert plan["letzte"][0]["termin"].startswith("2026-10-12") and "aufgegeben" in plan["letzte"][0]["ergebnis"]
+    assert plan["letzte"][0]["ergebnis"].startswith("nicht gestartet: Kein Claude-Token")
+    # Der Termin des neuen Tages ist inzwischen fällig und wartet seinerseits sichtbar.
+    assert [e["termin"][:10] for e in plan["wartend"]] == ["2026-10-13"]
+    assert list(appdaten.zustand_lesen("planer")["zeitplan_offen"]) == ["2026-10-13T09:35-trading"]
+
+
+def test_verpasster_termin_wird_kurz_nachgeholt_aber_nicht_spaeter(admin, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    _plan_einstellen(admin)
+    # Dienst war nach 09:35 Berlin nicht aktiv: um 10:50 (75 Minuten später) wird nachgeholt, um 12:00 nicht mehr.
+    assert "angelegt" in Worker().zeitplan(datetime(2026, 10, 12, 8, 50, tzinfo=UTC))
+    admin.post(f"/api/laeufe/{admin.get('/api/laeufe').json()[0]['id']}/abbrechen")
+    assert Worker().zeitplan(datetime(2026, 10, 13, 10, 0, tzinfo=UTC)) is None  # 12:00 Berlin: 145 Minuten zu spät
+
+
+@pytest.fixture
+def leeres_spiel(app, tmp_path, monkeypatch):
+    """Frisch eingerichtetes Datenverzeichnis ohne Spiel (wie ein neues Volume)."""
+    from stockmaster import __main__ as cli
+    from stockmaster import config, db
+    from stockmaster.spiel import lesen
+
+    daten = tmp_path / "daten-neu"
+    daten.mkdir()
+    monkeypatch.setenv("STOCKMASTER_DATA_DIR", str(daten))
+    config.einstellungen.cache_clear()
+    lesen.zuruecksetzen()
+    db.Basis.metadata.create_all(db.engine())
+    cli.einrichten()
+    yield daten
+    lesen.zuruecksetzen()
+
+
+def _lauf_stand(art="trading", person="auftraggeber-a"):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id="lauf-test", art=art, auftraggeber=person)
+
+
+def test_trading_lauf_startet_das_spiel_selbst(admin, leeres_spiel, tmp_path):
+    from stockmaster.claude_lauf import Schwaerzer
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
+
+    g = lesen.werkzeuge()["gemeinsam"]
+    assert g.spiel_lesen() == {} and g.vorhandene_profile() == []
+    log = tmp_path / "lauf.log"
+    meldungen = Worker().spiel_vorbereiten(_lauf_stand(), log, Schwaerzer([]))
+    assert len(meldungen) == 1 and "hat es gestartet" in meldungen[0]
+    spiel = g.spiel_lesen()
+    assert spiel["startdatum"] == g.heute().isoformat() and spiel["freigabe_ap12"] == "auftraggeber-a"
+    assert spiel["ausloeser"] == "lauf" and g.vorhandene_profile() == list(g.PROFILE)
+    assert g.richtlinien_offen() == []  # Standard-Anlagerichtlinien gelten von Anfang an
+    assert "hat es gestartet" in log.read_text()
+    aktionen = [e["aktion"] for e in admin.get("/api/admin/audit").json()]
+    assert "spielstart_automatisch" in aktionen
+    commit = subprocess.run(["git", "log", "--format=%s", "-3"], cwd=leeres_spiel, capture_output=True, text=True).stdout
+    assert "Spielstart durch Trading-Lauf" in commit
+    assert Worker().spiel_vorbereiten(_lauf_stand(), log, Schwaerzer([])) == []  # idempotent
+
+
+def test_trading_lauf_zieht_ein_zukuenftiges_startdatum_vor(admin, leeres_spiel, tmp_path):
+    from stockmaster.claude_lauf import Schwaerzer
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker, werkzeug
+
+    g = lesen.werkzeuge()["gemeinsam"]
+    erst = werkzeug("init", "--freigabe", "auftraggeber-a", "--startdatum", "2099-01-01")
+    assert erst.returncode == 0, erst.stderr
+    meldungen = Worker().spiel_vorbereiten(_lauf_stand(), tmp_path / "l.log", Schwaerzer([]))
+    assert meldungen and "auf heute vorgezogen" in meldungen[0]
+    assert g.spiel_lesen()["startdatum"] == g.heute().isoformat()
+
+
+def test_nur_trading_laeufe_starten_das_spiel_und_der_lauf_ruft_die_vorbereitung_auf(admin, leeres_spiel, werkzeug_attrappe,
+                                                                                    claude):
+    from stockmaster.worker import Worker
+
+    _admin_token(admin)
+    for art, erwartet in (("review", False), ("trading", True)):
+        werkzeug_attrappe.clear()
+        antwort = admin.post("/api/laeufe", json={"art": art, "auftraggeber": "auftraggeber-b", "bestaetigt": True})
+        assert antwort.status_code == 201, antwort.text
+        w = Worker()
+        w.auftraege_bearbeiten()
+        w.lauf_thread.join(timeout=30)
+        init_aufrufe = [a for a in werkzeug_attrappe if a[0] == "init"]
+        assert bool(init_aufrufe) is erwartet, (art, werkzeug_attrappe)
+        if erwartet:
+            assert init_aufrufe[0][1:] == ("--freigabe", "auftraggeber-b", "--ausloeser", "lauf")
+
+
 def test_wartung_pausiert_worker(app, werkzeug_attrappe):
     from stockmaster import appdaten
     from stockmaster.worker import Worker
@@ -445,53 +601,25 @@ def _spiel(demo_repo, **felder):
     return alt
 
 
-def test_manueller_lauf_ohne_richtlinien_mit_hinweis(admin, demo_repo):
+def test_lauf_ist_nie_durch_startdatum_oder_richtlinien_gesperrt(admin, demo_repo):
     from stockmaster.spiel import lesen
 
     _admin_token(admin)
     vorlage = (demo_repo / "strategie" / "defensiv.md")
     inhalt = vorlage.read_text()
     vorlage.write_text("# Anlagerichtlinie Defensiv\n\nStand: Vorlage aus tools/init.py (2026-10-06).\n")
-    try:
-        lesen.zuruecksetzen()
-        hinweise = admin.get("/api/laeufe/vorpruefung", params={"art": "trading"}).json()["hinweise"]
-        assert any("Für defensiv gilt noch keine Anlagerichtlinie" in h for h in hinweise)
-        assert admin.get("/api/laeufe/vorpruefung", params={"art": "review"}).json()["hinweise"] == []
-        schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
-        assert "richtlinien" in schritte
-        # Manuell startet jeder Lauf jederzeit; die Richtlinien-Session selbst sowieso.
-        ok = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
-        assert ok.status_code == 201, ok.text
-        admin.post(f"/api/laeufe/{ok.json()['id']}/abbrechen")
-        ok = admin.post("/api/laeufe", json={"art": "richtlinien", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
-        assert ok.status_code == 201, ok.text
-        status = admin.get("/api/spiel/status").json()
-        ap12 = next(p for p in status["arbeitspakete"] if p["kennung"] == "AP12")
-        assert ap12["instanz"] and not ap12["erledigt"] and "Anlagerichtlinien offen: defensiv" in ap12["detail"]
-    finally:
-        vorlage.write_text(inhalt)
-        lesen.zuruecksetzen()
-
-
-def test_manueller_lauf_vor_startdatum_mit_hinweis_geplanter_wird_uebersprungen(admin, demo_repo):
-    from stockmaster.spiel import lesen
-    from stockmaster.worker import Worker
-
-    _admin_token(admin)
     alt = _spiel(demo_repo, startdatum="2099-01-01")
     try:
         lesen.zuruecksetzen()
-        hinweise = admin.get("/api/laeufe/vorpruefung").json()["hinweise"]
-        assert any("2099-01-01" in h and "vorziehen" in h for h in hinweise)
-        # Manuell: jederzeit (der Lauf selbst bucht vor dem Startdatum nichts, das sperrt buchen.py).
-        antwort = admin.post("/api/laeufe", json={"art": "trading", "auftraggeber": "auftraggeber-a", "bestaetigt": True})
-        assert antwort.status_code == 201, antwort.text
-        admin.post(f"/api/laeufe/{antwort.json()['id']}/abbrechen")
-        # Geplant: übersprungen mit Grund, das schont das Abo-Kontingent.
-        meldung = Worker().geplanten_lauf_anlegen("trading", "auftraggeber-a")
-        assert meldung.startswith("übersprungen:") and "2099-01-01" in meldung
-        assert Worker().geplanten_lauf_anlegen("review", "auftraggeber-a").startswith("Lauf ")
+        assert admin.get("/api/laeufe/vorpruefung").status_code == 404  # keine Vorprüfung und keine Hinweise mehr
+        schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
+        assert "richtlinien" not in schritte and "spielstart" not in schritte
+        for art in ("trading", "review", "testsession", "richtlinien"):
+            ok = admin.post("/api/laeufe", json={"art": art, "auftraggeber": "auftraggeber-a", "bestaetigt": True})
+            assert ok.status_code == 201, (art, ok.text)
+            admin.post(f"/api/laeufe/{ok.json()['id']}/abbrechen")
     finally:
+        vorlage.write_text(inhalt)
         (demo_repo / "spiel.json").write_text(__import__("json").dumps(alt))
         lesen.zuruecksetzen()
 
@@ -507,12 +635,42 @@ def test_worker_uebernimmt_standard_anlagerichtlinien(admin, demo_repo):
         lesen.zuruecksetzen()
         assert lesen.werkzeuge()["gemeinsam"].richtlinien_offen() == ["defensiv"]
         assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 0, tzinfo=UTC)) == \
-            "Standard-Anlagerichtlinien übernommen."
+            "Standard-Anlagerichtlinien übernommen bzw. aktualisiert."
         assert lesen.werkzeuge()["gemeinsam"].richtlinien_offen() == []
         assert "Standard-Richtlinie" in vorlage.read_text()
         assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 5, tzinfo=UTC)) is None  # nichts mehr zu tun
     finally:
         vorlage.write_text(inhalt)
+        lesen.zuruecksetzen()
+
+
+def test_worker_aktualisiert_unveraenderte_alte_standard_richtlinie_und_laesst_angepasste_stehen(admin, demo_repo):
+    from stockmaster.spiel import lesen
+    from stockmaster.worker import Worker
+
+    g = lesen.werkzeuge()["gemeinsam"]
+    dateien = {p: demo_repo / "strategie" / f"{p}.md" for p in ("defensiv", "ausgewogen")}
+    inhalt = {p: d.read_text() for p, d in dateien.items()}
+    try:
+        lesen.zuruecksetzen()
+        g = lesen.werkzeuge()["gemeinsam"]
+        alt = inhalt["defensiv"].replace("Standard-Richtlinie v2 aus", "Standard-Richtlinie aus") \
+            .replace("Standard-Richtlinie v2 übernommen", "Standard-Richtlinie übernommen")
+        if g.richtlinie_standard_version("defensiv") is None:  # Demo-Daten enthalten eigene Richtlinien: Standard daraus bauen
+            alt = g.framework_pfad("config", "richtlinien", "defensiv.md").read_text().format(
+                datum="2026-07-13", version=1, **{k: "x" for k in ("max_anteil_zertifikate", "max_hebel", "max_exposure",
+                "max_einzelposition", "min_cashquote", "max_risiko_trade", "drawdown_stufe1", "drawdown_stufe2",
+                "benchmark")}).replace("Standard-Richtlinie v1 aus", "Standard-Richtlinie aus").replace(
+                "Standard-Richtlinie v1 übernommen", "Standard-Richtlinie übernommen")
+        dateien["defensiv"].write_text(alt)
+        assert g.richtlinie_standard_version("defensiv") == 1 and g.richtlinien_veraltet() == ["defensiv"]
+        assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 0, tzinfo=UTC)) == \
+            "Standard-Anlagerichtlinien übernommen bzw. aktualisiert."
+        assert g.richtlinie_standard_version("defensiv") == 2 and g.richtlinien_veraltet() == []
+        assert Worker().richtlinien_standard(datetime(2026, 10, 12, 8, 5, tzinfo=UTC)) is None
+    finally:
+        for p, d in dateien.items():
+            d.write_text(inhalt[p])
         lesen.zuruecksetzen()
 
 
@@ -539,16 +697,19 @@ def test_automatik_braucht_token_und_termine(admin):
     assert admin.post("/api/einrichtung/zeitplan/automatik", json={"an": True}).status_code == 422
 
 
-def test_naechste_termine_beruecksichtigt_wochentag_und_handelstag(app):
+def test_naechste_termine_nur_nach_wochentagen_des_zeitplans(app):
     from stockmaster.auftraege import naechste_termine
 
     plan = {"zeitzone": "Europe/Berlin",
             "termine": [{"wochentage": [0, 1, 2, 3, 4], "uhrzeit": "09:35", "art": "trading"}]}
-    # Freitag 2026-10-09 10:30 Berlin: der Freitagstermin ist vorbei (Fenster 30 Min), nächster ist Montag.
+    # Freitag 2026-10-09 10:30 Berlin: der Freitagstermin ist vorbei, nächster ist Montag.
     naechste = naechste_termine(plan, datetime(2026, 10, 9, 8, 30, tzinfo=UTC), 2)
     assert [t["zeit"][:16] for t in naechste] == ["2026-10-12T09:35", "2026-10-13T09:35"]
-    # Mitten im Fenster zählt der Termin noch (der Worker legt ihn dann an).
-    assert naechste_termine(plan, datetime(2026, 10, 9, 7, 45, tzinfo=UTC), 1)[0]["zeit"][:16] == "2026-10-09T09:35"
+    assert naechste_termine(plan, datetime(2026, 10, 9, 7, 0, tzinfo=UTC), 1)[0]["zeit"][:16] == "2026-10-09T09:35"
+    # Feiertage und Wochenenden sind keine Sperre: der Zeitplan nennt jeden eingestellten Tag (hier auch Samstag/Sonntag).
+    alle = {"zeitzone": "Europe/Berlin", "termine": [{"wochentage": list(range(7)), "uhrzeit": "21:00", "art": "trading"}]}
+    tage = [t["zeit"][:10] for t in naechste_termine(alle, datetime(2026, 12, 24, 12, 0, tzinfo=UTC), 4)]
+    assert tage == ["2026-12-24", "2026-12-25", "2026-12-26", "2026-12-27"]  # 24./25. Dezember: Xetra und NYSE zu
 
 
 def test_ap12_wird_je_instanz_abgeleitet(admin):

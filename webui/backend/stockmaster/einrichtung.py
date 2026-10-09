@@ -111,23 +111,8 @@ def pflichtschritte() -> list[dict]:
         offen.append({"schritt": "claude", "titel": "Claude verbinden",
                       "text": "Kein Claude-Token hinterlegt; Sessions können nicht starten.",
                       "link": "/einrichtung#claude"})
-    try:
-        gestartet = bool(_werkzeuge()["gemeinsam"].spiel_lesen().get("startdatum"))
-    except Exception:  # noqa: BLE001 - Datenverzeichnis fehlt: ebenfalls offen
-        gestartet = False
-    if not gestartet:
-        offen.append({"schritt": "spielstart", "titel": "Spiel starten",
-                      "text": "Das Spiel ist noch nicht gestartet (Startdatum fehlt).", "link": "/einrichtung#spielstart"})
-    else:
-        try:
-            ohne = _werkzeuge()["gemeinsam"].richtlinien_offen()
-        except Exception:  # noqa: BLE001
-            ohne = []
-        if ohne:
-            offen.append({"schritt": "richtlinien", "titel": "Anlagerichtlinien werden übernommen",
-                          "text": f"Für {', '.join(ohne)} übernimmt der Hintergrunddienst gleich die "
-                                  "Standard-Anlagerichtlinie (config/richtlinien); sie lässt sich später per Lauf anpassen.",
-                          "link": "/laeufe"})
+    # Spielstart und Anlagerichtlinien sind keine Pflichtschritte mehr: Der erste Trading-Lauf startet das Spiel
+    # selbst (Startdatum heute, Standard-Anlagerichtlinien); die Einrichtung bietet den manuellen Start weiter an.
     return offen
 
 

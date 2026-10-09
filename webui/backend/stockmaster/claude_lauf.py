@@ -109,6 +109,19 @@ def vorgaben_prompt() -> str:
     return "\n".join(zeilen)
 
 
+HANDELN_PROMPT = (
+    "Handeln ist der Normalfall, Cash die Ausnahme: Nichthandeln ist nicht neutral, denn Cash bringt nur 2 % Zins "
+    "p. a. Die harten Limits (regeln.md Abschnitt 7, config/profile.json) sind die Risikoleitplanken, kein Grund zu "
+    "verzichten. Auf einen Trade verzichtest du je Portfolio nur, wenn (a) keine Order existiert, die alle harten "
+    "Limits einhält und deren Szenario-Erwartungswert nach Kosten positiv ist, (b) das Portfolio in Drawdown-Stufe 2 "
+    "ist oder gestoppt wurde oder (c) kein verlässlicher Kurs vorliegt. Die Beweislast liegt beim Nichthandeln: Im "
+    "Session-Eintrag steht in der Zeile '- Handlung oder Ausnahme:' je Portfolio mindestens eine konkrete Order (mit "
+    "Journal-ID) oder die belegte Ausnahme mit Zahlen (Verlust bis Stop gegen Limit, Erwartungswert nach Kosten, "
+    "geprüfte Screener-Kandidaten). Zielwert für die Cashquote: nahe der Mindest-Cashquote des Profils, höher nur mit "
+    "Grund. Kosten (1 EUR je Order, Spread 0,10 % bzw. 0,20 %, Mindestorder 100 EUR) bleiben Teil der Abwägung: Es wird "
+    "nicht gehandelt, um zu handeln.")
+
+
 def prompt(art: str, auftrag) -> str:
     e = einstellungen()
     aufwand = auftrag.aufwand or "Standard der CLI"
@@ -129,10 +142,11 @@ def prompt(art: str, auftrag) -> str:
         return ("Führe eine Trading-Session nach CLAUDE.md (Trading-Modus) durch. " + gemeinsam +
                 " Prüfe zuerst `python tools/richtlinien.py status`: Ist eine Anlagerichtlinie noch die Vorlage, "
                 "übernimm mit `python tools/richtlinien.py standard` die Standard-Richtlinie, lies sie und handle "
-                "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Ist das Spiel nicht "
-                "gestartet oder liegt das Startdatum (`python tools/session.py status`) in der Zukunft, lehnen die "
-                "Werkzeuge Orders ab: Dann nur Marktüberblick und Session-Eintrag, keine Order versuchen. "
-                "Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
+                "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Der Lauf hängt nicht von Datum, "
+                "Wochentag, Uhrzeit oder Startdatum ab: Das Spiel ist bereits gestartet (der Lauf hat es notfalls "
+                "selbst gestartet); außerhalb der Handelszeit legst du Orders trotzdem an, sie werden vorgemerkt und "
+                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT +
+                " Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
                 "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle. "
                 "Für die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ) nutze den Screener: "
                 "`python tools/beobachtung.py kandidaten` nennt auffällige Werte aus rund 600 Aktien und ETFs "

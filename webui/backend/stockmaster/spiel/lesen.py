@@ -89,7 +89,7 @@ def werkzeuge() -> dict[str, ModuleType]:
                 sys.path.insert(0, pfad)
             geladen = {name: importlib.import_module(name)
                        for name in ("gemeinsam", "kurse", "produkte", "limits", "bewertung", "termine",
-                                    "datenverzeichnis", "news", "richtlinien", "beobachtung")}
+                                    "datenverzeichnis", "news", "richtlinien", "beobachtung", "pruefe")}
             geladen["kurse"].QUELLE = _NurSpeicher()
             _module.update(geladen)
     return _module
@@ -589,6 +589,14 @@ def sperre() -> dict | None:
 
 def termine() -> list[dict]:
     return werkzeuge()["termine"].faellige_reviews()
+
+
+def handeln() -> list[dict]:
+    """Hinweise zum Handeln (regeln.md 12): hohe Cashquote, Sessions ohne Order und ohne belegte Ausnahme."""
+    try:
+        return werkzeuge()["pruefe"].handeln_hinweise()
+    except Exception:  # noqa: BLE001 - nur ein Hinweis, nie ein Grund, das Cockpit zu verweigern
+        return []
 
 
 # --------------------------------------------------------------------------

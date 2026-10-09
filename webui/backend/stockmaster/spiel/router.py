@@ -39,6 +39,7 @@ def ueberblick(db: DB) -> dict:
         "status": lesen.status()["kopf"],
         "sperre": lesen.sperre(),
         "termine": lesen.termine(),
+        "handeln": lesen.handeln(),
         "profile": {p: lesen.kennzahlen(p, bench) for p in profile},
         "letzte_sessions": sessions,
         "letzte_entscheidungen": [e for e in journal if e["art"] == "J"][-6:][::-1],
