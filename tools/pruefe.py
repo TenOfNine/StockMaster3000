@@ -469,6 +469,70 @@ def pruefe_richtlinien() -> list[Befund]:
             for profil in g.vorhandene_profile() if not g.richtlinie_ausformuliert(profil)]
 
 
+HANDELN_PROFIL = re.compile(r"(?<![\wäöüß])({namen})\s*:", re.I)
+
+
+def _handeln_einstellungen() -> dict:
+    return {"pflicht_ab": "9999-12-31", "cash_warnung_ueber_min": "0.25", "cash_warnung_tage": 5,
+            **g.projekt().get("handeln", {})}
+
+
+def handeln_hinweise() -> list[dict]:
+    """Hinweise zum Handeln (regeln.md 12): dauerhaft hohe Cashquote und Sessions ohne Order und ohne belegte Ausnahme.
+
+    Nur Hinweise (Warnungen, nie Fehler): Grundlage von pruefe.py und der Karte im Cockpit. Sessions vor
+    `handeln.pflicht_ab` (config/projekt.json) werden nicht beanstandet (keine Rückwirkung).
+    """
+    einst = _handeln_einstellungen()
+    hinweise: list[dict] = []
+    tage = int(einst["cash_warnung_tage"])
+    aufschlag = D(einst["cash_warnung_ueber_min"])
+    for profil in g.vorhandene_profile():
+        if g.portfolio_laden(profil).get("status") != "aktiv":
+            continue
+        zeilen = g.csv_lesen(g.pfad("data", "nav", f"{profil}.csv"))[-tage:]
+        if len(zeilen) < tage:
+            continue
+        schnitt = sum(D(z["cashquote"]) for z in zeilen) / tage
+        mindest = g.limits_fuer(profil)["min_cashquote"]
+        if schnitt > mindest + aufschlag:
+            hinweise.append({"art": "cash", "profil": profil, "text": (
+                f"{profil}: Cashquote im Schnitt {schnitt * 100:.0f} % der letzten {tage} Handelstage "
+                f"(Mindestquote {mindest * 100:.0f} %, Ziel nahe der Mindestquote); Cash bringt nur 2 % p. a. "
+                "und ist die Ausnahme: höher nur mit Grund im Session-Eintrag.")})
+    profile = g.vorhandene_profile() or list(g.PROFILE)
+    muster = re.compile(HANDELN_PROFIL.pattern.format(namen="|".join(re.escape(p) for p in profile)), re.I)
+    for block in g.journal_bloecke():
+        if block["art"] != "S" or (block["datum"] or "") < einst["pflicht_ab"]:
+            continue
+        feld = _hat_feld(block["felder"], "handlung oder ausnahme")
+        ort = f"{block['id']} ({block['datei']})"
+        if feld is None or not feld.strip():
+            hinweise.append({"art": "session", "profil": None, "ref": block["id"],
+                             "text": f"{ort}: die Zeile 'Handlung oder Ausnahme' fehlt (je Portfolio Order J-… "
+                                     "oder belegte Ausnahme mit Zahlen)."})
+            continue
+        treffer = list(muster.finditer(feld))
+        abschnitte = {t.group(1).lower(): feld[t.end(): treffer[i + 1].start() if i + 1 < len(treffer) else len(feld)]
+                      for i, t in enumerate(treffer)}
+        for profil in profile:
+            text = abschnitte.get(profil)
+            if text is None:
+                hinweise.append({"art": "session", "profil": profil, "ref": block["id"],
+                                 "text": f"{ort}: {profil} ohne Order und ohne belegte Ausnahme."})
+            elif re.search(r"J-\d{8}-\d{2}", text):
+                continue
+            elif "ausnahme" not in text.lower() or not re.search(r"\d", text):
+                hinweise.append({"art": "session", "profil": profil, "ref": block["id"],
+                                 "text": f"{ort}: {profil} ohne Order; die Ausnahme braucht Zahlen (Verlust bis Stop "
+                                         "gegen Limit, Erwartungswert nach Kosten, geprüfte Kandidaten)."})
+    return hinweise
+
+
+def pruefe_handeln() -> list[Befund]:
+    return [warnung("Handeln", h["text"]) for h in handeln_hinweise()]
+
+
 def pruefe_kalender() -> list[Befund]:
     heute = g.heute()
     jahre = [heute.year] + ([heute.year + 1] if heute.month >= 11 else [])
@@ -484,6 +548,7 @@ def pruefe_kalender() -> list[Befund]:
 
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
     befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote() + pruefe_richtlinien()
+    befunde += pruefe_handeln()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
     bloecke = g.journal_bloecke()
     befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)

@@ -58,4 +58,38 @@ def test_standard_uebernehmen_ueberschreibt_nichts(projekt, uhr, capsys):
     assert g.richtlinien_offen() == []
     assert "eigene" in (projekt / "strategie" / "defensiv.md").read_text()
     assert "Standard-Richtlinie" in (projekt / "strategie" / "aggressiv.md").read_text()
-    assert richtlinien.standard_uebernehmen() == ["Alle Anlagerichtlinien sind bereits ausformuliert; nichts geändert."]
+    assert richtlinien.standard_uebernehmen() == ["Alle Anlagerichtlinien sind ausformuliert und aktuell; nichts geändert."]
+
+
+def _alte_standard_richtlinie(projekt, profil, extra_zeile=""):
+    """Standard-Richtlinie in der Fassung v1 (vor Umbau v2): ohne Versionsangabe, mit Nichtstun als Regel."""
+    text = init.standard_text(profil, g.heute()).replace(f"Standard-Richtlinie v{g.RICHTLINIE_STANDARD_VERSION} aus",
+                                                         "Standard-Richtlinie aus")
+    text = text.replace(f"Standard-Richtlinie v{g.RICHTLINIE_STANDARD_VERSION} übernommen", "Standard-Richtlinie übernommen")
+    text = text.replace("Handeln ist der Normalfall", "Nichtstun bleibt die Regel")
+    (projekt / "strategie" / f"{profil}.md").write_text(text + extra_zeile, encoding="utf-8")
+
+
+def test_unveraenderte_alte_standard_richtlinie_wird_aktualisiert_mit_erhalt_der_historie(projekt, uhr, capsys):
+    _alte_standard_richtlinie(projekt, "defensiv")
+    assert g.richtlinie_standard_version("defensiv") == 1 and g.richtlinie_unveraendert("defensiv")
+    assert g.richtlinien_veraltet() == ["defensiv"]
+    assert richtlinien.main(["standard"]) == 0
+    ausgabe = capsys.readouterr().out
+    assert "strategie/defensiv.md auf Standard-Richtlinie v2 aktualisiert" in ausgabe
+    text = (projekt / "strategie" / "defensiv.md").read_text()
+    assert g.richtlinie_standard_version("defensiv") == 2 and "Nichtstun bleibt die Regel" not in text
+    historie = g.richtlinie_historie("defensiv")
+    assert [z[1] for z in historie] == ["Spielstart", "Standard-Update"]  # die alte Zeile bleibt
+    assert g.richtlinien_veraltet() == [] and g.richtlinie_unveraendert("defensiv")
+    assert richtlinien.standard_uebernehmen() == ["Alle Anlagerichtlinien sind ausformuliert und aktuell; nichts geändert."]
+
+
+def test_angepasste_standard_richtlinie_bleibt_unberuehrt_und_wird_gemeldet(projekt, uhr, capsys):
+    zeile = "| 2026-10-10 | Marktlage | Risiko gesenkt | Review |\n"
+    _alte_standard_richtlinie(projekt, "ausgewogen", extra_zeile=zeile)
+    assert not g.richtlinie_unveraendert("ausgewogen") and g.richtlinien_veraltet() == []
+    vorher = (projekt / "strategie" / "ausgewogen.md").read_text()
+    meldungen = richtlinien.standard_uebernehmen()
+    assert (projekt / "strategie" / "ausgewogen.md").read_text() == vorher
+    assert any("ausgewogen.md ist angepasst und älter als Standard-Richtlinie v2" in m for m in meldungen)

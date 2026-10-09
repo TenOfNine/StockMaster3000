@@ -1,4 +1,4 @@
-# Spielregeln v1.3
+# Spielregeln v1.4
 
 Verbindlich für alle Sessions. Änderungen nur durch die Auftraggeber
 (config/projekt.json) gemeinsam, per Commit mit Datum, ohne rückwirkende
@@ -21,16 +21,17 @@ Abschnitt 7 übereinstimmen.
 ## 2. Kapital und Zins
 
 - Startkapital: 1.000 EUR je Portfolio (defensiv, ausgewogen, aggressiv).
-- Spielbeginn: Das Spiel beginnt in dem Moment, in dem es nach der
-  Freigabe von AP12 durch die Auftraggeber gestartet wird (tools/init.py,
-  in der App Einrichtung → Spielstart). Der Starttag ist der heutige
-  Kalendertag; ein vorab festgelegtes Start- oder Enddatum gibt es nicht.
-  Das gespeicherte Startdatum (spiel.json) ist nur der Bezugspunkt der
-  Auswertung. Feste Termine gibt es ausschließlich im Zeitplan geplanter
-  Claude-Läufe (Einrichtung → Zeitplan); sie wirken nicht auf Bewertung,
-  Benchmark, Reviews oder Limits. Ein noch unberührtes Startdatum
-  (keine Buchung, Order, Position, Nachbuchung oder Bewertung) darf auf
-  heute vorgezogen werden, nie in die Vergangenheit.
+- Spielbeginn: Das Spiel beginnt in dem Moment, in dem es gestartet wird:
+  durch den ersten Trading-Lauf oder von Hand (tools/init.py, in der App
+  Einrichtung → Spielstart). Der Starttag ist der heutige Kalendertag; ein
+  vorab festgelegtes Start- oder Enddatum gibt es nicht. Die Freigabe nach
+  AP12 gibt der Auftraggeber, der den Lauf startet. Das gespeicherte
+  Startdatum (spiel.json) ist nur der Bezugspunkt der Auswertung. Feste
+  Termine gibt es ausschließlich im Zeitplan geplanter Claude-Läufe
+  (Einrichtung → Zeitplan); sie wirken nicht auf Bewertung, Benchmark,
+  Reviews oder Limits. Ein noch unberührtes Startdatum (keine Buchung,
+  Order, Position, Nachbuchung oder Bewertung) darf auf heute vorgezogen
+  werden, nie in die Vergangenheit.
 - Ein Arbeitsbereich ist eine eigenständige Spielinstanz mit eigenem
   Repository, eigenen drei Portfolios und eigenen Auftraggebern. Diese
   Regeln gelten je Arbeitsbereich; Arbeitsbereiche sind strikt getrennt.
@@ -203,7 +204,9 @@ Auftraggeber; die Historie bleibt erhalten.
   ausdrücklich benannt.
 - Jede Session endet mit einem Session-Eintrag (S-JJJJMMTT-NN) im
   Journal: je Portfolio die Entscheidung, erwogene und verworfene
-  Alternativen und die Begründung, auch bei Nichtstun.
+  Alternativen und die Begründung, dazu je Portfolio die Order (Journal-ID)
+  oder die belegte Ausnahme nach Abschnitt 12 (Pflichtzeile "Handlung oder
+  Ausnahme").
 - Im Repository stehen keine Namen oder personenbezogenen Daten.
   Personen erscheinen nur als neutrale Kennung (config/projekt.json).
 
@@ -227,13 +230,40 @@ Auftraggeber; die Historie bleibt erhalten.
   Kennung des Auftraggebers. Es läuft nie mehr als eine
   Session gleichzeitig: Sperrdatei session.lock (Kennung, Startzeit), die
   nach 6 Stunden als verwaist gilt.
+- Eine Session ist an kein Datum, keinen Wochentag, keine Uhrzeit und kein
+  Startdatum gebunden: Manuell und geplant startet sie jederzeit, und der
+  Lauf macht seine Trades bzw. plant die Strategie. Ein geplanter Lauf wird
+  nie übersprungen; ist gerade eine Session aktiv, wartet er sichtbar und
+  startet danach. Orders außerhalb der Handelszeit werden vorgemerkt und bei
+  nächster Gelegenheit ausgeführt (Abschnitt 5 und 6).
 - Claude entscheidet autonom innerhalb dieser Regeln. Ideen der
   Auftraggeber prüft Claude kritisch und begründet seine Entscheidung.
+- **Handeln hat Vorrang.** Handeln ist der Normalfall, Cash die Ausnahme;
+  Nichthandeln ist nicht neutral, denn Cash bringt nur 2 % Zins p. a.
+  (Abschnitt 2). Die harten Limits (Abschnitt 7, config/profile.json) sind
+  die Risikoleitplanken, kein Grund zu verzichten.
+- **Verzicht auf eine Order** ist je Session und Portfolio nur zulässig,
+  wenn (a) keine Order existiert, die alle harten Limits einhält und deren
+  Szenario-Erwartungswert nach Kosten positiv ist, (b) das Portfolio in
+  Drawdown-Stufe 2 oder gestoppt ist (Abschnitt 7) oder (c) kein verlässlicher
+  Kurs vorliegt (Abschnitt 1, Grundsatz 4). Andere Gründe tragen nicht.
+- **Beweislast:** Je Session und Portfolio steht im Session-Eintrag
+  mindestens eine konkrete Order (Journal-ID) oder die belegte Ausnahme mit
+  Zahlen: Verlust bis Stop gegen das Limit, Erwartungswert nach Kosten und
+  die geprüften Screener-Kandidaten. Eine Ausnahme ohne Zahlen zählt nicht.
+  Zielwert für die Cashquote ist die Mindest-Cashquote des Profils; höher
+  nur mit Grund im Session-Eintrag. pruefe.py und das Cockpit warnen (kein
+  Fehler) bei dauerhaft hoher Cashquote und bei einer Session ohne Order und
+  ohne belegte Ausnahme (nur für Sessions ab dem Stichtag in
+  config/projekt.json, keine Rückwirkung).
+- **Kosten** (Abschnitt 5: 1 EUR je Order, Spreads, Mindestorder 100 EUR)
+  bleiben Teil der Abwägung. Es wird nicht gehandelt, um zu handeln:
+  Churning ist kein Ziel.
 - Claude ändert diese Regeln nur im ausdrücklichen Auftrag der
   Auftraggeber und umgeht keine Prüfung. Bei Unklarheiten entscheidet
-  Claude nach bestem Wissen im Sinne von Kapitalerhalt und
-  Nachvollziehbarkeit und vermerkt Frage und Entscheidung in STATUS.md;
-  die Auftraggeber können jede Entscheidung später ändern.
+  Claude nach bestem Wissen im Sinne des größten Nutzens im Spiel, ohne
+  Integrität und Prüfspur zu lockern, und vermerkt Frage und Entscheidung in
+  STATUS.md; die Auftraggeber können jede Entscheidung später ändern.
 
 ## 13. Bekannte Vereinfachungen
 
@@ -258,3 +288,10 @@ Auftraggeber; die Historie bleibt erhalten.
   statt nach Kalender; Claude entscheidet Unklarheiten selbst und
   dokumentiert sie. Im Auftrag der Auftraggeber von Claude geändert
   (STATUS.md, Entscheidung 34).
+- v1.4 (2026-10-09, Umbau v2, im Auftrag der Auftraggeber von Claude
+  geändert, STATUS.md Entscheidungen 40 bis 45): Sessions sind an kein
+  Datum, keinen Wochentag und keine Uhrzeit gebunden, geplante Läufe werden
+  nie übersprungen, der erste Trading-Lauf startet das Spiel (Abschnitte 2
+  und 12); Handeln hat Vorrang vor Cash mit enger Definition des Verzichts
+  und umgekehrter Beweislast (Abschnitte 10 und 12; ersetzt "Kapitalerhalt
+  vor Rendite" und "Nichtstun ist gültig").

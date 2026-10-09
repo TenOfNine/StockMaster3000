@@ -331,6 +331,42 @@ def richtlinie_ausformuliert(profil: str) -> bool:
     return datei.exists() and RICHTLINIE_VORLAGE_MARKE not in datei.read_text(encoding="utf-8")
 
 
+# Version der Standard-Anlagerichtlinien (config/richtlinien/). v2: Handeln ist der Normalfall (Umbau v2).
+RICHTLINIE_STANDARD_VERSION = 2
+RICHTLINIE_STANDARD_MUSTER = re.compile(r"Standard-Richtlinie(?: v(\d+))? aus config/richtlinien/")
+RICHTLINIE_HISTORIE_UNVERAENDERT = ("Spielstart", "Standard-Update")
+
+
+def richtlinie_standard_version(profil: str) -> int | None:
+    """Version der Standard-Richtlinie, auf der strategie/<profil>.md beruht (None: keine Standard-Richtlinie)."""
+    datei = richtlinie_pfad(profil)
+    if not datei.exists():
+        return None
+    treffer = RICHTLINIE_STANDARD_MUSTER.search(datei.read_text(encoding="utf-8"))
+    return None if treffer is None else int(treffer.group(1) or 1)
+
+
+def richtlinie_historie(profil: str) -> list[list[str]]:
+    """Zeilen der Änderungshistorie (Datum, Anlass, Änderung, Prüfkriterium) aus strategie/<profil>.md."""
+    zeilen = []
+    for zeile in richtlinie_pfad(profil).read_text(encoding="utf-8").splitlines():
+        if re.match(r"^\|\s*\d{4}-\d{2}-\d{2}\s*\|", zeile):
+            zeilen.append([z.strip() for z in zeile.strip().strip("|").split("|")])
+    return zeilen
+
+
+def richtlinie_unveraendert(profil: str) -> bool:
+    """Reine Standard-Richtlinie: nie von Hand oder von Claude angepasst (nur Standardeinträge in der Historie)."""
+    return richtlinie_standard_version(profil) is not None and all(
+        len(z) > 1 and z[1] in RICHTLINIE_HISTORIE_UNVERAENDERT for z in richtlinie_historie(profil))
+
+
+def richtlinien_veraltet() -> list[str]:
+    """Unveränderte Standard-Richtlinien einer älteren Version (werden automatisch aktualisiert)."""
+    return [p for p in PROFILE if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
+            and (richtlinie_standard_version(p) or 0) < RICHTLINIE_STANDARD_VERSION]
+
+
 def richtlinien_offen() -> list[str]:
     """Profile ohne ausformulierte Anlagerichtlinie."""
     return [p for p in PROFILE if not richtlinie_ausformuliert(p)]

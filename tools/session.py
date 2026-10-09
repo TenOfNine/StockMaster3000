@@ -114,7 +114,7 @@ def status() -> list[str]:
     sperre = g.sperre_lesen()
     spiel = g.spiel_lesen()
     start = (f"Spiel gestartet am {spiel['startdatum']}." if spiel.get("startdatum")
-             else "Spiel noch nicht gestartet (Startdatum fehlt).")
+             else "Spiel noch nicht gestartet (der erste Trading-Lauf startet es; sonst: python tools/init.py --freigabe <kennung>).")
     if sperre is None:
         return [start, "Keine Session aktiv."] + [m for m in termine.meldungen() if m.startswith("FÄLLIG")]
     zusatz = " (VERWAIST)" if g.sperre_verwaist(sperre) else ""

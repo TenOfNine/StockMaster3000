@@ -69,8 +69,6 @@ def portfolio_pruefen(profil: str) -> dict:
     portfolio = g.portfolio_laden(profil)
     if portfolio.get("status") != "aktiv":
         raise Fehler(f"Portfolio {profil} ist {portfolio.get('status')}; keine Orders möglich.")
-    if g.heute() < date.fromisoformat(portfolio["startdatum"]):
-        raise Fehler(f"Das Spiel beginnt erst am {portfolio['startdatum']}; vorher keine Orders.")
     if date.fromisoformat(portfolio["verarbeitet_bis"]) < g.heute() - timedelta(days=1):
         raise Fehler("Es gibt nicht nachgebuchte Tage. Zuerst: python tools/bewertung.py nachbuchen")
     return portfolio

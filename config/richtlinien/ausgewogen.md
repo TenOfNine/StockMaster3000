@@ -1,6 +1,6 @@
 # Anlagerichtlinie Ausgewogen
 
-Stand: {datum} (Standard-Richtlinie aus config/richtlinien/ausgewogen.md, im Auftrag der Auftraggeber
+Stand: {datum} (Standard-Richtlinie v{version} aus config/richtlinien/ausgewogen.md, im Auftrag der Auftraggeber
 von Claude ausformuliert; Änderungen mit Datum, Anlass und Prüfkriterium, regeln.md 11).
 
 ## Ziel
@@ -21,7 +21,7 @@ Verlusten. Rolle im Experiment: Mitte der drei Profile; prüft, ob moderate, tak
 ## Horizont
 Mittelfristig: typische Haltedauer Tage bis Monate für Einzelwerte, Wochen bis Monate für
 ETF-Positionen; Zertifikate taktisch über Tage bis wenige Wochen. Session-Rhythmus: nach Zeitplan;
-Nichtstun ist eine gültige und oft richtige Entscheidung.
+Handeln ist der Normalfall; Cash ist die Ausnahme, die im Session-Eintrag belegt wird.
 
 ## Erlaubte Instrumente
 - ETFs und Aktien aus dem erlaubten Universum (Xetra, NYSE, NASDAQ) als Kern und Satelliten.
@@ -34,16 +34,19 @@ Nichtstun ist eine gültige und oft richtige Entscheidung.
 1. **Kern und Satelliten.** Rund die Hälfte in breite ETFs als Kern, der Rest in Einzelwerte mit
    klarer These und in begrenzte, taktische Zertifikatspositionen. Das Zertifikatslimit ist eine
    Obergrenze, kein Ziel.
-2. **These vor Position.** Jede Order hat Katalysator, Zeithorizont, Szenarien, Stop und Kursziel im
+2. **Investiert bleiben.** Zielgewicht: Cashquote nahe der Mindestquote (5 %); höhere Cashquote nur mit Grund.
+   Auf eine Order wird nur verzichtet, wenn keine Order alle Limits einhält und nach Kosten einen positiven
+   Erwartungswert hat, bei Drawdown-Stufe 2 oder Portfolio-Stopp und ohne verlässlichen Kurs (regeln.md 12).
+3. **These vor Position.** Jede Order hat Katalysator, Zeithorizont, Szenarien, Stop und Kursziel im
    Journal; ohne Stop und Risikorechnung wird nicht gekauft.
-3. **Risiko je Trade** nach Risikobudget; Positionen nur so groß, dass Risiko je Trade und
+4. **Risiko je Trade** nach Risikobudget; Positionen nur so groß, dass Risiko je Trade und
    Gesamt-Exposure unter dem Limit bleiben. Bei Drawdown-Stufe 1 wird kleiner gehandelt, bei Stufe 2
    gibt es keine neuen Zertifikate.
-4. **Streuung.** Nicht mehr als zwei Satelliten mit demselben Marktfaktor (z. B. zwei Halbleiterwerte
+5. **Streuung.** Nicht mehr als zwei Satelliten mit demselben Marktfaktor (z. B. zwei Halbleiterwerte
    plus ein Nasdaq-Zertifikat); die Korrelation wird im Journal benannt.
-5. **Kosten beachten.** Spreads und Gebühren sind Teil der These: kein Trade, dessen erwarteter
+6. **Kosten beachten.** Spreads und Gebühren sind Teil der These: kein Trade, dessen erwarteter
    Gewinn nach Kosten kleiner als das Doppelte der Kosten ist.
-6. **Kein Nachlegen in Verluste** ohne neue, dokumentierte These; keine Rache-Trades.
+7. **Kein Nachlegen in Verluste** ohne neue, dokumentierte These; keine Rache-Trades.
 
 ## Benchmark
 {benchmark}
@@ -57,4 +60,4 @@ Trade ist nur eine Hypothese (regeln.md 11).
 ## Änderungshistorie
 | Datum | Anlass | Änderung | Prüfkriterium |
 | --- | --- | --- | --- |
-| {datum} | Spielstart | Standard-Richtlinie übernommen | Quartals-Review: Rendite und Risiko gegen den Benchmark, Einhaltung dieser Richtlinie |
+| {datum} | Spielstart | Standard-Richtlinie v{version} übernommen | Quartals-Review: Rendite und Risiko gegen den Benchmark, Einhaltung dieser Richtlinie |

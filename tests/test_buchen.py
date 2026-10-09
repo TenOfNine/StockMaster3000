@@ -177,3 +177,18 @@ def test_limit_order_vorgemerkt_wenn_nicht_erreicht(bereit):
 def test_nicht_nachgebuchte_tage_blockieren(bereit, uhr):
     uhr.stellen("2026-10-14T10:05:00")
     assert kaufen() == 2
+
+
+def test_keine_zeitfenster_fuer_orders_startdatum_und_wochenende(projekt, quelle, uhr):
+    """Umbau v2: Eine Session legt Orders unabhängig von Startdatum, Wochentag und Uhrzeit an."""
+    uhr.stellen("2026-10-11T20:30:00")  # Sonntagabend
+    portfolio(startdatum="2099-01-01", verarbeitet_bis="2026-10-10")  # Startdatum weit in der Zukunft
+    journal(projekt, datum="2026-10-11", eintraege=(("01", "20:00", "ausgewogen", "SAP.DE"),))
+    sperre(projekt, start="2026-10-11T20:10:00+02:00")
+    quelle.kurs("SAP.DE", "200")
+    assert kaufen(journal_id="J-20261011-01") == 0
+    p = laden()
+    assert p["positionen"] == [] and len(p["offene_orders"]) == 1  # vorgemerkt, nicht abgelehnt
+    order = p["offene_orders"][0]
+    assert order["erfasst"] == "2026-10-11T20:30:00+02:00" and order["journal_id"] == "J-20261011-01"
+    assert g.trades_lesen("ausgewogen")[0]["aktion"] == "vormerkung"

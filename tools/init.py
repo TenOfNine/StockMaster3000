@@ -89,12 +89,12 @@ def standard_text(profil: str, datum) -> str:
     werte["max_hebel"] = f"{limits['max_hebel']}x"
     werte["max_exposure"] = f"{limits['max_exposure']}x"
     return quelle.read_text(encoding="utf-8").format(
-        datum=datum.isoformat(), **werte,
+        datum=datum.isoformat(), version=g.RICHTLINIE_STANDARD_VERSION, **werte,
         benchmark=f"{_prozent(etf)} iShares Core MSCI World (EUNL.DE) / {_prozent(1 - etf)} Cash mit 2 % p. a., "
                   "Aufteilung zum ersten Schlusskurs ab Starttag, ohne Rebalancing und Kosten.")
 
 
-def initialisieren(startdatum_text: str | None, freigabe: str) -> list[str]:
+def initialisieren(startdatum_text: str | None, freigabe: str, ausloeser: str = "kommandozeile") -> list[str]:
     status_pruefen()
     erlaubt = g.projekt()["auftraggeber"]
     if freigabe not in erlaubt:
@@ -130,7 +130,7 @@ def initialisieren(startdatum_text: str | None, freigabe: str) -> list[str]:
         g.pfad(ordner).mkdir(parents=True, exist_ok=True)
     g.json_schreiben(g.spiel_pfad(), {
         "startdatum": startdatum.isoformat(), "initialisiert": g.iso(g.jetzt()),
-        "freigabe_ap12": freigabe, "werkzeug": "tools/init.py",
+        "freigabe_ap12": freigabe, "werkzeug": "tools/init.py", "ausloeser": ausloeser,
     })
     meldungen.append(f"Benchmark {benchmark}: Basis ist der erste Schlusskurs ab {startdatum}.")
     meldungen.append("spiel.json: Startdatum und Freigabe eingetragen. Jetzt prüfen und im Datenverzeichnis "
@@ -193,6 +193,9 @@ def vorziehen(neu_text: str) -> list[str]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Spiel initialisieren: drei Portfolios mit je 1.000 EUR.")
     parser.add_argument("--startdatum", help="JJJJ-MM-TT, nicht vor heute; ohne Angabe: heute (kein fester Starttermin)")
+    parser.add_argument("--ausloeser", choices=["kommandozeile", "einrichtung", "lauf"], default="kommandozeile",
+                        help="wer den Start auslöst (nur zur Dokumentation in spiel.json): Einrichtung der Web-UI "
+                             "oder der erste Trading-Lauf")
     parser.add_argument("--freigabe",
                         help="Kennung des Auftraggebers, der AP12 freigegeben hat (config/projekt.json)")
     parser.add_argument("--vorziehen", action="store_true",
@@ -205,7 +208,7 @@ def main(argv=None) -> int:
         elif not args.freigabe:
             parser.error("--freigabe ist beim Spielstart nötig")
         else:
-            meldungen = initialisieren(args.startdatum, args.freigabe)
+            meldungen = initialisieren(args.startdatum, args.freigabe, args.ausloeser)
         for meldung in meldungen:
             print(meldung)
     except Fehler as exc:
