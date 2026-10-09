@@ -46,7 +46,8 @@ Abschnitt 7 übereinstimmen.
   Regeln gelten je Arbeitsbereich; Arbeitsbereiche sind strikt getrennt.
 - Cash-Zins: 2 % p. a., einfache Tageszinsen (Act/365) auf den
   Cash-Endbestand jedes Kalendertags, täglich gutgeschrieben. Die
-  Nachbuchung erfolgt beim nächsten Session-Start.
+  Nachbuchung erfolgt nachts durch den Hintergrunddienst, spätestens beim
+  nächsten Session-Start.
 - Die Portfolios sind strikt getrennt; Cash und Positionen werden nie
   verschoben.
 

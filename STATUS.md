@@ -145,12 +145,17 @@ Auftraggeber erlauben dafür ausdrücklich Änderungen an regeln.md, CLAUDE.md, 
 das ist eine Ausnahme zu CLAUDE.md Grundsatz 1 und gilt nur für diesen Auftrag. Unklarheiten entscheidet Claude
 selbst (regeln.md 12, Entscheidung 34); die Auslegungen stehen unter den Entscheidungen ab Nr. 40.
 
-| Stufe | Punkte | Branch |
-| --- | --- | --- |
-| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` |
-| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` |
-| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` |
-| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` |
+| Stufe | Punkte | Branch | Pull Request | Stand |
+| --- | --- | --- | --- | --- |
+| A | 1 Zwei-Faktor nur beim Anlegen neuer Benutzer | `aufbau/zwei-faktor-nur-beim-anlegen` | #20 | umgesetzt, CI grün (Entscheidung 40) |
+| B | 2 Zeitfenster entfernen, 3 Handeln höher priorisieren | `aufbau/laeufe-ohne-zeitfenster-handeln-zuerst` | #21 (baut auf A) | umgesetzt, CI grün (Entscheidungen 41, 42) |
+| C | 5 Ausführung ohne Claude-Lauf | `aufbau/ausfuehrung-ohne-claude-lauf` | #22 (baut auf B) | umgesetzt, CI grün (Entscheidung 43) |
+| D | 4 Viertes Portfolio „Overnight“, 6 Regeln (v1.4) | `aufbau/viertes-portfolio-overnight` | #23 (baut auf C) | umgesetzt (Entscheidungen 44, 45) |
+
+Die Pull Requests sind gestapelt: Jeder hat den Branch der vorigen Stufe als Basis, damit der Diff nur die eigene Stufe
+zeigt. Zusammenführen in der Reihenfolge A, B, C, D (GitHub stellt die Basis des Folge-PR nach jedem Merge auf `main`
+um). Abnahme (lokal und in der CI): Werkzeuge 292 Tests, Backend 312, Oberfläche 45, E2E 4, `pruefe.py --historie` auf
+Demo- (mit simulierten Overnight-Nächten) und leerem Datenverzeichnis bestanden.
 
 Ausgangslage (geprüft am 2026-10-09 auf `main` nach Pull Request 19): Werkzeuge 234 Tests, Backend 292, Oberfläche 39
 (Komponenten) und E2E grün. Abweichungen zwischen Doku und Code, die dabei auffielen: (a) Entscheidung 37 und 39 sowie
