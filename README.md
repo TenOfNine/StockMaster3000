@@ -162,8 +162,8 @@ Secrets werden in der App gepflegt; der Stack braucht nur `SM_HOSTNAME`.
   und Keys, News-Feeds, Zeitplan, Spielstart, Sicherung, Systemstatus.
 - **Claude-Läufe:** Trading-Sessions, Reviews und Testsession im Container
   mit Live-Log und anschließender Prüfung.
-- **Sicherheit:** Anmeldung mit Argon2id, Zwei-Faktor (Pflicht für
-  Admins), CSRF-Schutz, Sitzungs-Timeouts, Rate-Limits, Audit-Log,
+- **Sicherheit:** Anmeldung mit Argon2id (nur Passwort; Zwei-Faktor-Code
+  nur zum Anlegen neuer Benutzer), CSRF-Schutz, Sitzungs-Timeouts, Rate-Limits, Audit-Log,
   strikte Content-Security-Policy, Heimnetz-Schranke in Proxy und API.
 
 ![Trade-Akte](webui/docs/trade-akte.png)

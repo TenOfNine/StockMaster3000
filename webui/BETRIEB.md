@@ -35,7 +35,7 @@ docker compose exec api python -m stockmaster admin-anlegen --email du@heimnetz.
 ```
 
 Der letzte Befehl gibt **einmalig** ein Einmalpasswort aus und verweigert die Ausführung, sobald ein
-Administrator existiert. Bei der ersten Anmeldung sind Passwortwechsel und Zwei-Faktor (TOTP) Pflicht.
+Administrator existiert. Bei der ersten Anmeldung ist der Passwortwechsel Pflicht. Die Anmeldung braucht danach nur das Passwort; Zwei-Faktor (TOTP) richtet der Administrator im Konto ein und braucht ihn nur zum Anlegen neuer Benutzer.
 Danach führt das Cockpit zur **Einrichtung** (Claude, Kursdaten, News, Zeitplan, Spielstart).
 
 Beim ersten Start mit leeren Volumes erzeugt der Stack selbst: Datenbank-Passwörter (`/geheim`),
@@ -196,7 +196,7 @@ docker compose exec -T db pg_dump -U postgres -Fc stockmaster > stockmaster-$(da
 docker compose exec -T db pg_restore -U postgres -d stockmaster --clean < stockmaster-JJJJ-MM-TT.dump
 ```
 
-Die Web-UI bietet Export und Wiederherstellung unter Einrichtung → Sicherung (nur Admin, Zwei-Faktor,
+Die Web-UI bietet Export und Wiederherstellung unter Einrichtung → Sicherung (nur Admin,
 Passwortbestätigung). Für eine vollständige Wiederherstellung inklusive Zwei-Faktor zusätzlich
 `master.key` getrennt und sicher aufbewahren (`docker compose cp api:/data-app/master.key .`).
 

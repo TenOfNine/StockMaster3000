@@ -235,7 +235,8 @@ def admin_anlegen(email: str, anzeigename: str) -> int:
         db.add(AuditEintrag(akteur=None, aktion="admin_erstanlage", ziel=admin.id))
         db.commit()
     print(f"Administrator angelegt. Einmalpasswort (nur jetzt sichtbar): {passwort}")
-    print("Bei der ersten Anmeldung sind Passwortwechsel und Zwei-Faktor Pflicht.")
+    print("Bei der ersten Anmeldung ist der Passwortwechsel Pflicht. Zwei-Faktor richtet der Administrator später im "
+          "Konto ein; er wird nur zum Anlegen weiterer Benutzer gebraucht.")
     return 0
 
 

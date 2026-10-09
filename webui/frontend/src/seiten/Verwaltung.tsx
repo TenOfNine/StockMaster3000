@@ -50,7 +50,7 @@ export function Konto() {
 
   return (
     <div className="einblenden">
-      <Seitenkopf titel="Konto & Sicherheit" untertitel="Anmeldedaten, Zwei-Faktor und aktive Sitzungen." />
+      <Seitenkopf titel="Konto & Sicherheit" untertitel="Anmeldedaten, Zwei-Faktor (nur zum Anlegen neuer Benutzer) und aktive Sitzungen." />
       <div className="grid gap-4 xl:grid-cols-2">
         <Karte>
           <KarteKopf titel="Profil" />
@@ -79,17 +79,22 @@ export function Konto() {
           <div className="px-5 pb-5">
             {benutzer?.totp_aktiv ? (
               <div className="space-y-3 text-[13px] text-text-2">
-                <p>Bei jeder Anmeldung wird zusätzlich ein Code aus deiner Authenticator-App abgefragt.</p>
-                {benutzer.ist_admin ? (
-                  <p className="text-text-3">Für Administratoren ist Zwei-Faktor Pflicht und kann nicht abgeschaltet werden.</p>
-                ) : (
-                  <Knopf klein onClick={() => setDeaktivieren(true)}>
-                    <ShieldOff className="size-3.5" /> Deaktivieren
-                  </Knopf>
-                )}
+                <p>
+                  {benutzer.ist_admin
+                    ? "Die Anmeldung braucht nur dein Passwort. Den Code aus deiner Authenticator-App fragt die Web-UI nur ab, wenn du einen neuen Benutzer anlegst."
+                    : "Die Anmeldung braucht nur dein Passwort; der Code wird nur für das Anlegen neuer Benutzer durch Administratoren gebraucht."}
+                </p>
+                <Knopf klein onClick={() => setDeaktivieren(true)}>
+                  <ShieldOff className="size-3.5" /> Deaktivieren
+                </Knopf>
+              </div>
+            ) : benutzer?.ist_admin ? (
+              <div className="space-y-3">
+                <p className="text-[13px] text-text-2">Zwei-Faktor brauchst du nur, um neue Benutzer anzulegen. Die Anmeldung läuft ohne Code.</p>
+                <ZweiFaktorEinrichten eingebettet fertig={() => setGespeichert("Zwei-Faktor ist jetzt aktiv.")} />
               </div>
             ) : (
-              <ZweiFaktorEinrichten eingebettet fertig={() => setGespeichert("Zwei-Faktor ist jetzt aktiv.")} />
+              <p className="text-[13px] text-text-2">Für dein Konto ist kein Zwei-Faktor nötig. Er wird nur gebraucht, wenn ein Administrator neue Benutzer anlegt.</p>
             )}
           </div>
         </Karte>
@@ -320,9 +325,11 @@ export function Administration() {
 
 function AdminDialog({ aktion, schliessen }: { aktion: AdminAktion; schliessen: () => void }) {
   const client = useQueryClient();
+  const { sitzung } = useAuth();
   const [passwort, setPasswort] = useState("");
   const [email, setEmail] = useState("");
   const [anzeigename, setAnzeigename] = useState("");
+  const [code, setCode] = useState("");
   const [einmal, setEinmal] = useState<string | null>(null);
   const [kopiert, setKopiert] = useState(false);
 
@@ -336,7 +343,7 @@ function AdminDialog({ aktion, schliessen }: { aktion: AdminAktion; schliessen: 
 
   const ausfuehren = useMutation({
     mutationFn: async () => {
-      if (aktion.art === "anlegen") return api<{ einmalpasswort: string }>("/api/admin/benutzer", { daten: { email, anzeigename, passwort } });
+      if (aktion.art === "anlegen") return api<{ einmalpasswort: string }>("/api/admin/benutzer", { daten: { email, anzeigename, passwort, code } });
       const basis = `/api/admin/benutzer/${aktion.b.id}`;
       if (aktion.art === "passwort") return api<{ einmalpasswort: string }>(`${basis}/passwort-zuruecksetzen`, { daten: { passwort } });
       if (aktion.art === "zwei-faktor") return api(`${basis}/zwei-faktor-zuruecksetzen`, { daten: { passwort } });
@@ -388,6 +395,16 @@ function AdminDialog({ aktion, schliessen }: { aktion: AdminAktion; schliessen: 
               <Feld id="n-name" label="Anzeigename" hinweis="Erscheint nur in der Web-UI, nie im Spiel-Repository.">
                 <Eingabe id="n-name" required maxLength={80} value={anzeigename} onChange={(e) => setAnzeigename(e.target.value)} />
               </Feld>
+              {sitzung?.benutzer?.totp_aktiv ? (
+                <Feld id="n-code" label="Zwei-Faktor-Code" hinweis="Sechsstelliger Code aus deiner Authenticator-App; nur zum Anlegen neuer Benutzer nötig.">
+                  <Eingabe id="n-code" inputMode="numeric" autoComplete="one-time-code" required maxLength={7} pattern="[0-9 ]{6,7}" value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ""))} />
+                </Feld>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-rand bg-flaeche-2/50 p-3.5">
+                  <p className="text-[13px] text-text">Zum Anlegen neuer Benutzer brauchst du Zwei-Faktor. Richte ihn jetzt ein; danach trägst du hier den Code ein.</p>
+                  <ZweiFaktorEinrichten eingebettet />
+                </div>
+              )}
             </>
           )}
           <Feld id="b-pw" label="Dein Passwort zur Bestätigung">
@@ -397,7 +414,7 @@ function AdminDialog({ aktion, schliessen }: { aktion: AdminAktion; schliessen: 
             <Knopf type="button" variante="geist" onClick={schliessen}>
               Abbrechen
             </Knopf>
-            <Knopf type="submit" variante={aktion.art === "aktiv" && !aktion.aktiv ? "gefahr" : "primaer"} laedt={ausfuehren.isPending}>
+            <Knopf type="submit" variante={aktion.art === "aktiv" && !aktion.aktiv ? "gefahr" : "primaer"} laedt={ausfuehren.isPending} disabled={aktion.art === "anlegen" && !sitzung?.benutzer?.totp_aktiv}>
               {titel}
             </Knopf>
           </div>

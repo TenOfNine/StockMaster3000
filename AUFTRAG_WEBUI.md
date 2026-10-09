@@ -299,7 +299,9 @@ Arbeitsbereich nicht änderbar):
     Tailscale). Kein offener Port; der VPN-Adressbereich wird zur
     Positivliste hinzugefügt.
   - Variante B: eigene Domain mit Let's Encrypt und Portfreigabe. Nur
-    zulässig, wenn Zwei-Faktor für alle Benutzer erzwungen ist; strengere
+    zulässig, wenn Zwei-Faktor für alle Benutzer bei der Anmeldung
+    erzwungen ist (seit Umbau v2 nicht mehr der Fall; die Variante ist
+    nicht umgesetzt und bräuchte erst einen neuen Auftrag); strengere
     Rate-Limits; die Anwendung verweigert den Start, wenn eine
     Voraussetzung fehlt.
 
@@ -390,7 +392,13 @@ Konto-Menü.
 | Benutzer anlegen, sperren, Admin-Rolle vergeben | – | – | – | ja |
 
 - Es gibt initial genau einen Administrator. Er kann weiteren Benutzern
-  die Admin-Rolle geben; Admins brauchen Zwei-Faktor.
+  die Admin-Rolle geben. Seit Umbau v2 (STATUS.md, Entscheidung 40)
+  braucht die Anmeldung nur das Passwort; einen Zwei-Faktor-Code
+  verlangt die Web-UI nur noch, wenn ein Administrator einen neuen
+  Benutzer anlegt (der Administrator bestätigt das Anlegen mit seinem
+  Code und richtet Zwei-Faktor dafür im Konto ein). Alle anderen
+  Admin-Aktionen verlangen die Admin-Rolle, CSRF, Audit-Eintrag und
+  (wo bisher vorhanden) die Passwortbestätigung, aber keinen Code.
 - Stufen können nie höher vergeben werden als die eigene; die
   Ersteller-Rolle ist nicht übertragbar (sie bestimmt die
   Auftraggeber-Kennung im Repository).
@@ -401,7 +409,7 @@ Konto-Menü.
 | --- | --- | --- |
 | Keine einsehbaren API-Keys | Secrets nur als Docker Secrets; Frontend ohne Schlüssel; Claude-Tokens verschlüsselt, schreibgeschützte Felder; Log- und Transkript-Bereinigung; Claude kann Umgebungsvariablen nicht lesen; gitleaks in CI | kein Endpunkt, Log oder Run-Event enthält ein gesetztes Test-Token |
 | RLS | `ENABLE` und `FORCE ROW LEVEL SECURITY` auf allen Mandantentabellen; App-Rolle ohne `BYPASSRLS`, nicht Tabelleneigentümer; `SET LOCAL app.user_id` je Transaktion; Policies über `SECURITY DEFINER`-Funktion mit festem `search_path` | ohne Kontext 0 Zeilen; fremder Kontext 0 Zeilen; Schreiben in fremde Zeilen scheitert |
-| Admin-Routen sperren | eigener Router `/api/admin` mit Admin-Prüfung auf Router-Ebene; Admin-Flag nur aus der DB; Zwei-Faktor Pflicht; erneute Anmeldung für kritische Aktionen; Nicht-Admins erhalten 404 | Matrixtest aller Admin-Routen |
+| Admin-Routen sperren | eigener Router `/api/admin` mit Admin-Prüfung auf Router-Ebene; Admin-Flag nur aus der DB; Zwei-Faktor-Code nur beim Anlegen neuer Benutzer (Umbau v2); Passwortbestätigung für kritische Aktionen; Nicht-Admins erhalten 404 | Matrixtest aller Admin-Routen |
 | Benutzer-Isolation testen | automatischer Matrixtest: alle Routen aus OpenAPI × {anonym, fremd, Lesen, Vollzugriff, Ersteller, Admin}; IDOR-Tests mit fremden UUIDs; SSE-Streams und Dateizugriffe einzeln; Playwright-E2E mit zwei Benutzern | eine neue Route ohne Matrixeintrag lässt den Test scheitern |
 | Rate-Limiting | Redis Sliding Window je IP und Benutzer; Login 5/min mit wachsender Sperre; Verbindungstest 5/h; Claude-Läufe 1 parallel je Arbeitsbereich und Tageslimit je Benutzer; Kursabfragen gedrosselt; Body-Größenlimit; 429 mit `Retry-After` | Tests je Limit |
 | Storage sperren | Workspace-Volumes nie statisch ausgeliefert; Zugriff nur über die API mit Rechteprüfung; Pfade kanonisch auflösen, `..` und Symlinks nach außen ablehnen; Downloads über kurzlebige, signierte, benutzergebundene URLs; Verzeichnisse `0700`; Backups verschlüsselt | Path-Traversal-Tests, abgelaufene/fremde Download-URLs |
@@ -411,7 +419,7 @@ Konto-Menü.
 | Field-Tampering unterbinden | getrennte Create/Update/Read-Schemas; `ersteller_id`, `stufe`, `workspace_id`, `kennung`, Zeitstempel nie vom Client; Stufenänderung nur über eigenen Endpunkt; Versionsfeld (ETag) gegen verlorene Updates; nicht erratbare UUIDs | Tests mit zusätzlichen bzw. manipulierten Feldern |
 | Server-Logik absichern | alle Regeln serverseitig (Rechte, Phase, Sperre, Freigaben, Zustandsautomat der Läufe); Idempotenzschlüssel; Subprozesse mit Zeit- und Speicherlimit; `pruefe.py` nach jedem Lauf | Zustandsübergangstests |
 | API-Responses trimmen | explizite `response_model`s; keine internen Pfade, Stacktraces oder E-Mail-Adressen anderer Benutzer (nur Anzeigename); generische Fehlermeldungen mit Korrelations-ID; Paginierung | Snapshot-Tests der Antwortfelder |
-| Auth-Sessions absichern | serverseitige Sitzungen (256-Bit-ID, gehasht gespeichert); Cookie `__Host-sid` HttpOnly, Secure, SameSite=Strict; Rotation bei Anmeldung und Rechtewechsel; Leerlauf 30 min, absolut 12 h; CSRF-Token und Origin-Prüfung; Argon2id; TOTP; Abmelden auf allen Geräten | Tests für Ablauf, Rotation, CSRF |
+| Auth-Sessions absichern | serverseitige Sitzungen (256-Bit-ID, gehasht gespeichert); Cookie `__Host-sid` HttpOnly, Secure, SameSite=Strict; Rotation bei Anmeldung und Rechtewechsel; Leerlauf 30 min, absolut 12 h; CSRF-Token und Origin-Prüfung; Argon2id (Anmeldung nur mit Passwort, Umbau v2); TOTP nur zum Anlegen neuer Benutzer; Abmelden auf allen Geräten | Tests für Ablauf, Rotation, CSRF |
 | Abhängigkeiten prüfen | Lockfiles mit Hashes; pip-audit, pnpm audit, osv-scanner; Trivy-Image-Scan; SBOM (syft); Dependabot; Claude Code CLI gepinnt; `pnpm install --frozen-lockfile`, Install-Skripte nur für eine Positivliste | CI bricht bei bekannten kritischen Lücken ab |
 | Keine personenbezogenen Daten in Repos | Kennungen statt Namen; Hook blockiert Namen und E-Mail-Adressen; Prüfung vor jedem Commit des Workers | Test: Schreibversuch mit Benutzername wird blockiert |
 
@@ -422,8 +430,9 @@ OWASP-ZAP-Baseline-Scan gegen die laufende Compose-Umgebung.
 
 **Initialer Administrator:** `docker compose run --rm api stockmaster
 admin anlegen --email …` erzeugt den einzigen Admin mit Einmalpasswort
-(nur in der Konsole ausgegeben). Bei der ersten Anmeldung sind
-Passwortwechsel und Zwei-Faktor Pflicht. Der Befehl verweigert die
+(nur in der Konsole ausgegeben). Bei der ersten Anmeldung ist der
+Passwortwechsel Pflicht; Zwei-Faktor richtet der Administrator später im
+Konto ein (Umbau v2). Der Befehl verweigert die
 Ausführung, wenn bereits ein Admin existiert. Weitere Benutzer legt nur
 ein Admin in der UI an (ebenfalls mit Einmalpasswort).
 
@@ -554,7 +563,7 @@ Abnahme: Neuinstallation nach Anleitung auf einem frischen Rechner.
 Variante A (VPN) und Variante B (Domain, Let's Encrypt) nach 4.7.
 Abnahme: ohne `ZUGRIFF_EXTERN=ein` und Admin-Bestätigung startet das
 Profil nicht; Variante B startet nur mit erzwungener Zwei-Faktor-
-Anmeldung für alle Benutzer.
+Anmeldung für alle Benutzer (entfällt mit Umbau v2, siehe 4.7).
 
 ## 10. Reihenfolge und Abhängigkeiten
 

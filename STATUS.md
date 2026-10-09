@@ -40,7 +40,7 @@ Betrieb und Tests: webui/BETRIEB.md.
 | --- | --- | --- |
 | W1 Grundgerüst und Docker | Compose mit proxy, api, db; interne Netze, Secrets, Healthchecks, Härtung; Caddy mit lokaler CA und Heimnetz-Schranke; Rauchtest (webui/deploy/rauchtest.sh) | Dienste worker und redis kommen mit W8/W9 |
 | W2 Datenbank und RLS | Schema und Alembic-Migration (Benutzer, Sitzungen, Audit-Log), PostgreSQL mit Anwendungsrolle ohne Superuser- und BYPASSRLS-Recht | RLS-Policies folgen mit den mandantenbezogenen Tabellen (Arbeitsbereiche, W5); in Stufe 1 gibt es nur eigene Sitzungen |
-| W3 Authentifizierung | erfüllt: Admin-Erstanlage per CLI (nur einmal), Login, serverseitige Sitzungen, CSRF und Origin-Prüfung, TOTP, Sperre bei Fehlversuchen, Passwortwechsel | Rate-Limits im Prozess statt Redis (ein API-Prozess) |
+| W3 Authentifizierung | erfüllt: Admin-Erstanlage per CLI (nur einmal), Login (nur Passwort seit Entscheidung 40), serverseitige Sitzungen, CSRF und Origin-Prüfung, TOTP nur beim Anlegen von Benutzern, Sperre bei Fehlversuchen, Passwortwechsel | Rate-Limits im Prozess statt Redis (ein API-Prozess) |
 | W4 Benutzerverwaltung | erfüllt: Admin-Router (anlegen, sperren, Passwort und Zwei-Faktor zurücksetzen, Admin-Rolle), Kennung je Benutzer, Matrixtest | – |
 | W7 Lesedienst | erfüllt für ein Spiel-Repository: Portfolios, Trades, NAV, Limits, Journal (J und S), Reviews, Strategie, Lessons, Ranking, STATUS.md, config, Git-Log | je Arbeitsbereich mit W5 |
 | W8 Werkzeug-Ausführung | nur lesend: tools/pruefe.py in eigenem Prozess mit Zeitlimit, Zertifikatsrechner über tools/produkte.py | Positivliste im Worker mit W8 |
@@ -134,7 +134,7 @@ webui/PORTAINER.md.
 - News: tools/news.py (feedparser), Standard-Feeds in config/news.json, Änderungen in der App.
 - Claude: Optionen für Modell und Aufwand in config/claude.json, geprüft gegen `claude --help` der im
   Image fest installierten Claude Code 2.1.292 (`--model`, `--effort low|medium|high|xhigh|max`).
-- Web-UI: neue Seite „Einrichtung“ (Admin mit Zwei-Faktor), bisherige Seite heißt „Roadmap & Status“,
+- Web-UI: neue Seite „Einrichtung“ (Admin; Zwei-Faktor-Pflicht entfiel mit Entscheidung 40), bisherige Seite heißt „Roadmap & Status“,
   neue Seite „Claude-Läufe“, Cockpit-Hinweis auf offene Pflichtschritte, „Markt & Kurse“ mit Quelle,
   Zeitstempel und Verzögerung, News im Cockpit und je Wert, Sicherung (Export/Restore).
 
@@ -344,7 +344,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
       Abo-Kontingent; Reviews laufen immer.
     - **Stoppen:** „Lauf stoppen“ bricht den laufenden Lauf ab (Prozess beendet, Sperre freigegeben);
       „Automatik stoppen/starten“ auf der Lauf-Seite schaltet den Zeitplan (`POST
-      /api/einrichtung/zeitplan/automatik`, Admin + Zwei-Faktor, Audit) ohne die Termine zu verlieren.
+      /api/einrichtung/zeitplan/automatik`, Admin, Audit; Zwei-Faktor entfiel mit Entscheidung 40) ohne die Termine zu verlieren.
       `GET /api/laeufe/plan` zeigt Automatik, nächste Termine (Wochentag, Zeitzone, Handelstag) und die
       zuletzt übersprungenen.
     - **Startdatum:** Vorschlag im Spielstart ist heute. Ein bereits gesetztes, noch unberührtes
@@ -424,7 +424,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     `control_request` an. Der Worker legt je Anfrage eine Zeile in `freigaben` an, die Web-UI zeigt sie im Lauf
     (Befehl Zeichen für Zeichen ohne Ligaturen, Beschreibung von Claude als ungeprüft gekennzeichnet, Restzeit,
     „Erlauben“ und „Ablehnen“) und als Hinweis „n Freigaben offen“ in der Kopfzeile für Administratoren.
-    Entscheiden dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag `freigabe_erlaubt` oder
+    Entscheiden dürfen nur Administratoren (seit Entscheidung 40 ohne Zwei-Faktor-Code; CSRF, Audit-Eintrag `freigabe_erlaubt` oder
     `freigabe_abgelehnt`; wer entschieden hat, steht nur in der Datenbank). Eine Freigabe gilt nur für den einen
     Aufruf. Ohne Entscheidung verfällt die Anfrage nach `SM_FREIGABE_WARTEZEIT_SEKUNDEN` (Standard 180) und gilt als
     abgelehnt; deshalb hängen auch Zeitplan-Läufe nie. Ein schon abgelehnter oder verfallener Befehl wartet im
@@ -503,7 +503,7 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     je Portfolio ein Freitext (bis 4000 Zeichen). Jede Änderung ist eine Version (Text, Zeitpunkt, Kennung des
     Administrators, nie Name) im Verlauf der App-Konfiguration (`einstellungen.json`, damit in der Sicherung; die
     letzten 300 Fassungen); ein unveränderter Text legt keine Version an, eine alte Fassung lässt sich in den Editor
-    übernehmen und neu speichern. Schreiben dürfen nur Administratoren mit Zwei-Faktor (CSRF, Audit-Eintrag
+    übernehmen und neu speichern. Schreiben dürfen nur Administratoren (seit Entscheidung 40 ohne Zwei-Faktor-Code; CSRF, Audit-Eintrag
     `einrichtung_vorgabe` mit Version und Länge, ohne Text); lesen dürfen alle Angemeldeten (Reiter Anlagerichtlinie
     im Portfolio, ohne Verfasser). Wirkung: Der Prompt eines Trading-Laufs enthält die Vorgaben zwischen den Marken
     `VORGABE-BEGINN` und `VORGABE-ENDE` (Marken im Text werden entschärft) mit der Anweisung, dass sie die
@@ -525,6 +525,32 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     folgt dann der Regel und meldet den Konflikt. Tests: Backend (Versionen, Verlauf und Begrenzung, Audit ohne
     Text, Rechte, Eingaben, Prompt mit Entschärfung der Marken), Oberfläche (Editor, Entwürfe je Portfolio, Verlauf,
     Lese-Karte) und E2E.
+40. Zwei-Faktor nur beim Anlegen neuer Benutzer (Umbau v2, Stufe A, Auftrag der Auftraggeber vom 2026-10-09).
+    **Umgesetzt.** Die Anmeldung braucht nur noch das Passwort (Argon2id, serverseitige Sitzung, CSRF, Rate-Limit und
+    Sperre bei Fehlversuchen bleiben); der Schritt „Code bei der Anmeldung“ (`POST /api/auth/totp`) und der Pflichtschritt
+    „Zwei-Faktor einrichten“ sind entfernt. Einen TOTP-Code verlangt die Web-UI nur noch, wenn ein Administrator einen
+    neuen Benutzer anlegt (`POST /api/admin/benutzer` mit Feld `code`, zusätzlich zur Passwortbestätigung). Alle
+    bisherigen „Admin + Zwei-Faktor“-Aktionen (Einrichtung, Vorgaben, Zeitplan und Automatik, Freigaben von
+    Claude-Befehlen, Claude-Anmeldung, Spielstart, Sicherung, Läufe starten und abbrechen) behalten die
+    Admin-Rollenprüfung (Rolle aus der Datenbank, Nicht-Admins erhalten 404), CSRF, den Audit-Eintrag und die schon
+    vorhandene Passwortbestätigung, aber keinen Code (Abhängigkeit `admin_pflicht`, vorher `admin_2fa`). Vorhandene
+    TOTP-Geheimnisse bleiben gespeichert und gültig (der Master-Schlüssel verschlüsselt sie weiter); niemand wird
+    ausgesperrt, es gibt keine Datenbankmigration. Die Admin-Erstanlage per Kommandozeile bleibt.
+    **Auslegungen:** (1) „Die Anmeldung braucht nur noch das Passwort“ gilt für alle Konten, auch für Benutzer mit
+    schon aktivem TOTP; ihr Code wird nur beim Anlegen von Benutzern gebraucht. (2) Ein Administrator ohne eingerichtetes
+    Zwei-Faktor kann sich anmelden und alles andere tun, aber keine Benutzer anlegen (409 mit Hinweis); der Dialog
+    „Benutzer anlegen“ führt die Einrichtung (QR-Code, Bestätigung) gleich mit. (3) Ein falscher Code liefert 403 statt 401
+    (die Oberfläche würde bei 401 abmelden), ist auf fünf Versuche je Minute begrenzt und steht als `totp_fehlgeschlagen`
+    im Audit-Log; ein erfolgreiches Anlegen vermerkt `zwei_faktor` im Audit-Eintrag. (4) Zwei-Faktor lässt sich im Konto
+    mit Passwort und Code auch von Administratoren wieder abschalten (vorher gesperrt). (5) Der Zugriff von außen
+    „Variante B“ (AUFTRAG_WEBUI.md 4.7) setzte Zwei-Faktor für alle bei der Anmeldung voraus; sie war nie umgesetzt und
+    ist ohne neuen Auftrag nicht zulässig.
+    **Das senkt die Schutzstufe:** Wer das Passwort eines Administrators kennt, kann ohne zweiten Faktor die Einrichtung
+    ändern, Claude-Befehle freigeben und das Spiel starten. Die Heimnetz-Schranke (Entscheidung 6: Caddy und API
+    lassen nur private Netze zu, `SM_ERLAUBTE_NETZE`) trägt diese Schutzstufe weiter; die Web-UI darf deshalb nicht ins
+    Internet gestellt werden. Tests: Anmeldung ohne Code (auch mit vorhandenem TOTP), Administrator ohne Zwei-Faktor,
+    Anlegen mit gültigem, falschem und fehlendem Code, andere Admin-Aktionen ohne Code mit Passwortprüfung, E2E.
+
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

@@ -1,4 +1,9 @@
-"""Anmeldung, Sitzungen, CSRF, Zwei-Faktor und Konto."""
+"""Anmeldung, Sitzungen, CSRF, Zwei-Faktor und Konto.
+
+Die Anmeldung braucht nur das Passwort (Umbau v2, Entscheidung 40). Ein TOTP-Code wird nur noch verlangt, wenn ein
+Administrator einen neuen Benutzer anlegt (admin.py); dafür richtet der Administrator Zwei-Faktor im Konto ein.
+Bereits gespeicherte TOTP-Geheimnisse bleiben gültig.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from .config import einstellungen
 from .db import jetzt_utc, sitzung, utc
 from .modelle import AuditEintrag, AuthSitzung, Benutzer
 
-Schritt = Literal["totp", "passwort_aendern", "zwei_faktor_einrichten", "fertig"]
+Schritt = Literal["passwort_aendern", "fertig"]
 LOGIN_FENSTER = (5, 60)  # 5 Versuche je Minute
 
 
@@ -100,13 +105,23 @@ def begrenzen(schluessel: str, anzahl: int, sekunden: int) -> None:
 
 
 def naechster_schritt(sitz: AuthSitzung, benutzer: Benutzer) -> Schritt:
-    if sitz.totp_offen:
-        return "totp"
+    # Kein Zwei-Faktor-Schritt bei der Anmeldung; `sitz.totp_offen` (Spalte aus früheren Versionen) wird ignoriert.
     if benutzer.passwortwechsel_noetig:
         return "passwort_aendern"
-    if benutzer.ist_admin and not benutzer.totp_aktiv:
-        return "zwei_faktor_einrichten"
     return "fertig"
+
+
+def totp_pruefen_fuer(db: Session, benutzer: Benutzer, code: str, request: Request) -> None:
+    """Verlangt einen gültigen TOTP-Code des Benutzers (für das Anlegen neuer Benutzer), begrenzt und protokolliert."""
+    begrenzen(f"totp:{benutzer.id}", *LOGIN_FENSTER)
+    if not benutzer.totp_aktiv or not benutzer.totp_secret_enc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Zum Anlegen von Benutzern zuerst Zwei-Faktor einrichten (Konto & Sicherheit).")
+    geheimnis = s.totp_entschluesseln(benutzer.totp_secret_enc, benutzer.id)
+    if not s.totp_pruefen(geheimnis, code.replace(" ", "")):
+        audit(db, benutzer.id, "totp_fehlgeschlagen", request)
+        db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Zwei-Faktor-Code ungültig.")  # nicht 401: kein Abmelden
 
 
 def benutzer_antwort(benutzer: Benutzer) -> BenutzerAntwort:
@@ -193,7 +208,7 @@ def teil_angemeldet(request: Request, db: DB) -> tuple[AuthSitzung, Benutzer]:
 
 
 def angemeldet(request: Request, db: DB) -> Benutzer:
-    """Vollständig angemeldet: Zwei-Faktor bestätigt, Passwort gewechselt, Admin mit Zwei-Faktor."""
+    """Vollständig angemeldet: Passwort gewechselt (kein Zwei-Faktor-Schritt bei der Anmeldung)."""
     sitz, benutzer = teil_angemeldet(request, db)
     schritt = naechster_schritt(sitz, benutzer)
     if schritt != "fertig":
@@ -236,29 +251,11 @@ def login(daten: LoginDaten, request: Request, response: Response, db: DB) -> Si
     alt = request.cookies.get(einstellungen().cookie_name)
     if alt:
         db.execute(delete(AuthSitzung).where(AuthSitzung.id_hash == s.sha256(alt)))
-    sitz = sitzung_anlegen(db, benutzer, request, response, totp_offen=benutzer.totp_aktiv)
+    sitz = sitzung_anlegen(db, benutzer, request, response, totp_offen=False)
     audit(db, benutzer.id, "login", request)
     db.commit()
     return SitzungAntwort(benutzer=benutzer_antwort(benutzer), naechster_schritt=naechster_schritt(sitz, benutzer),
                           csrf=sitz.csrf)
-
-
-@router.post("/totp", response_model=SitzungAntwort)
-def totp_bestaetigen(daten: CodeDaten, request: Request, response: Response, db: DB, teil: Teil) -> SitzungAntwort:
-    sitz, benutzer = teil
-    begrenzen(f"totp:{benutzer.id}", *LOGIN_FENSTER)
-    if not sitz.totp_offen:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kein Zwei-Faktor-Schritt offen.")
-    geheimnis = s.totp_entschluesseln(benutzer.totp_secret_enc, benutzer.id) if benutzer.totp_secret_enc else None
-    if not geheimnis or not s.totp_pruefen(geheimnis, daten.code):
-        audit(db, benutzer.id, "totp_fehlgeschlagen", request)
-        db.commit()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Code ungültig.")
-    neu = sitzung_erneuern(db, sitz, benutzer, request, response)
-    audit(db, benutzer.id, "totp_ok", request)
-    db.commit()
-    return SitzungAntwort(benutzer=benutzer_antwort(benutzer), naechster_schritt=naechster_schritt(neu, benutzer),
-                          csrf=neu.csrf)
 
 
 @router.get("/me", response_model=SitzungAntwort)
@@ -291,8 +288,6 @@ def logout_alle(request: Request, response: Response, db: DB, teil: Teil) -> Ok:
 @router.post("/passwort", response_model=SitzungAntwort)
 def passwort_aendern(daten: PasswortDaten, request: Request, response: Response, db: DB, teil: Teil) -> SitzungAntwort:
     sitz, benutzer = teil
-    if sitz.totp_offen:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Zuerst den Zwei-Faktor-Code bestätigen.")
     begrenzen(f"passwort:{benutzer.id}", *LOGIN_FENSTER)
     if not s.passwort_pruefen(benutzer.passwort_hash, daten.alt):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Das bisherige Passwort stimmt nicht.")
@@ -313,9 +308,9 @@ def passwort_aendern(daten: PasswortDaten, request: Request, response: Response,
 
 @router.post("/totp/einrichten", response_model=TotpEinrichtung)
 def totp_einrichten(request: Request, db: DB, teil: Teil) -> TotpEinrichtung:
-    sitz, benutzer = teil
-    if sitz.totp_offen or benutzer.passwortwechsel_noetig:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Zuerst anmelden und Passwort ändern.")
+    _, benutzer = teil
+    if benutzer.passwortwechsel_noetig:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Zuerst das Passwort ändern.")
     if benutzer.totp_aktiv:
         raise HTTPException(status.HTTP_409_CONFLICT, "Zwei-Faktor ist bereits aktiv.")
     geheimnis = s.totp_neu()
@@ -326,25 +321,22 @@ def totp_einrichten(request: Request, db: DB, teil: Teil) -> TotpEinrichtung:
 
 
 @router.post("/totp/aktivieren", response_model=SitzungAntwort)
-def totp_aktivieren(daten: CodeDaten, request: Request, response: Response, db: DB, teil: Teil) -> SitzungAntwort:
+def totp_aktivieren(daten: CodeDaten, request: Request, db: DB, teil: Teil) -> SitzungAntwort:
     sitz, benutzer = teil
     begrenzen(f"totp:{benutzer.id}", *LOGIN_FENSTER)
-    if sitz.totp_offen or benutzer.passwortwechsel_noetig or benutzer.totp_aktiv or not benutzer.totp_secret_enc:
+    if benutzer.passwortwechsel_noetig or benutzer.totp_aktiv or not benutzer.totp_secret_enc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Keine Zwei-Faktor-Einrichtung offen.")
-    if not s.totp_pruefen(s.totp_entschluesseln(benutzer.totp_secret_enc, benutzer.id), daten.code):
+    if not s.totp_pruefen(s.totp_entschluesseln(benutzer.totp_secret_enc, benutzer.id), daten.code.replace(" ", "")):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Code ungültig. Uhrzeit des Geräts prüfen.")
     benutzer.totp_aktiv = True
-    neu = sitzung_erneuern(db, sitz, benutzer, request, response)
     audit(db, benutzer.id, "totp_aktiviert", request)
     db.commit()
-    return SitzungAntwort(benutzer=benutzer_antwort(benutzer), naechster_schritt=naechster_schritt(neu, benutzer),
-                          csrf=neu.csrf)
+    return SitzungAntwort(benutzer=benutzer_antwort(benutzer), naechster_schritt=naechster_schritt(sitz, benutzer),
+                          csrf=sitz.csrf)
 
 
 @router.post("/totp/deaktivieren", response_model=Ok)
 def totp_deaktivieren(daten: DeaktivierenDaten, request: Request, db: DB, benutzer: Angemeldet) -> Ok:
-    if benutzer.ist_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Administratoren brauchen Zwei-Faktor.")
     begrenzen(f"totp:{benutzer.id}", *LOGIN_FENSTER)
     geheimnis = s.totp_entschluesseln(benutzer.totp_secret_enc, benutzer.id) if benutzer.totp_secret_enc else ""
     if not s.passwort_pruefen(benutzer.passwort_hash, daten.passwort) or not s.totp_pruefen(geheimnis, daten.code):

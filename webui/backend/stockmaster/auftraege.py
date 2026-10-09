@@ -23,16 +23,17 @@ OFFEN = ("wartet", "laeuft")
 LOG_MAX = 256_000
 
 
-def admin_2fa(benutzer: Angemeldet) -> Benutzer:
-    """Schreibende Einrichtung und Läufe: nur Admins mit aktiver Zwei-Faktor-Anmeldung."""
+def admin_pflicht(benutzer: Angemeldet) -> Benutzer:
+    """Schreibende Einrichtung und Läufe: nur Administratoren (Rolle aus der Datenbank), CSRF über die Anmeldung.
+
+    Ein Zwei-Faktor-Code ist hier nicht mehr nötig (Umbau v2, Entscheidung 40); er wird nur beim Anlegen neuer
+    Benutzer verlangt. Kritische Aktionen verlangen weiter die Passwortbestätigung und schreiben einen Audit-Eintrag."""
     if not benutzer.ist_admin:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht gefunden.")
-    if not benutzer.totp_aktiv:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Nur mit aktiver Zwei-Faktor-Anmeldung.")
     return benutzer
 
 
-Admin2FA = Annotated[Benutzer, Depends(admin_2fa)]
+AdminPflicht = Annotated[Benutzer, Depends(admin_pflicht)]
 
 
 def log_pfad(auftrag_id: str):
@@ -259,7 +260,7 @@ def log(auftrag_id: str, db: DB, _benutzer: Angemeldet, ab: Annotated[int, Query
 
 
 @router.post("", status_code=201)
-def starten(daten: LaufStart, request: Request, db: DB, admin: Admin2FA) -> dict:
+def starten(daten: LaufStart, request: Request, db: DB, admin: AdminPflicht) -> dict:
     begrenzen(f"lauf:{admin.id}", 10, 3600)
     if not daten.bestaetigt:
         raise HTTPException(422, "Start bitte ausdrücklich bestätigen.")
@@ -277,7 +278,7 @@ def starten(daten: LaufStart, request: Request, db: DB, admin: Admin2FA) -> dict
 
 
 @router.post("/{auftrag_id}/abbrechen")
-def abbrechen(auftrag_id: str, request: Request, db: DB, admin: Admin2FA) -> dict:
+def abbrechen(auftrag_id: str, request: Request, db: DB, admin: AdminPflicht) -> dict:
     auftrag = db.get(Auftrag, auftrag_id)
     if auftrag is None or auftrag.art not in LAUFARTEN:
         raise HTTPException(404, "Lauf nicht gefunden.")

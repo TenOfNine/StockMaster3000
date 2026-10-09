@@ -44,31 +44,33 @@ def test_passwortwechsel_pflicht(client):
     assert client.get("/api/spiel/ueberblick").status_code == 200
 
 
-def test_admin_muss_zwei_faktor_einrichten(client):
+def test_anmeldung_nur_mit_passwort_auch_mit_vorhandenem_zwei_faktor(client):
+    geheimnis = pyotp.random_base32()
+    benutzer_anlegen("t@example.org", NUTZER_PW, totp=geheimnis)
+    antwort = client.post("/api/auth/login", json={"email": "t@example.org", "passwort": NUTZER_PW})
+    assert antwort.status_code == 200 and antwort.json()["naechster_schritt"] == "fertig"
+    csrf = antwort.json()["csrf"]
+    assert client.get("/api/spiel/ueberblick").status_code == 200
+    # Der Schritt „Code bei der Anmeldung“ ist abgeschafft; der Code bleibt gespeichert und gültig.
+    assert client.post("/api/auth/totp", json={"code": pyotp.TOTP(geheimnis).now()},
+                       headers={"X-CSRF-Token": csrf}).status_code in (404, 405)
+    assert client.get("/api/auth/me").json()["benutzer"]["totp_aktiv"] is True
+
+
+def test_admin_ohne_zwei_faktor_kommt_hinein_und_richtet_es_im_konto_ein(client):
     benutzer_anlegen("admin@example.org", ADMIN_PW, admin=True)
-    assert anmelden(client, "admin@example.org", ADMIN_PW) == "zwei_faktor_einrichten"
-    assert client.get("/api/admin/benutzer").status_code == 403
+    assert anmelden(client, "admin@example.org", ADMIN_PW) == "fertig"  # keine Pflicht zur Einrichtung mehr
+    assert client.get("/api/admin/benutzer").status_code == 200
+    assert client.get("/api/einrichtung").status_code == 200
     einrichtung = client.post("/api/auth/totp/einrichten").json()
     assert einrichtung["uri"].startswith("otpauth://totp/StockMaster%203000")
     assert client.post("/api/auth/totp/aktivieren", json={"code": "000000"}).status_code == 400
     antwort = client.post("/api/auth/totp/aktivieren", json={"code": pyotp.TOTP(einrichtung["geheimnis"]).now()})
-    assert antwort.status_code == 200 and antwort.json()["naechster_schritt"] == "fertig"
-    client.headers["X-CSRF-Token"] = antwort.json()["csrf"]
-    assert client.get("/api/admin/benutzer").status_code == 200
-
-
-def test_zwei_faktor_bei_der_anmeldung(client):
-    geheimnis = pyotp.random_base32()
-    benutzer_anlegen("t@example.org", NUTZER_PW, totp=geheimnis)
-    antwort = client.post("/api/auth/login", json={"email": "t@example.org", "passwort": NUTZER_PW})
-    assert antwort.json()["naechster_schritt"] == "totp"
-    csrf = antwort.json()["csrf"]
-    assert client.get("/api/spiel/ueberblick").status_code == 403
-    assert client.post("/api/auth/totp", json={"code": "123456"}, headers={"X-CSRF-Token": csrf}).status_code == 401
-    vorher = client.cookies.get("sm_sid")
-    antwort = client.post("/api/auth/totp", json={"code": pyotp.TOTP(geheimnis).now()}, headers={"X-CSRF-Token": csrf})
-    assert antwort.status_code == 200
-    assert client.cookies.get("sm_sid") != vorher  # Rotation der Sitzungs-ID
+    assert antwort.status_code == 200 and antwort.json()["benutzer"]["totp_aktiv"] is True
+    # Auch ein Administrator darf Zwei-Faktor wieder abschalten (mit Passwort und Code).
+    assert client.post("/api/auth/totp/deaktivieren", json={"passwort": ADMIN_PW,
+                                                            "code": pyotp.TOTP(einrichtung["geheimnis"]).now()}
+                       ).status_code == 200
 
 
 def test_csrf_und_herkunft(nutzer):

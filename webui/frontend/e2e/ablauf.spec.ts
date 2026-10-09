@@ -16,19 +16,6 @@ function totp(geheimnis: string): string {
   return code.toString().padStart(6, "0");
 }
 
-let letzterCode = "";
-
-/** Ein Zwei-Faktor-Code gilt nur einmal: Folgt ein Test im selben 30-Sekunden-Fenster, auf das nächste warten. */
-async function frischerCode(page: Page): Promise<string> {
-  let code = totp("JBSWY3DPEHPK3PXP");
-  if (code === letzterCode) {
-    await page.waitForTimeout(30_500 - (Date.now() % 30_000));
-    code = totp("JBSWY3DPEHPK3PXP");
-  }
-  letzterCode = code;
-  return code;
-}
-
 async function anmelden(page: Page, email: string, passwort: string) {
   await page.goto("/");
   await page.getByLabel("E-Mail").fill(email);
@@ -90,8 +77,6 @@ test("Benutzer sieht Cockpit, Portfolio, Trade-Akte und Prüfung", async ({ page
 
 test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets bleiben verborgen", async ({ page }) => {
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(await frischerCode(page));
-  await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Einrichtung noch nicht abgeschlossen")).toBeVisible();
   await page.getByRole("link", { name: /Claude verbinden/ }).last().click();
   await expect(page.getByRole("heading", { name: "Einrichtung", exact: true })).toBeVisible();
@@ -133,10 +118,8 @@ test("Admin richtet ein: Hinweis im Cockpit führt zur Einrichtung, Secrets blei
   await expect(page.getByRole("textbox")).toHaveCount(0);
 });
 
-test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({ page, browser }) => {
+test("Admin meldet sich nur mit Passwort an und legt einen Benutzer mit Zwei-Faktor-Code an", async ({ page, browser }) => {
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(await frischerCode(page));
-  await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Wertentwicklung")).toBeVisible();
 
   await page.goto("/admin");
@@ -144,6 +127,11 @@ test("Admin meldet sich mit Zwei-Faktor an und legt einen Benutzer an", async ({
   await page.getByLabel("E-Mail").fill("neu@e2e.local");
   await page.getByLabel("Anzeigename").fill("Neu");
   await page.getByLabel("Dein Passwort zur Bestätigung").fill("Admin-Passwort-2026!");
+  // Ohne Code (oder mit falschem Code) wird nicht angelegt; die Anmeldung selbst brauchte keinen.
+  await page.getByLabel("Zwei-Faktor-Code").fill("000000");
+  await page.getByRole("dialog").getByRole("button", { name: "Benutzer anlegen" }).click();
+  await expect(page.getByText("Zwei-Faktor-Code ungültig.")).toBeVisible();
+  await page.getByLabel("Zwei-Faktor-Code").fill(totp("JBSWY3DPEHPK3PXP"));
   await page.getByRole("dialog").getByRole("button", { name: "Benutzer anlegen" }).click();
   const einmal = (await page.locator("code").first().textContent())!.trim();
   expect(einmal).toMatch(/^[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}){3}$/);
@@ -164,8 +152,6 @@ test("Lauf-Seite zeigt Läufe und Zeitplan und verträgt jede Form von Daten", a
   const fehler: string[] = [];
   page.on("pageerror", (e) => fehler.push(e.message));
   await anmelden(page, "admin@e2e.local", "Admin-Passwort-2026!");
-  await page.getByLabel("Code").fill(await frischerCode(page));
-  await page.getByRole("button", { name: "Bestätigen" }).click();
   await expect(page.getByText("Wertentwicklung")).toBeVisible();
   // Wie im Alltag: erst Einrichtung (füllt den Zwischenspeicher), dann per Navigation zu den Läufen.
   await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Claude-Läufe" }).click();

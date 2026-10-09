@@ -68,7 +68,7 @@ python -m stockmaster admin-anlegen --email du@heimnetz.local --anzeigename "Adm
 ```
 
 Das Einmalpasswort steht nur in dieser Ausgabe; der Befehl funktioniert genau einmal. Danach unter
-`https://<SM_HOSTNAME>` anmelden; Passwortwechsel und Zwei-Faktor sind Pflicht. (Ein Erststart-Assistent
+`https://<SM_HOSTNAME>` anmelden; der Passwortwechsel ist Pflicht. Zwei-Faktor (Konto & Sicherheit) braucht nur, wer neue Benutzer anlegt. (Ein Erststart-Assistent
 über Variablen ist nicht nötig: Der erste Admin wird nicht über Umgebungsvariablen angelegt.)
 
 ## 4. In der App einrichten
