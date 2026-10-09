@@ -370,6 +370,24 @@ def tageswert(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten) -> dict:
     }
 
 
+def abgleich_automatisch(profil: str, tag: date, daten: Tagesdaten, warnungen: list) -> None:
+    """Abgleich: Liegt der Kurs einer automatischen Ausführung des Tages in der Tageskerze (kleine Toleranz)?
+
+    Die Nachbuchung ändert nie eine vorhandene Buchung (Nur-Anhängen); Abweichungen werden gemeldet.
+    """
+    toleranz = Decimal("0.002")
+    for zeile in g.trades_lesen(profil):
+        if not g.AUTOMATISCH_MUSTER.match(zeile["bemerkung"] or "") or zeile["zeit"][:10] != tag.isoformat() \
+                or not zeile["kurs_basiswert"]:
+            continue
+        kerze = daten.kerze(zeile["basiswert"], tag)
+        kurs = D(zeile["kurs_basiswert"])
+        if kerze is not None and not (kerze.low * (1 - toleranz) <= kurs <= kerze.high * (1 + toleranz)):
+            warnungen.append(f"{profil} {zeile['trade_id']}: Kurs {kurs} der automatischen Ausführung liegt "
+                             f"außerhalb der Tageskerze {zeile['basiswert']} {tag} (Tief {kerze.low}, Hoch "
+                             f"{kerze.high}); Abgleich prüfen.")
+
+
 def tag_verarbeiten(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten, nav_zeilen: list, warnungen: list) -> None:
     portfolio = lauf.portfolio
     tickers = {p["basiswert"] for p in portfolio["positionen"]} | {o["basiswert"] for o in portfolio["offene_orders"]}
@@ -382,6 +400,7 @@ def tag_verarbeiten(lauf: g.Buchungslauf, tag: date, daten: Tagesdaten, nav_zeil
             split_buchen(lauf, ticker, kerze.split, tag)
     orders_verarbeiten(lauf, tag, daten)
     positionen_pruefen(lauf, tag, daten)
+    abgleich_automatisch(portfolio["profil"], tag, daten, warnungen)
     tagesabschluss(lauf, tag, daten)
     if daten.kerze(g.projekt()["benchmark_ticker"], tag) is not None:
         nav_zeilen.append(tageswert(lauf, tag, daten))
@@ -404,6 +423,7 @@ def nav_schreiben(profil: str, neue: list[dict]) -> None:
     g.csv_schreiben(nav_pfad(profil), g.NAV_FELDER, [zeilen[d] for d in sorted(zeilen)])
 
 
+@g.mit_buchungssperre
 def nachbuchen_profil(profil: str) -> list[str]:
     portfolio = g.portfolio_laden(profil)
     if portfolio["status"] != "aktiv":

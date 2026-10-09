@@ -32,7 +32,7 @@ import kurse
 import limits
 from gemeinsam import D
 
-NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits", "news")
+NUR_ANHAENGEN = ("trades", "journal", "data/kurse", "data/limits", "data/ausfuehrung", "news")
 ORDER_AKTIONEN = ("kauf", "verkauf", "vormerkung", "aenderung", "storno")
 
 
@@ -268,6 +268,46 @@ def pruefe_kurse(profil: str) -> list[Befund]:
                                         f"(O {kerze.open} H {kerze.high} L {kerze.low} C {kerze.close})."))
         if fx is not None and not _fx_belegt(fx, tag, art == "open", historien):
             befunde.append(fehler(name, f"{ort}: Devisenkurs {fx} am {tag} nicht in data/historie/ belegt."))
+    return befunde
+
+
+# --------------------------------------------------------------------------
+# Automatische Ausführung (regeln.md 6, tools/ausfuehrung.py)
+
+ENDBUCHUNGEN = ("kauf", "verkauf", "verfall", "storno")
+
+
+def pruefe_ausfuehrung(profil: str) -> list[Befund]:
+    """Automatische Buchungen: bekannter Auslöser, protokollierter Kurs, innerhalb der Handelszeit; keine
+    doppelte Endbuchung je Order; keine Ausführung vor der Vormerkung (kein Backdating)."""
+    name = "Ausführung"
+    befunde = []
+    zeilen = g.trades_lesen(profil)
+    vormerkung = {z["order_id"]: g.zeit_lesen(z["zeit"]) for z in zeilen
+                  if z["aktion"] == "vormerkung" and z["order_id"]}
+    endbuchungen: dict[str, int] = {}
+    for zeile in zeilen:
+        ort = f"{profil} {zeile['trade_id']}"
+        order_id = zeile["order_id"]
+        if order_id and zeile["aktion"] in ENDBUCHUNGEN:
+            endbuchungen[order_id] = endbuchungen.get(order_id, 0) + 1
+            if zeile["aktion"] in ("kauf", "verkauf") and order_id in vormerkung \
+                    and g.zeit_lesen(zeile["zeit"]) < vormerkung[order_id]:
+                befunde.append(fehler(name, f"{ort}: Ausführung vor der Vormerkung der Order {order_id} (Backdating)."))
+        treffer = g.AUTOMATISCH_MUSTER.match(zeile["bemerkung"] or "")
+        if not treffer:
+            continue
+        if treffer.group(1) not in g.AUSLOESER:
+            befunde.append(fehler(name, f"{ort}: unbekannter Auslöser '{treffer.group(1)}' der automatischen Buchung."))
+        if zeile["aktion"] in ("kauf", "verkauf", "knockout") and zeile["kursquelle"] != "kurse":
+            befunde.append(fehler(name, f"{ort}: automatische Buchung nur zu protokollierten Kursen "
+                                        f"(Quelle '{zeile['kursquelle']}')."))
+        if not kurse.markt_offen(zeile["basiswert"], g.zeit_lesen(zeile["zeit"])):
+            befunde.append(fehler(name, f"{ort}: automatische Buchung außerhalb der Handelszeit von "
+                                        f"{zeile['basiswert']} ({zeile['zeit']})."))
+    for order_id, anzahl in sorted(endbuchungen.items()):
+        if anzahl > 1:
+            befunde.append(fehler(name, f"{profil}: Order {order_id} hat {anzahl} Endbuchungen (doppelt gebucht?)."))
     return befunde
 
 
@@ -557,6 +597,7 @@ def alle_pruefungen(historie: bool = False) -> list[Befund]:
         befunde += pruefe_nachrechnung(profil)
         befunde += pruefe_journal(profil, eintraege)
         befunde += pruefe_kurse(profil)
+        befunde += pruefe_ausfuehrung(profil)
         befunde += pruefe_limits(profil)
     return befunde
 

@@ -90,7 +90,7 @@ def position_finden(portfolio: dict, position_id: str) -> dict:
 
 
 def kauf_ausfuehren(lauf: g.Buchungslauf, order: dict, plan: limits.Kaufplan, markt: limits.Markt,
-                    zeit: datetime, kursquelle: str, kurs_zeit: str, kennzahlen: dict) -> dict:
+                    zeit: datetime, kursquelle: str, kurs_zeit: str, kennzahlen: dict, zusatz: str = "") -> dict:
     portfolio = lauf.portfolio
     satz = g.spread(plan.typ)
     mitte_eur = markt.in_eur(plan.wert_je_stueck, plan.basiswert)
@@ -127,12 +127,17 @@ def kauf_ausfuehren(lauf: g.Buchungslauf, order: dict, plan: limits.Kaufplan, ma
         journal_id=order["journal_id"], grund="order",
         devisenkurs=markt.eurusd if kurse.waehrung(plan.basiswert) != "EUR" else None,
         stop=plan.stop, kursziel=plan.kursziel,
-        bemerkung=_parameter_text(plan))
+        bemerkung=_bemerkung(zusatz, _parameter_text(plan)))
     lauf.limits(zeile["trade_id"], zeit, kennzahlen, limits.grenzen(portfolio["profil"]))
     lauf.meldungen.append(
         f"{portfolio['profil']}: Kauf {g.text(stueck)} {plan.ticker} zu {g.param(kaufkurs)} EUR "
         f"(Basiswert {plan.kurs}), Betrag {kurswert} EUR + {gebuehr} EUR Gebühr -> {position_id}")
     return position
+
+
+def _bemerkung(zusatz: str, text: str) -> str:
+    """Bemerkung einer Buchung; `zusatz` ist bei automatischer Ausführung die Kennzeichnung samt Auslöser."""
+    return f"{zusatz}; {text}" if zusatz and text else (zusatz or text)
 
 
 def _parameter_text(plan: limits.Kaufplan) -> str:
@@ -145,14 +150,14 @@ def _parameter_text(plan: limits.Kaufplan) -> str:
 
 def verkauf_ausfuehren(lauf: g.Buchungslauf, position: dict, anteil: Decimal, kurs, eurusd, zeit: datetime,
                        datum: date, kursquelle: str, kurs_zeit: str, grund: str, order_id: str = "",
-                       journal_id: str | None = None) -> Decimal:
+                       journal_id: str | None = None, zusatz: str = "") -> Decimal:
     """Verkauft (Teil-)Position zum Basiswertkurs; gibt den Nettoerlös zurück."""
     portfolio = lauf.portfolio
     kurs = D(kurs)
     wert = produkte.wert_je_stueck(position, kurs, datum)
     if wert <= 0:
         return wertlos_ausbuchen(lauf, position, kurs, zeit, kursquelle, kurs_zeit,
-                                 "Wert null beim Verkauf", eurusd)
+                                 _bemerkung(zusatz, "Wert null beim Verkauf"), eurusd)
     waehrung = kurse.waehrung(position["basiswert"])
     mitte_eur = kurse.in_eur(wert, waehrung, eurusd)
     satz = g.spread(position["typ"])
@@ -176,7 +181,7 @@ def verkauf_ausfuehren(lauf: g.Buchungslauf, position: dict, anteil: Decimal, ku
         spread_eur=spread_eur, gebuehr_eur=gebuehr, betrag_eur=erloes - gebuehr, kursquelle=kursquelle,
         kurs_zeit=kurs_zeit, journal_id=journal_id or position["journal_id"], grund=grund,
         devisenkurs=eurusd if waehrung != "EUR" else None,
-        bemerkung="Teilverkauf" if rest > 0 else "")
+        bemerkung=_bemerkung(zusatz, "Teilverkauf" if rest > 0 else ""))
     lauf.meldungen.append(f"{portfolio['profil']}: Verkauf ({grund}) {g.text(stueck)} {position['ticker']} zu "
                           f"{g.param(verkaufskurs)} EUR (Basiswert {kurs}), netto {erloes - gebuehr} EUR")
     return erloes - gebuehr
@@ -218,6 +223,7 @@ def order_vormerken(lauf: g.Buchungslauf, order: dict, kurs_info: kurse.Kurs | N
 # Befehle
 
 
+@g.mit_buchungssperre
 def kaufen(args) -> list[str]:
     portfolio = portfolio_pruefen(args.profil)
     journal_pruefen(args.journal_id, args.profil, eindeutig=True)
@@ -267,6 +273,7 @@ def kaufen(args) -> list[str]:
     return lauf.meldungen
 
 
+@g.mit_buchungssperre
 def verkaufen(args) -> list[str]:
     portfolio = portfolio_pruefen(args.profil)
     journal_pruefen(args.journal_id, args.profil, eindeutig=True)
@@ -301,6 +308,7 @@ def verkaufen(args) -> list[str]:
     return lauf.meldungen
 
 
+@g.mit_buchungssperre
 def aendern(args) -> list[str]:
     portfolio = portfolio_pruefen(args.profil)
     journal_pruefen(args.journal_id, args.profil, eindeutig=False)
@@ -334,6 +342,7 @@ def aendern(args) -> list[str]:
     return lauf.meldungen
 
 
+@g.mit_buchungssperre
 def storno(args) -> list[str]:
     portfolio = portfolio_pruefen(args.profil)
     journal_pruefen(args.journal_id, args.profil, eindeutig=False)

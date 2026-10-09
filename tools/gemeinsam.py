@@ -18,6 +18,7 @@ import os
 import re
 import tempfile
 import threading
+import time as time_module
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
@@ -45,6 +46,18 @@ TRADE_FELDER = [
     # Ergänzungen gegenüber AUFTRAG_PHASE1.md (siehe STATUS.md, Entscheidungen):
     "devisenkurs", "stop", "kursziel", "bemerkung",
 ]
+
+# Automatische Ausführung (ausfuehrung.py): Kennzeichnung in der Bemerkung der Trade-Zeile.
+AUTOMATISCH_MUSTER = re.compile(r"^automatisch \(Auslöser: ([^)]+)\)")
+AUSLOESER = ("Eröffnung", "Markt", "Limit", "Stop", "Kursziel", "Knock-out", "Daueranweisung")
+
+
+def automatisch_text(ausloeser: str, detail: str = "") -> str:
+    """Bemerkung einer automatisch ausgeführten Buchung: `automatisch (Auslöser: Stop): Kurs 98 <= Stop 99`."""
+    if ausloeser not in AUSLOESER:
+        raise Fehler(f"Unbekannter Auslöser '{ausloeser}'.")
+    return f"automatisch (Auslöser: {ausloeser})" + (f": {detail}" if detail else "")
+
 
 NAV_FELDER = [
     "datum", "cash", "positionswert", "portfoliowert", "hoechststand",
@@ -217,6 +230,75 @@ def schreibsperre():
                 _sperre_tiefe = 0
                 if fcntl is not None:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+class BuchungssperreBelegt(Fehler):
+    """Die Buchungssperre ist belegt und wurde nicht in der Wartezeit frei."""
+
+
+_buchung_lokal = threading.RLock()
+_buchung_tiefe = 0
+BUCHUNGSSPERRE_WARTEZEIT = 120.0
+
+
+@contextmanager
+def buchungssperre(wartezeit: float | None = None):
+    """Kurze, atomare Sperre über einen ganzen Buchungsvorgang (Laden, Prüfen, Schreiben).
+
+    Anders als die Schreibsperre (nur ein einzelner Schreibvorgang) und die Session-Sperre (session.lock, eine
+    Session gegen die andere) schützt sie das Lesen-Entscheiden-Schreiben eines Portfolios: buchen.py, die
+    automatische Ausführung (ausfuehrung.py) und die Nachbuchung (bewertung.py) laufen nacheinander, nie
+    gleichzeitig, und laden das Portfolio erst innerhalb der Sperre. Prozessübergreifend über flock auf
+    .buchungssperre, innerhalb eines Prozesses wiedereintrittsfähig. Ist sie nach `wartezeit` Sekunden nicht
+    frei, bricht die Funktion mit BuchungssperreBelegt ab (der Aufrufer versucht es später erneut).
+    """
+    global _buchung_tiefe
+    frist = BUCHUNGSSPERRE_WARTEZEIT if wartezeit is None else wartezeit
+    if not _buchung_lokal.acquire(timeout=frist):
+        raise BuchungssperreBelegt(f"Buchungssperre nach {frist:g} Sekunden nicht frei (anderer Thread).")
+    try:
+        if _buchung_tiefe:
+            _buchung_tiefe += 1
+            try:
+                yield
+            finally:
+                _buchung_tiefe -= 1
+            return
+        datei = pfad(".buchungssperre")
+        datei.parent.mkdir(parents=True, exist_ok=True)
+        with open(datei, "a", encoding="utf-8") as handle:
+            if fcntl is not None:
+                ende = time_module.monotonic() + frist
+                while True:
+                    try:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as exc:
+                        if time_module.monotonic() >= ende:
+                            raise BuchungssperreBelegt(
+                                f"Buchungssperre nach {frist:g} Sekunden nicht frei (anderer Prozess bucht gerade).") from exc
+                        time_module.sleep(0.05)
+            _buchung_tiefe = 1
+            try:
+                yield
+            finally:
+                _buchung_tiefe = 0
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        _buchung_lokal.release()
+
+
+def mit_buchungssperre(funktion):
+    """Decorator: die ganze Funktion läuft unter der Buchungssperre."""
+    import functools
+
+    @functools.wraps(funktion)
+    def gesperrt(*args, **kwargs):
+        with buchungssperre():
+            return funktion(*args, **kwargs)
+
+    return gesperrt
 
 
 def text_anhaengen(datei: Path, neu: str) -> None:

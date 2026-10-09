@@ -117,8 +117,19 @@ prüfbar. Werte in Fremdwährung werden über EURUSD=X in EUR umgerechnet.
   der NYSE (09:30 bis 16:00 New Yorker Zeit); Gold und Brent
   Montag bis Freitag 08:00 bis 22:00.
 - Market-Order während der Handelszeit: Ausführung zum aktuellen
-  protokollierten Kurs. Außerhalb der Handelszeit: Ausführung zum
-  Eröffnungskurs des nächsten Handelstags.
+  protokollierten Kurs. Außerhalb der Handelszeit: Vormerkung und
+  Ausführung bei der nächsten Gelegenheit, ohne dass ein Claude-Lauf
+  nötig ist: Der Hintergrunddienst führt sie zum ersten protokollierten
+  Kurs nach der Eröffnung aus (Kurszeit der Quelle nach Eröffnung und
+  höchstens 30 Minuten danach). Liegt kein solcher Kurs vor, führt die
+  Nachbuchung (Abschnitt 6) sie zum Eröffnungskurs des Handelstags aus.
+- Ausführung ohne Claude-Lauf: tools/ausfuehrung.py läuft im Takt von
+  5 Minuten bei offenem Markt sowie kurz nach Öffnung und kurz vor
+  Schluss jeder Börse (Zeitzone, Sommerzeit, Feiertage und verkürzte
+  Handelstage laut config/universum.json). Die Order gilt erst ab ihrer
+  Erfassung (Grundsatz 3). Ohne verlässlichen Kurs (Grundsatz 4, Kursalter
+  höchstens 30 Minuten) wird nicht ausgeführt; der nächste Durchlauf
+  versucht es erneut.
 - Spread: Aktien und ETFs 0,10 %, Zertifikate 0,20 % (je zur Hälfte auf
   Kauf und Verkauf).
 - Gebühr: 1 EUR je ausgeführter Order.
@@ -129,8 +140,31 @@ prüfbar. Werte in Fremdwährung werden über EURUSD=X in EUR umgerechnet.
 Orderarten: Market, Limit, Stop-Loss, Kursziel (Take-Profit). Stops und
 Kursziele gehören zu einer Position.
 
-Beim Session-Start werden alle Handelstage seit der letzten Verarbeitung
-in dieser Reihenfolge nachgebucht:
+**Tagsüber (Ausführung ohne Claude-Lauf).** Je Durchlauf von
+tools/ausfuehrung.py, jeweils zum protokollierten Kurs des Durchlaufs:
+1. Vorgemerkte Market-Orders (Abschnitt 5), Limit-Orders bei Kurs auf oder
+   besser als das Limit; älteste Order zuerst.
+2. Offene Positionen: Knock-out (Kurs auf oder jenseits der Barriere) vor
+   Stop vor Kursziel. Ein Stop wird so nie besser als der Stop
+   ausgeführt, ein Kursziel nie schlechter als das Kursziel. Stop und
+   Kursziel einer Position schließen sich aus (wer zuerst auslöst, schließt
+   die Position).
+Vor jeder Ausführung prüft der Code die Limits erneut (Verstoß: die Order
+verfällt mit Vermerk). Jede Buchung trägt die ursprüngliche Journal-ID und
+in der Bemerkung "automatisch (Auslöser: ...)". Ein ganzer Buchungsvorgang
+läuft unter der Buchungssperre (.buchungssperre, unabhängig von der
+Session-Sperre; auch buchen.py und die Nachbuchung nehmen sie), und eine
+Order wird höchstens einmal ausgeführt. Solange Tage der Nachbuchung
+ausstehen, führt der Hintergrunddienst nicht aus, damit die Reihenfolge der
+Tage stimmt.
+
+**Nachbuchung als Abgleich.** Beim Session-Start und nachts um 00:30 Uhr
+werden alle Handelstage seit der letzten Verarbeitung in dieser
+Reihenfolge nachgebucht (nur, was kein Durchlauf erfasst hat; vorhandene
+Buchungen ändert sie nie). Weichen die Tageskerzen von einer automatischen
+Ausführung ab (Kurs außerhalb von Tageshoch und -tief), meldet sie das.
+Zwischen zwei Durchläufen berührte Barrieren, Stops und Kursziele holt sie
+mit der ungünstigeren Annahme nach:
 1. Vorgemerkte Market-Orders zum Eröffnungskurs ausführen (Limits werden
    erneut geprüft; bei Verstoß verfällt die Order mit Vermerk).
 2. Limit-Orders: Liegt die Eröffnung bereits jenseits des Limits, zum
@@ -294,4 +328,6 @@ Auftraggeber; die Historie bleibt erhalten.
   nie übersprungen, der erste Trading-Lauf startet das Spiel (Abschnitte 2
   und 12); Handeln hat Vorrang vor Cash mit enger Definition des Verzichts
   und umgekehrter Beweislast (Abschnitte 10 und 12; ersetzt "Kapitalerhalt
-  vor Rendite" und "Nichtstun ist gültig").
+  vor Rendite" und "Nichtstun ist gültig"); Ausführung vorgemerkter Orders,
+  Limits, Stops, Kursziele und Barrieren ohne Claude-Lauf durch den
+  Hintergrunddienst, Nachbuchung als Abgleich (Abschnitte 5 und 6).

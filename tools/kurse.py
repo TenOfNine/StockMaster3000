@@ -398,6 +398,29 @@ def markt_offen(ticker: str, zeitpunkt: datetime | None = None) -> bool:
     return oeffnung(ticker, lokal.date()) <= zeitpunkt < schluss(ticker, lokal.date())
 
 
+def boersentag(ticker: str, zeitpunkt: datetime | None = None) -> date:
+    """Kalendertag an der Börse des Tickers (Ortszeit der Börse) zum Zeitpunkt."""
+    zone = ZoneInfo(boerse_von(ticker)[1]["zeitzone"])
+    return (zeitpunkt or g.jetzt()).astimezone(zone).date()
+
+
+def boersen_fenster(name: str, datum: date) -> tuple[datetime, datetime] | None:
+    """Handelsfenster (Eröffnung, Schluss; deutsche Zeit) der Börse `name` am Börsentag `datum`, sonst None.
+
+    Berücksichtigt Zeitzone samt Sommerzeitumstellung, Feiertage und verkürzte Handelstage der Börse.
+    """
+    boerse = universum()["boersen"][name]
+    if datum.weekday() not in boerse["handelstage"] or datum.isoformat() in boerse["feiertage"]:
+        return None
+    uhr = boerse.get("fruehschluss", {}).get(datum.isoformat(), boerse["schluss"])
+    return (_boersenzeit(boerse, datum, boerse["oeffnung"]), _boersenzeit(boerse, datum, uhr))
+
+
+def handelsboersen() -> list[str]:
+    """Börsen mit echten Handelszeiten (ohne Devisen, die praktisch durchgehend gehandelt werden)."""
+    return [name for name in universum()["boersen"] if name != "devisen"]
+
+
 def feiertage_gepflegt(jahr: int) -> list[str]:
     """Börsen mit Feiertagspflicht, für die das Jahr fehlt."""
     fehlend = []
