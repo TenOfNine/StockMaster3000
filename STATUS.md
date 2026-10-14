@@ -214,6 +214,55 @@ Inventur je Punkt (alle betroffenen Stellen, Stand vor der Umsetzung):
 6. **Regeln.** regeln.md Abschnitte 2, 5, 6, 7, 9, 11, 12, 13, 14; `config/profile.json`; Prüfung
    `pruefe_config_regeln` gleicht Abschnitt 7 mit `config/profile.json` ab (liest die Profile aus der Tabelle).
 
+## Strategie-Labor (Auftrag vom 2026-10-14)
+
+Auftrag der Auftraggeber: Strategien statistisch ehrlich und risikoadjustiert vergleichbar machen, ohne die
+Integrität zu lockern (Prüfspur, Nur-Anhängen, "Rechnen macht Code, Entscheiden macht Claude"). Entwicklungsmodus, es
+wird nicht gehandelt. **regeln.md bleibt unverändert**; alles, was eine Regeländerung bräuchte (L7), steht nur als
+Auslegungsfrage mit Formulierungsvorschlag unten. Neue Pflichten gelten erst ab einem Stichtag in
+`config/projekt.json` (`prognosen.pflicht_ab`, `schattenbuch.beginn`, beide 2026-11-02), nichts wirkt zurück. Keine neuen
+Abhängigkeiten. Je größerem Paket ein Pull Request von `main`.
+
+- [x] **L1 Strukturierte Prognosen und Kalibrierung.** `tools/prognosen.py` (Zeile "Prognose" im Journal-Eintrag,
+  Brier-Score, Kalibrierung, Richtungstrefferquote, Fehler des erwarteten Kurses, je Profil und gesamt;
+  `data/prognosen.json`, Abschnitt "Prognosegüte" in ranking.md, Karte auf der Ranking-Seite), Warnungen in
+  `pruefe.py` (nie Fehler), Hintergrunddienst wertet täglich ab 23:15 Uhr mit Netz aus. Gemeinsame Lesehilfen in
+  `tools/zeitreihen.py`. Tests: `tests/test_prognosen.py`.
+- [x] **L2 Schattenbuch.** `tools/schattenbuch.py` (Zeile "Verworfen" im Session-Eintrag, protokollierter Kurs zum
+  Eintragszeitpunkt, Rendite nach 5/20/60 Handelstagen netto nach Kosten, Vergleich mit gekauften Werten;
+  `data/schattenbuch.json`, Abschnitt in ranking.md, Karte auf der Ranking-Seite). Bucht nie. Tests:
+  `tests/test_schattenbuch.py`.
+- [x] **L3 Statistik ehrlich machen.** `tools/statistik.py`: Block-Bootstrap-Intervalle (95 %, feste Zufallszahlen) für
+  Rendite p. a., Sharpe, Überrendite gegen die Benchmark des Profils, Trefferquote, Alpha/Beta gegen MSCI World, Information
+  Ratio, Sortino, Calmar; Marktphasen (Trend über/unter 200-Tage-Linie, Schwankung hoch/niedrig); `data/statistik.json`,
+  Abschnitt "Statistik mit Unsicherheit" in ranking.md (Rangfolge nach Information Ratio), Karte auf der Ranking-Seite,
+  Zeile mit Intervall in den Cockpit-Karten. Tests: `tests/test_statistik.py` (Beta 2 wird erkannt, reines Rauschen ohne
+  signifikantes Alpha, Determinismus, handgerechnete Kennzahlen).
+- [x] **L4 Backtest-Engine (Strategie-Labor).** Paket `tools/labor/` (`daten`, `engine`, `strategien`, `bericht`) und
+  Aufruf `python tools/backtest.py`. Wiedergabe auf Tagesdaten mit den Kosten des Spiels (aus `buchen.py` ausgelagerte
+  reine Rechnung `kauf_rechnung`/`verkauf_rechnung`, `produkte.py` für Knock-outs, `config/kosten.json`), feste
+  Ausführungsregeln gegen Look-ahead, Strategien Buy & Hold, 60/40 mit Rebalancing, Trendfolge (200 Tage), 12-1-Momentum,
+  Volatilitätsziel, Overnight; In-/Out-of-Sample-Trennung, Walk-forward, Deflated Sharpe mit Protokoll aller Varianten
+  (`labor/versuche.jsonl`), Berichte `labor/<strategie>_<datum>.json/.md`, Seite "Strategie-Labor" in der Web-UI, Laufart
+  "Strategie-Labor (ohne Orders)" in `config/claude.json`, täglicher Datenabruf im Hintergrunddienst
+  (`config/labor.json`). Tests: `tests/test_labor.py` (handgerechnete Kosten, Rebalancing, Knock-out, Overnight,
+  Look-ahead-Prüfung mit Gegenprobe durch eine betrügende Strategie).
+- [x] **L5 Kontrollportfolios** (vorbereitet, **nicht aktiviert**). `tools/kontrolle.py` mit den Typen passiv
+  (Benchmark kaufen und halten unter echten Kosten), Zufall (Kauffrequenz, Haltedauer und Positionsgröße eines
+  Claude-Portfolios, Zufallswerte aus Code mit protokolliertem Seed, gleiche Kandidatenliste wie der Screener) und
+  Labor (eine Strategie aus `tools/labor`); derselbe Buchungsweg wie bei Claude (`buchen.py`, `limits.py`,
+  Buchungssperre), mechanischer Journal-Eintrag `journal/<datum>_mechanisch.md`, Bemerkung "automatisch (Auslöser:
+  Kontrollportfolio)". Aktivierung nur durch den Schlüssel `kontrolle` in `config/profile.json` (Entscheidung 49).
+  Tests: `tests/test_kontrolle.py`.
+- [x] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio.** Der Vergleich ist umgesetzt: Überrendite gegen die
+  beta-angepasste Benchmark und gegen eine Benchmark mit gleicher Schwankung (mit Intervall), Rang danach in
+  `ranking.md`, `data/statistik.json` und auf der Ranking-Seite. Getrennte Läufe je Portfolio sind **vorbereitet, nicht
+  aktiviert** (Entscheidung 50): Konfiguration `portfolio_laeufe` in `config/claude.json`, Prompt-Zusatz, Modell je Portfolio,
+  Session-Zeile "Portfolios" in der Prüfung.
+- [x] **L7 Auslegungsfragen** (nur Dokumentation, `regeln.md` unverändert): vier Fragen mit Begründung, Zahlen, Formulierungsvorschlag
+  und Auswirkungen im Abschnitt "Auslegungsfragen Strategie-Labor (offen)" unten. `python tools/backtest.py kosten`
+  rechnet die Kostenvarianten auf denselben Kursen.
+
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
@@ -724,6 +773,95 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     `pruefe.py` trifft Overnight ohne Anweisung dauerhaft, weil Cash dort der Zustand ohne Anweisung ist; sie ist nur eine
     Warnung, der Session-Eintrag belegt die Ausnahme.
 
+46. Strukturierte Prognosen und Schattenbuch (Strategie-Labor L1 und L2). **Umgesetzt.** Auslegungen: (1) Die
+    Prognose-Zeile ist Pflicht (als Warnung) nur für Kauf-Einträge der Portfolios ohne Daueranweisung ab
+    `prognosen.pflicht_ab`; ein vorhandener, aber ungültiger Block warnt immer. Ältere Journale ohne Block bleiben
+    unbeanstandet. (2) Das tatsächliche Szenario ist das mit dem (logarithmisch) nächsten Kursziel; bei Gleichstand
+    gewinnt Base. Brier-Score = Summe der quadrierten Abweichungen über die drei Szenarien (Raten mit 1/3 = 0,667; Skill
+    = 1 − Brier/0,667). Fehlt am Horizontende die Kerze, gilt der Nachbarkurs, der weiter vom erwarteten Kurs liegt
+    (ungünstigere Annahme); ohne Ersatz bleibt die Prognose als "Lücke" offen. (3) Startkurs: angegeben, sonst erster
+    protokollierter Kurs ab Eintragszeit (höchstens 120 Minuten später), sonst letzter Schlusskurs davor. (4) Unter 30
+    ausgewerteten Prognosen bzw. verworfenen Kandidaten je Horizont steht der Hinweis "kaum belastbar". (5) Das
+    Schattenbuch bewertet in der Kurswährung ohne Devisenanteil und ohne Dividenden, mit der Aktien-Spanne aus
+    `config/kosten.json`, 1 EUR Gebühr je Order und dem Einsatz `schattenbuch.einsatz` (100 EUR = Mindestorder);
+    ein Kandidat ohne protokollierten Kurs ab Eintragszeit wird nicht bewertet (kein Backdating). Überlappende Fenster
+    derselben Aktie zählen mehrfach. (6) Die Auswertung braucht Netz für fehlende Tageskerzen und läuft daher im
+    Hintergrunddienst; `bewertung.py bericht` rechnet offline mit den gespeicherten Kerzen.
+
+47. Ehrliche Statistik (Strategie-Labor L3). **Umgesetzt.** Auslegungen: (1) Intervalle: zirkulärer Block-Bootstrap mit
+    Blocklänge n^(1/3), 2.000 Ziehungen, Seed 3000, 95 % (`statistik` in `config/projekt.json`); gleiche Daten ergeben
+    gleiche Intervalle. (2) "Vom Benchmark unterscheidbar" heißt: das Intervall der Überrendite p. a. gegen die
+    Benchmark des Profils enthält die 0 nicht; sonst steht überall "noch nicht vom Benchmark unterscheidbar". Ist das
+    Intervall ganz negativ, steht "unterscheidbar (schlechter)". (3) Alpha und Beta stammen aus der Regression der
+    Überrenditen über dem risikofreien Zins (2 % p. a.) gegen den Weltaktien-ETF, nicht gegen die Mischbenchmark.
+    (4) Die Trefferquote ist der Anteil der Tage über der Benchmark. (5) Marktphasen sind beschreibend: Der Trend nutzt
+    den Schluss des Vortags (kein Blick in die Zukunft), die Schwankungsgrenze ist der Median der gespeicherten
+    Historie des ETF; ohne 200 Handelstage Historie gibt es keine Phasen. (6) Unter 20 Tagesrenditen gibt es keine
+    Kennzahlen, unter `sharpe_min_handelstage` (60) den Hinweis "kaum belastbar". (7) Die Rangfolge im Bericht richtet
+    sich nach der Information Ratio, nicht nach der Rohrendite; die bisherige Kennzahlentabelle bleibt unverändert.
+
+48. Strategie-Labor: Backtest-Engine (L4). **Umgesetzt**, Ergebnisse mit echten Marktdaten stehen **noch aus** (siehe
+    unten). Auslegungen: (1) *Zeitmodell:* Jeder Handelstag hat zwei Preispunkte (Eröffnung, Schluss). Eine Strategie
+    entscheidet an einem Punkt und sieht nur Daten bis dahin (`Sicht`); die Order wird frühestens am nächsten Punkt zu
+    dessen Kurs ausgeführt (Tagesstrategien: Entscheidung zum Schluss, Ausführung zur nächsten Eröffnung; Overnight:
+    Entscheidung zur Eröffnung, Ausführung zum Schluss und umgekehrt). `lookahead_pruefung` verändert alle späteren
+    Kurse zufällig und verlangt unveränderte Entscheidungen; eine absichtlich betrügende Strategie fällt durch.
+    (2) *Kosten:* Kauf zum Kurs plus halbem Spread, Verkauf minus halbem Spread, 1 EUR Gebühr je Order, Mindestorder 100
+    EUR (auch für Teilverkäufe beim Rebalancing: kleinere Abweichungen lösen keine Order aus), Cash-Zins je
+    Kalendertag, Knock-outs mit Aufzinsung je Kalendertag und Barrierenprüfung gegen Eröffnung und Tagesextreme, Dividenden
+    der Rohkurse. Faktor-Zertifikate sind im Labor nicht vorgesehen. Die Kostenrechnung liegt als reine Funktion in
+    `buchen.py` und wird von Buchung und Labor gemeinsam benutzt (Verhalten der Buchung unverändert, alle Tests grün).
+    (3) *Benchmark der Berichte:* Buy & Hold des Benchmark-ETF mit denselben Kosten im selben Zeitraum. (4) *Vorschlag
+    nur für Überlebende:* Out-of-Sample muss die Überrendite als besser unterscheidbar zeigen (Intervall ganz über 0),
+    der Deflated Sharpe mindestens 0,95 erreichen und der Zeitraum mindestens drei Jahre umfassen; sonst "kein
+    Vorschlag" mit Gründen. (5) *Mehrfachtest:* Jede getestete Variante (auch jede Gitterkombination) wird angehängt in
+    `labor/versuche.jsonl` und fließt in die Streuung der Sharpe-Werte des Deflated Sharpe ein. Aus einem Gitter gewinnt
+    die Variante mit dem besten In-Sample-Sharpe; ihr Out-of-Sample-Teil steht getrennt. (6) *Daten:* Eigener
+    Zwischenspeicher `labor/daten/` (Teil des Spielstands und der Sicherung, nicht `data/historie`), vom Hintergrunddienst
+    täglich über die Ticker in `config/labor.json` ergänzt (bestehende Tage werden nie überschrieben). **Grenzen:**
+    Survivorship Bias, Datenqualität der Yahoo-Rohkurse, nur Tagesdaten, kein Slippage über den Spread hinaus; Claude-
+    Trading wird nicht zurückgerechnet (Look-ahead durch das Training). **Offen:** Die Entwicklungsumgebung hatte keinen
+    Zugang zu den Kursquellen; die Engine ist mit synthetischen Reihen getestet, die Ticker in `config/labor.json`
+    (EUNL.DE, SXR8.DE, EUNH.DE, VWCE.DE, EXS1.DE) wurden **nicht** gegen die Quelle geprüft. Die ersten echten
+    Ergebnisse entstehen, sobald der Dienst den Zwischenspeicher gefüllt hat und ein Labor-Lauf oder
+    `python tools/backtest.py ausfuehren ...` läuft.
+
+49. Mechanische Kontrollportfolios (Strategie-Labor L5). **Vorbereitet, nicht aktiviert.** Auslegungen: (1) Ein
+    Kontrollportfolio ist ein normales Profil in `config/profile.json` mit einem Eintrag unter dem neuen Schlüssel
+    `"kontrolle": {"<profil>": "passiv|zufall|labor"}`. Ohne diesen Schlüssel tut `tools/kontrolle.py` nichts
+    (`python tools/kontrolle.py status` sagt es). Ein ergänztes Profil startet nach `regeln.md` 7 am Ergänzungstag mit 1.000 EUR,
+    nie rückwirkend; die Migration (`profile_ergaenzen`) legt das Portfolio an. (2) Kontrollprofile handelt kein Claude: Sessions,
+    Anlagerichtlinien, Vorgaben und die Cash-Warnung gelten für sie nicht (`g.claude_profile()`), `buchen.py` lehnt Orders ab.
+    (3) Jede Order geht über `limits.pruefe_kauf` mit den Limits des Profils; ist der Einsatz zu groß, wird er stufenweise
+    verkleinert (100/75/50/35/25/15/10/5 %), bis alle Limits halten, sonst kein Kauf und ein Protokolleintrag. Es gibt keinen
+    Stop und kein Kursziel (Risiko ohne Stop nach `regeln.md` 7). (4) Journal: je Order ein Eintrag in
+    `journal/<datum>_mechanisch.md` mit der Zeile "Mechanisch" und der Kurszeit der Order als Zeit; `pruefe.py` verlangt das
+    und warnt nicht wegen fehlender Prognose. (5) Zufall: Kauf mit der Frequenz (Käufe je Tag) des Vorbild-Portfolios, Haltedauer
+    und Einsatzanteil gezogen aus dessen beobachteten Werten; mit weniger als drei Beobachtungen gelten die Vorgaben aus
+    `config/kontrolle.json`. Die Ziehung des Tages wird einmal berechnet und mit Seed (`<seed>|<profil>|<tag>`) in
+    `data/kontrolle/<profil>.jsonl` festgehalten. (6) Labor: wendet die Strategie auf `labor/daten/` bis zum Vortag an
+    (veraltete Daten: wartet), nur Aktien und ETFs long, Teilverkäufe gibt es nicht. (7) Der Hintergrunddienst ruft das Werkzeug
+    alle 15 Minuten auf, jeder Tag wird nur einmal erledigt, gekauft wird nur bei offenem Markt zu protokollierten Kursen.
+    **Was die Auftraggeber zur Aktivierung entscheiden** (Vorschlag unter "Auslegungsfragen Strategie-Labor", Frage 22):
+    Profile, Limits in `regeln.md` 7 und `config/profile.json`, Typen und Parameter.
+
+50. Risikoadjustierter Vergleich und getrennte Läufe je Portfolio (Strategie-Labor L6). **Vergleich umgesetzt, Läufe vorbereitet,
+    nicht aktiviert.** Auslegungen: (1) Die beta-angepasste Benchmark ist der risikofreie Zins plus Beta mal Marktüberrendite
+    (Beta aus der Regression gegen den Weltaktien-ETF, im Bootstrap je Ziehung neu geschätzt); die Benchmark mit gleicher
+    Schwankung skaliert den Markt auf die Streuung des Portfolios. Hebel auf den Markt ist so kein Können (Test: doppelter Markt
+    schlägt die rohe Benchmark deutlich, die beta-angepasste nicht). (2) Der Rang im Bericht richtet sich nach der
+    Information Ratio und nach der Überrendite gegen die beta-angepasste Benchmark, nicht nach der Rohrendite.
+    (3) *Getrennte Läufe je Portfolio:* `config/claude.json` → `portfolio_laeufe` (`aktiv: false`, `modell_je_portfolio`).
+    **Auswirkungen bei Aktivierung:** Die Session-Sperre (`session.py start`) ist ein Lauf nach dem anderen (je Portfolio ein Lauf,
+    nacheinander, nie gleichzeitig); die Buchungssperre schützt die Dateien wie bisher. Der Session-Eintrag eines solchen Laufs trägt
+    die Zeile "- Portfolios: <profil>"; die Prüfung "Handlung oder Ausnahme" (Beweislast beim Nichthandeln) verlangt dann nur
+    dieses Portfolio, ohne die Zeile wie bisher alle (`pruefe.sitzung_profile`, getestet). Ein Portfolio ohne eigenen Session-Eintrag an
+    einem Tag wird weiter gewarnt. Der Prompt erhält den Zusatz "nur dieses Portfolio, eigener Kontext", das Modell kommt aus
+    `modell_je_portfolio` (z. B. Opus gegen Sonnet, `claude_lauf.modell_fuer_portfolio`). **Noch nicht gebaut** (Teil der
+    Aktivierung): Spalte `portfolio` im Auftrag, Zeitplan, der je Portfolio einen Lauf anlegt, Auswahl in der Lauf-Seite;
+    Nachteil: die Breite des Marktüberblicks (Screener, News) wird je Lauf neu gelesen (mehr Kontingent), der Vorteil ist
+    ein sauberer Vergleich von Modellen je Portfolio.
+
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere
@@ -848,3 +986,61 @@ Kosten (Abschnitte 4 und 5) bedeuten würde. Je Frage die Begründung:
 20. Entschieden am 2026-10-07 (Entscheidung 34): Es bleiben immer alle drei Profile; die Profilauswahl
     (Entscheidung 13) wird nicht umgesetzt. Der ursprüngliche Formulierungsvorschlag entfällt, regeln.md
     bleibt bei drei Portfolios.
+
+## Auslegungsfragen Strategie-Labor (offen)
+
+Vier Fragen aus dem Auftrag "Strategie-Labor", **nur zur Entscheidung durch die Auftraggeber**. `regeln.md` bleibt
+unverändert; was Code braucht, ist so vorbereitet, dass es in der Konfiguration aktiviert wird und im laufenden Spiel nichts
+ändert. Die Zahlen stammen aus `python tools/backtest.py kosten --synthetisch` (Zufallskurse ohne Vorteil, 500 Handelstage,
+Mittel über 10 Reihen: sie zeigen nur die Kosten, nicht eine Strategie) und aus `python tools/overnight.py kosten`.
+
+21. **Kapital und Kosten.** *Problem:* Bei 1.000 EUR und 100-EUR-Orders kostet der Rundlauf rund 2,1 % (zwei Gebühren je 1 EUR
+    plus 0,1 % Spread); das Ergebnis misst vor allem die Kostenstruktur. *Zahlen* (Rundlaufkosten in % des Einsatzes, 1 EUR je
+    Order und 0,1 % Spread): bei 100 EUR 2,10 %, 1.000 EUR 0,30 %, 5.000 EUR 0,14 %, 50.000 EUR 0,10 %. Mit 0,1 % Gebühr
+    (mindestens 1 EUR) liegt der Rundlauf ab 1.000 EUR bei 0,30 %, auch bei 50.000 EUR. Lab-Rechnung (Kosten p. a. in % des
+    Startkapitals, Zufallskurse): Trend 20 Tage täglich geprüft 4,3 % bei 1.000 EUR (fest), 1,5 % bei 50.000 EUR (fest) und 4,2 %
+    bei 50.000 EUR mit 0,1 %; Overnight 45 % bei 1.000 EUR (Kapital -90 % in 500 Nächten), 20 % bei 50.000 EUR (fest), 39 % mit
+    0,1 %; 60/40 monatlich 0,15 % / 0,08 % / 0,13 %. *Vorschlag Formulierung* (`regeln.md` 2 und 5): "Startkapital:
+    50.000 EUR je Portfolio. Gebühr: 1 EUR je Order, Mindestorder 500 EUR." (feste Gebühr bleibt, nur das Kapital steigt)
+    oder "Gebühr: 0,1 % des Kurswerts, mindestens 1 EUR." *Auswirkung:* mit 50.000 EUR und fester Gebühr sinken die
+    Kosten der Strategien um das Zwei- bis Dreifache und die Ergebnisse werden eher Strategie als Kosten; ein
+    Prozent-Gebührenmodell macht kleine Orders nicht billiger und große teurer (realistischer, aber es nimmt den Vorteil des
+    größeren Kapitals). Code: `buchen.kauf_rechnung`/`verkauf_rechnung` und `config/kosten.json` müssten ein Gebührenmodell
+    kennen (heute nur `gebuehr_je_order`); das Labor rechnet die Varianten schon (`Lauf(gebuehr=…)`). Eine Umstellung im laufenden
+    Spiel gilt nur ab einem Stichtag und nie rückwirkend. *Empfehlung:* Kapital auf 50.000 bis 100.000 EUR bei fester Gebühr,
+    weil es den Vergleich am billigsten verbessert; das Prozent-Modell nur, wenn die Auftraggeber näher an einem
+    Brokerpreis messen wollen.
+
+22. **Profile nach Strategie statt nach Risiko.** *Problem:* Die vier Profile unterscheiden sich im Risikolimit, nicht in der
+    Strategie; Rendite unterschiedlich riskanter Portfolios ist nicht vergleichbar, und ohne Kontrollgruppe ist "Claude schlägt den
+    Markt" nicht prüfbar (Stichprobe: für einen Sharpe-Unterschied von 0,5 braucht es rund 15 Jahre). *Vorschlag:* Profile
+    nach Strategie: *Passiv* (Benchmark halten), *Zufall* (Zufallshändler mit dem Handeln eines Claude-Portfolios), *Labor-Strategie*
+    (bester Out-of-Sample-Kandidat aus dem Labor), *Claude diskretionär*, optional *Claude anderes Modell*. Alle Portfolios
+    mit gleichem Risikobudget (gleiche Limits) oder risikoadjustiert verglichen (Information Ratio, beta-angepasste
+    Überrendite, bereits im Bericht). *Formulierung* (`regeln.md` 7, neue Zeile unter der Tabelle): "Kontrollportfolios (Passiv,
+    Zufall, Labor) handeln mechanisch; ihre Limits entsprechen denen des Claude-Profils, mit dem sie verglichen werden; sie
+    erhalten keine Anlagerichtlinie und keine Session." plus Tabellenspalten für die neuen Profile (Vorschlag: Passiv Max.
+    Einzelposition 100 %, Max. Exposure 1,0x, Mindest-Cashquote 1 %, Max. Risiko je Trade 100 % wegen "kein Stop"; Zufall und Labor
+    wie Ausgewogen). *Auswirkung:* Die Aktivierung braucht nur `config/profile.json` (neue Profile plus Schlüssel `kontrolle`) und die
+    Tabelle in `regeln.md` 7 (`pruefe_config_regeln` vergleicht beides); alles andere ist vorbereitet (Entscheidung 49). Kosten:
+    drei weitere Portfolios, einmalig Start mit 1.000 EUR am Ergänzungstag; Claude wird dadurch nicht mehr belastet.
+
+23. **"Handeln hat Vorrang" als Versuchsvariable.** *Problem:* Die Regel (`regeln.md` 12: Cash ist die Ausnahme, die Beweislast liegt
+    beim Nichthandeln) erzeugt Umsatz, und mehr Umsatz senkt nach Kosten in der Forschung meist die Rendite
+    (rund 0,3 % Kosten je Rundlauf bei 1.000 EUR und 100-EUR-Orders). Ob die Regel hilft, ist eine Messfrage. *Vorschlag:* Ein
+    Claude-Portfolio behält die Regel von heute, ein zweites erhält ein Umsatzbudget (z. B. höchstens eine Order je Woche, Cash
+    ohne Begründung erlaubt). Das Schattenbuch (L2) misst den Wert der Cash-Entscheidungen: Es bewertet die verworfenen
+    Kandidaten nach 5, 20 und 60 Handelstagen netto, im Vergleich zu den gekauften. *Formulierung* (`regeln.md` 12, Zusatz):
+    "Für Portfolios mit Umsatzbudget gilt Abschnitt 12 Absatz 1 nicht; stattdessen höchstens N Orders je Kalenderwoche." *Auswirkung:* Das
+    Umsatzbudget braucht eine Prüfung (Orders je Woche) in `pruefe.py` und `limits.py` sowie die zweite Claude-Variante (Entscheidung 50
+    bereitet getrennte Läufe vor). Bis dahin liefert das Schattenbuch die Daten für die Entscheidung.
+
+24. **Overnight: Fortsetzung auf den Prüfstand.** *Zahlen:* Eine Nacht kostet bei 1.000 EUR rund 2,97 EUR = 0,31 % des Einsatzes
+    (zwei Gebühren plus 0,1 % Spread); eine breite ETF-Position müsste im Schnitt 0,31 % zwischen Schluss und Eröffnung
+    liefern, um nach Kosten nicht zu verlieren, Knock-out mit Hebel 3 braucht 0,30 % Basiswert-Rendite. Lab-Rechnung auf
+    Zufallskurse ohne Vorteil: -90 % in 500 Nächten bei 1.000 EUR, -42 % bei 50.000 EUR (feste Gebühr). *Messung mit echten
+    Daten steht aus:* `python tools/overnight.py analyse` (wöchentlich im Dienst) und `python tools/backtest.py ausfuehren
+    --strategie overnight` liefern sie, sobald Kursdaten da sind (in der Entwicklungsumgebung kein Zugang). *Entscheidung für die
+    Auftraggeber:* (1) behalten und messen (Ausnahme (a) belegt jede Nacht, kostet nur Aufmerksamkeit), (2) das Profil auf den Rahmen
+    von Frage 21 stellen (Kapital oder Gebühr), (3) nach der ersten Messung schließen. *Empfehlung:* (1) bis die Messung mit echten
+    Daten vorliegt; sie ist bereits der Plan aus Entscheidung 45.

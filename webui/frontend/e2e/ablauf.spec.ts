@@ -53,6 +53,16 @@ test("Benutzer sieht Cockpit, Portfolio, Trade-Akte und Prüfung", async ({ page
   await page.goto("/roadmap");
   await expect(page.getByRole("heading", { name: "Roadmap & Status" })).toBeVisible();
 
+  // Strategie-Labor: Demo-Bericht mit Urteil, In-/Out-of-Sample getrennt und Grenzen.
+  await page.goto("/analyse/labor");
+  await expect(page.getByRole("heading", { name: "Strategie-Labor" })).toBeVisible();
+  await expect(page.getByText("kein Vorschlag").first()).toBeVisible();
+  await expect(page.getByText("Out-of-Sample").first()).toBeVisible();
+  await expect(page.getByText(/Survivorship Bias/)).toBeVisible();
+  await page.goto("/analyse/ranking");
+  await expect(page.getByText("Kennzahlen mit Unsicherheit")).toBeVisible();
+  await expect(page.getByText("Prognosegüte")).toBeVisible();
+
   await page.goto("/analyse/kurse");
   await expect(page.getByRole("heading", { name: "Markt & Kurse" })).toBeVisible();
   await expect(page.getByText("Benchmark und Devisen")).toBeVisible();

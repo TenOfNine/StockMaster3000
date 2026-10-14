@@ -90,7 +90,7 @@ def vorgaben_prompt() -> str:
     """
     gespeichert = appdaten.laden()["vorgaben"]["profile"]
     leer = {"text": "", "version": 0, "zeit": None, "von": None}
-    profile = {p: gespeichert.get(p) or leer for p in appdaten.profil_liste()}
+    profile = {p: gespeichert.get(p) or leer for p in appdaten.claude_profil_liste()}
     if not any(e["text"].strip() for e in profile.values()):
         return " Es liegen keine Vorgaben der Auftraggeber vor."
     zeilen = [" Vorgaben der Auftraggeber je Portfolio (aus der Web-UI, gelten ab sofort): Sie ergänzen die "
@@ -124,6 +124,29 @@ HANDELN_PROMPT = (
     "nicht gehandelt, um zu handeln.")
 
 
+def portfolio_laeufe() -> dict:
+    return claude_optionen.optionen().get("portfolio_laeufe", {})
+
+
+def modell_fuer_portfolio(portfolio: str | None, standard: str) -> str:
+    """Modell eines Laufs: bei aktiven Portfolio-Läufen das konfigurierte Modell des Portfolios, sonst das Standardmodell."""
+    konfig = portfolio_laeufe()
+    if not portfolio or not konfig.get("aktiv"):
+        return standard
+    return konfig.get("modell_je_portfolio", {}).get(portfolio) or standard
+
+
+def portfolio_abschnitt(auftrag) -> str:
+    """Zusatz im Trading-Prompt für getrennte Läufe je Portfolio (vorbereitet, nur bei aktivierter Konfiguration)."""
+    portfolio = getattr(auftrag, "portfolio", None)
+    if not portfolio or not portfolio_laeufe().get("aktiv"):
+        return ""
+    return (f" Dieser Lauf betrifft nur das Portfolio {portfolio}: Entscheide und handle ausschließlich dort, mit eigenem "
+            f"Kontext (lies dessen Strategie, Journal und Review, nicht die der anderen). Schreibe den Session-Eintrag mit der "
+            f"Zeile '- Portfolios: {portfolio}' und der Pflichtzeile 'Handlung oder Ausnahme' nur für dieses Portfolio; die "
+            f"anderen Portfolios laufen in eigenen Läufen.")
+
+
 def prompt(art: str, auftrag) -> str:
     e = einstellungen()
     aufwand = auftrag.aufwand or "Standard der CLI"
@@ -147,7 +170,7 @@ def prompt(art: str, auftrag) -> str:
                 "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Der Lauf hängt nicht von Datum, "
                 "Wochentag, Uhrzeit oder Startdatum ab: Das Spiel ist bereits gestartet (der Lauf hat es notfalls "
                 "selbst gestartet); außerhalb der Handelszeit legst du Orders trotzdem an, sie werden vorgemerkt und "
-                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT +
+                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT + portfolio_abschnitt(auftrag) +
                 " Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
                 "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle. "
                 "Für die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ) nutze den Screener: "
@@ -160,6 +183,9 @@ def prompt(art: str, auftrag) -> str:
                 "`python tools/overnight.py kosten` und `ergebnis` (`analyse` nicht aufrufen, das übernimmt der "
                 "Hintergrunddienst) und nenne die Zahlen im Journal. "
                 "Nenne im Journal die geprüften Kandidaten und die belegte Ausnahme, wenn du keine Order erfasst. "
+                "Jeder Kauf-Eintrag trägt die maschinenlesbare Zeile 'Prognose' (ticker, horizont, bull/base/bear mit "
+                "Wahrscheinlichkeit@Kurs; Format in CLAUDE.md), der Session-Eintrag die Zeile 'Verworfen' mit den geprüften, "
+                "nicht gekauften Kandidaten. Beide werden später ausgewertet (Brier-Score, Schattenbuch). "
                 "Der Hintergrunddienst führt vorgemerkte Orders, Limits, Stops, Kursziele und Barrieren auch ohne "
                 "Lauf aus (Buchung mit 'automatisch (Auslöser: …)' und deiner Journal-ID) und bucht nachts nach; "
                 "ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +
@@ -170,8 +196,23 @@ def prompt(art: str, auftrag) -> str:
                 "Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art review`. " + gemeinsam +
                 " Vermerke Modell und Aufwand im Review unter 'Setup'.")
+    if art == "labor":
+        return ("Strategie-Labor ohne Orders (Entwicklungsmodus der Strategieforschung, es wird nicht gehandelt): "
+                "`python tools/buchen.py` und `python tools/daueranweisung.py` nicht aufrufen. Starte die Sperre mit "
+                "`python tools/session.py start --person <kennung> --art review`. Die Kurse kommen aus dem Zwischenspeicher "
+                "des Labors (labor/daten/, vom Hintergrunddienst gefüllt; kein Netzwerk nötig). Lies die letzten "
+                "Berichte (`python tools/backtest.py berichte`, labor/*.md), `python tools/statistik.py anzeigen`, "
+                "`python tools/prognosen.py liste` und das Schattenbuch. Formuliere höchstens drei Hypothesen mit "
+                "Begründung vorab (Aufgabenteilung: du formulierst, der Code prüft), teste jede mit "
+                "`python tools/backtest.py ausfuehren --strategie <name> --parameter ...` und beachte: Jede getestete "
+                "Variante wird in labor/versuche.jsonl gezählt und senkt den Deflated Sharpe; wähle die Parameter vor "
+                "dem Test, nicht danach. Diskretionäres Trading wird nicht zurückgerechnet (Look-ahead durch das "
+                "Training). Nur Strategien, die Out-of-Sample unterscheidbar besser sind als die Benchmark und den "
+                "Deflated Sharpe bestehen, werden als Vorschlag an die Auftraggeber formuliert (Kennzahlen mit "
+                "Intervall, Kosten, Grenzen); alle anderen nennst du als verworfen mit Zahlen. Schreibe Erkenntnisse "
+                "in lessons.md, ändere regeln.md nie und aktiviere nichts. " + gemeinsam)
     if art == "richtlinien":
-        dateien = [f"strategie/{p}.md" for p in appdaten.profil_liste()]
+        dateien = [f"strategie/{p}.md" for p in appdaten.claude_profil_liste()]
         return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): "
                 + ", ".join(dateien[:-1]) + " und " + dateien[-1] + ". Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art richtlinien`. Hole je Profil die Vorlage mit "

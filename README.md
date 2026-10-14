@@ -120,10 +120,38 @@ Die Kennungen der Auftraggeber stehen in `config/projekt.json`.
 | `python tools/termine.py` | fällige Reviews (nach Spielzeit: 7, 28, 91 Tage; Drawdown-Stufe 2) |
 | `python tools/init.py --startdatum JJJJ-MM-TT --freigabe <kennung>` | Spielstart, einmalig nach Freigabe (AP12) |
 | `python tools/produkte.py ko/faktor ...` | Zertifikatsrechner, nur Anzeige |
+| `python tools/prognosen.py auswerten` / `liste` | Prognosegüte: Brier-Score und Kalibrierung der Szenario-Wahrscheinlichkeiten |
+| `python tools/schattenbuch.py auswerten` / `liste` | Schattenbuch: Wert der geprüften, aber nicht gekauften Kandidaten |
+| `python tools/statistik.py berechnen` / `anzeigen` | Kennzahlen mit Konfidenzintervall, Alpha/Beta, Marktphasen |
+| `python tools/backtest.py ausfuehren/walkforward/kosten/daten ...` | Strategie-Labor: Rückblick auf Tagesdaten mit den Kosten des Spiels |
+| `python tools/kontrolle.py status` / `tick` | mechanische Kontrollportfolios (nur wenn aktiviert) |
 
 Die GitHub Action ([.github/workflows/pruefung.yml](.github/workflows/pruefung.yml))
 führt bei jedem Push die Tests und `pruefe.py --historie` gegen ein frisch
 initialisiertes und ein Demo-Datenverzeichnis aus.
+
+## Strategie-Labor und messbare Strategievergleiche
+
+Ziel: Strategien statistisch ehrlich und risikoadjustiert vergleichen, ohne Prüfspur, Nur-Anhängen oder die Arbeitsteilung
+"Rechnen macht Code, Entscheiden macht Claude" zu lockern. Nichts davon ändert `regeln.md` oder das laufende Spiel; neue
+Pflichten gelten erst ab einem Stichtag in `config/projekt.json`.
+
+- **Prognosen und Kalibrierung:** Jeder Kauf-Eintrag trägt eine maschinenlesbare Zeile `Prognose` (Szenarien mit
+  Wahrscheinlichkeit und Kursziel). `prognosen.py` wertet sie am Horizontende aus: Brier-Score, Kalibrierungstabelle,
+  Richtungstrefferquote (Abschnitt "Prognosegüte" in `ranking.md`, Karte auf der Ranking-Seite).
+- **Schattenbuch:** Die Zeile `Verworfen` im Session-Eintrag nennt geprüfte, nicht gekaufte Kandidaten; `schattenbuch.py` bewertet sie
+  nach 5/20/60 Handelstagen netto nach Kosten und vergleicht mit den gekauften Werten. Es bucht nie.
+- **Statistik mit Unsicherheit:** `statistik.py` gibt Rendite, Sharpe, Überrendite, Alpha/Beta, Information Ratio, Sortino und Calmar mit
+  95-%-Intervall (Block-Bootstrap) an und schreibt "noch nicht vom Benchmark unterscheidbar", solange das Intervall der
+  Überrendite die 0 enthält. Rangfolge nach Information Ratio und nach der Überrendite gegen die beta-angepasste Benchmark,
+  nicht nach Rohrendite.
+- **Strategie-Labor:** `tools/labor/` und `backtest.py` spielen regelbasierte Strategien (Buy & Hold, 60/40, Trendfolge, Momentum,
+  Volatilitätsziel, Overnight) auf Tagesdaten mit den Kosten des Spiels zurück, ohne Look-ahead, mit In-/Out-of-Sample-Trennung,
+  Walk-forward und Deflated Sharpe über alle getesteten Varianten. Berichte unter `labor/` und auf der Seite "Strategie-Labor". Grenzen:
+  Survivorship Bias, Datenqualität der Rohkurse, nur Tagesdaten; diskretionäres Claude-Trading lässt sich nicht zurückrechnen.
+- **Kontrollportfolios (vorbereitet, nicht aktiv):** Passiv, Zufall und Labor-Strategie handeln mechanisch über denselben Buchungsweg
+  (`kontrolle.py`); Aktivierung nur durch die Auftraggeber über `config/profile.json`. Offene Fragen zu Kapital und Kosten, Profilen
+  nach Strategie, "Handeln hat Vorrang" und Overnight stehen in `STATUS.md` (Auslegungsfragen Strategie-Labor).
 
 ## Repository-Struktur
 
@@ -133,7 +161,7 @@ initialisiertes und ein Demo-Datenverzeichnis aus.
     AUFTRAG_PHASE1.md           Aufbau der Werkzeuge (AP1–AP12)
     AUFTRAG_WEBUI.md            Plan der Web-UI (W0–W17)
     config/                     Limits, Kosten, Universum, Projektwerte
-    tools/                      Python-Werkzeuge (rechnen, buchen, prüfen)
+    tools/                      Python-Werkzeuge (rechnen, buchen, prüfen); tools/labor/: Strategie-Labor
     tests/                      Tests ohne Netzwerk, inkl. Szenario-Tests
     vorlagen/datenverzeichnis/  leere Vorlage des Datenverzeichnisses (Spielstand
                                 liegt nie im Repository, sondern im Volume)

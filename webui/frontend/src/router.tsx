@@ -11,6 +11,7 @@ import { Cockpit } from "./seiten/Cockpit";
 import { Entscheidungen, Sessions } from "./seiten/Entscheidungen";
 import { Portfolio } from "./seiten/Portfolio";
 import { Einrichtung } from "./seiten/Einrichtung";
+import { Labor } from "./seiten/Labor";
 import { Laeufe } from "./seiten/Laeufe";
 import { Pruefung, Regelwerk, RoadmapStatus } from "./seiten/Projekt";
 import { Rechner } from "./seiten/Rechner";
@@ -89,6 +90,12 @@ const seiten = [
     getParentRoute: () => app,
     path: "/analyse/reviews",
     component: ReviewsLessons,
+    validateSearch: (s: Record<string, unknown>): { datei?: string } => (typeof s.datei === "string" ? { datei: s.datei } : {}),
+  }),
+  createRoute({
+    getParentRoute: () => app,
+    path: "/analyse/labor",
+    component: Labor,
     validateSearch: (s: Record<string, unknown>): { datei?: string } => (typeof s.datei === "string" ? { datei: s.datei } : {}),
   }),
   createRoute({ getParentRoute: () => app, path: "/analyse/kurse", component: Kurse }),

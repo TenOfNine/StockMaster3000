@@ -273,6 +273,43 @@ def nav_reihen() -> dict:
     return {"profile": reihen, "benchmark": bench}
 
 
+def labor_ergebnisse() -> dict:
+    """Gespeicherte Ergebnisse des Strategie-Labors (data/prognosen, schattenbuch, statistik .json); nichts wird berechnet."""
+    def lesen_datei(name: str):
+        datei = repo() / "data" / name
+        return json.loads(datei.read_text(encoding="utf-8")) if datei.exists() else None
+
+    return {"prognosen": lesen_datei("prognosen.json"), "schattenbuch": lesen_datei("schattenbuch.json"),
+            "statistik": lesen_datei("statistik.json")}
+
+
+LABOR_BERICHT = re.compile(r"^[A-Za-z0-9_.-]+\.json$")
+
+
+def labor_berichte() -> list[dict]:
+    """Berichte des Strategie-Labors (labor/*.json, ohne Kurven), neueste zuerst."""
+    ordner = repo() / "labor"
+    liste = []
+    for datei in sorted(ordner.glob("*.json"), reverse=True) if ordner.exists() else []:
+        try:
+            b = json.loads(datei.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if "strategie" in b and "urteil" in b:
+            liste.append({"datei": datei.name, "strategie": b["strategie"], "parameter": b["parameter"],
+                          "erstellt": b["erstellt"], "zeitraum": b["zeitraum"], "urteil": b["urteil"]})
+    return liste
+
+
+def labor_bericht(name: str) -> dict:
+    if not LABOR_BERICHT.match(name):
+        raise KeyError(name)
+    datei = repo() / "labor" / name
+    if not datei.is_file():
+        raise KeyError(name)
+    return json.loads(datei.read_text(encoding="utf-8"))
+
+
 def _markt_aus_speicher(portfolio: dict):
     """Letzte gespeicherte Schlusskurse bis zum Verarbeitungsstand (keine Abfrage)."""
     w = werkzeuge()

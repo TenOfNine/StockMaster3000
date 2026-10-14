@@ -1,0 +1,6 @@
+{
+  "_quelle": "Strategie-Labor (STATUS.md, Entscheidung 48). Der Hintergrunddienst füllt damit täglich den Zwischenspeicher labor/daten/ (nur Tageskerzen, kein Spielstand).",
+  "_hinweis": "Die Ticker sind gängige Xetra-ETFs; ob Yahoo Finance sie unter diesem Symbol liefert, zeigt erst der erste Abruf (Meldungen im Dienst-Log). Unbekannte Ticker werden gemeldet und übersprungen.",
+  "von": "2010-01-01",
+  "ticker": ["EUNL.DE", "SXR8.DE", "EUNH.DE", "VWCE.DE", "EXS1.DE"]
+}

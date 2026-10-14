@@ -335,7 +335,8 @@ def test_geplanter_lauf_wartet_sichtbar_auf_aktive_session_und_wird_nicht_uebers
     _admin_token(admin)
     _plan_einstellen(admin)
     sperre = demo_repo / "session.lock"
-    sperre.write_text(json.dumps({"person": "auftraggeber-b", "start": "2026-10-12T09:00:00+02:00"}))
+    # Die Sperre muss zur echten Uhr passen (sie läuft nach `sperre_stunden` ab), nicht zu den simulierten Zeiten.
+    sperre.write_text(json.dumps({"person": "auftraggeber-b", "start": datetime.now(UTC).isoformat()}))
     try:
         lesen.zuruecksetzen()
         w = Worker()
@@ -614,7 +615,7 @@ def test_lauf_ist_nie_durch_startdatum_oder_richtlinien_gesperrt(admin, demo_rep
         assert admin.get("/api/laeufe/vorpruefung").status_code == 404  # keine Vorprüfung und keine Hinweise mehr
         schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
         assert "richtlinien" not in schritte and "spielstart" not in schritte
-        for art in ("trading", "review", "testsession", "richtlinien"):
+        for art in ("trading", "review", "testsession", "richtlinien", "labor"):
             ok = admin.post("/api/laeufe", json={"art": art, "auftraggeber": "auftraggeber-a", "bestaetigt": True})
             assert ok.status_code == 201, (art, ok.text)
             admin.post(f"/api/laeufe/{ok.json()['id']}/abbrechen")
@@ -1319,3 +1320,53 @@ def test_overnight_analyse_woechentlich_nach_23_30(app, werkzeug_attrappe):
     werkzeug_attrappe.clear()
     assert w.overnight_analysieren(_um(13, "23:40")) is None and werkzeug_attrappe == []  # erst nach sieben Tagen
     assert w.overnight_analysieren(_um(12, "23:35") + timedelta(days=7)) is not None
+
+
+def test_labor_auswertung_taeglich_nach_23_15(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.labor_auswerten(_um(12, "22:00")) is None and werkzeug_attrappe == []
+    assert w.labor_auswerten(_um(12, "23:20")).startswith("Labor-Auswertung:")
+    aufrufe = [tuple(a[:3]) for a in werkzeug_attrappe]
+    assert ("prognosen", "auswerten", "--netz") in aufrufe and ("schattenbuch", "auswerten", "--netz") in aufrufe
+    assert ("backtest", "daten") == aufrufe[0][:2]
+    werkzeug_attrappe.clear()
+    assert w.labor_auswerten(_um(12, "23:50")) is None and werkzeug_attrappe == []  # einmal je Tag
+    assert w.labor_auswerten(_um(13, "23:20")) is not None
+
+
+def test_kontrolle_nur_mit_eintrag_in_der_konfiguration(app, werkzeug_attrappe, monkeypatch):
+    from stockmaster import worker
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.kontrolle_ausfuehren(_um(12, "10:30")) is None and werkzeug_attrappe == []  # Standard: keine Kontrollportfolios
+    gemeinsam = worker._werkzeuge()["gemeinsam"]
+    monkeypatch.setattr(gemeinsam, "kontrolle_profile", lambda: {"passiv": "passiv"})
+    w.kontrolle_ausfuehren(_um(12, "10:30"))
+    assert ("kontrolle", "tick") == tuple(werkzeug_attrappe[0][:2])
+    werkzeug_attrappe.clear()
+    assert w.kontrolle_ausfuehren(_um(12, "10:35")) is None and werkzeug_attrappe == []  # erst nach 15 Minuten wieder
+
+
+def test_portfolio_laeufe_sind_vorbereitet_aber_aus(app, monkeypatch):
+    from types import SimpleNamespace
+
+    from stockmaster import claude_lauf, claude_optionen
+
+    auftrag = SimpleNamespace(aufwand=None, modell="sonnet", auftraggeber="a-adm1", id="x", ausloeser="manuell",
+                              portfolio="aggressiv")
+    # Standard: aus, der Prompt bleibt unverändert und das Modell das gewählte
+    assert claude_lauf.portfolio_abschnitt(auftrag) == ""
+    assert claude_lauf.modell_fuer_portfolio("aggressiv", "sonnet") == "sonnet"
+    konfig = claude_optionen.optionen()
+    assert konfig["portfolio_laeufe"]["aktiv"] is False
+    # aktiviert (nur in diesem Test): Zusatz im Prompt, Modell je Portfolio
+    aktiv = {**konfig, "portfolio_laeufe": {"aktiv": True, "modell_je_portfolio": {"aggressiv": "opus"}}}
+    monkeypatch.setattr(claude_optionen, "optionen", lambda: aktiv)
+    assert "nur das Portfolio aggressiv" in claude_lauf.prompt("trading", auftrag)
+    assert "- Portfolios: aggressiv" in claude_lauf.portfolio_abschnitt(auftrag)
+    assert claude_lauf.modell_fuer_portfolio("aggressiv", "sonnet") == "opus"
+    assert claude_lauf.modell_fuer_portfolio("defensiv", "sonnet") == "sonnet"
+    assert claude_lauf.portfolio_abschnitt(SimpleNamespace(portfolio=None)) == ""

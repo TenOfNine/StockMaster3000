@@ -1,0 +1,24 @@
+{
+  "_quelle": "Strategie-Labor L5 (STATUS.md, Entscheidung 49). Parameter der mechanischen Kontrollportfolios. Wirkungslos, solange config/profile.json keinen Schlüssel \"kontrolle\" trägt (Aktivierung nur durch die Auftraggeber, regeln.md 7).",
+  "standard": {
+    "passiv": {
+      "ticker": "EUNL.DE",
+      "einsatz_anteil": "0.95"
+    },
+    "zufall": {
+      "vorbild": "ausgewogen",
+      "listen": ["etf_xetra", "dax40", "sp500", "nasdaq100", "etf_us"],
+      "seed": 3000,
+      "kaufwahrscheinlichkeit": "0.20",
+      "einsatz_anteil": "0.10",
+      "haltedauer_tage": 10,
+      "min_beobachtet": 3
+    },
+    "labor": {
+      "strategie": "trend",
+      "parameter": {"ticker": "EUNL.DE", "tage": 200, "pruefung": "monat"},
+      "einsatz_anteil": "0.95"
+    }
+  },
+  "profile": {}
+}

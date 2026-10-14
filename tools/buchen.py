@@ -68,6 +68,9 @@ def verwendete_journal_ids() -> set[str]:
 
 
 def portfolio_pruefen(profil: str) -> dict:
+    if profil in g.kontrolle_profile():
+        raise Fehler(f"{profil} ist ein mechanisches Kontrollportfolio (Typ {g.kontrolle_profile()[profil]}); "
+                     "dort handelt kein Claude, die Orders erzeugt tools/kontrolle.py.")
     portfolio = g.portfolio_laden(profil)
     if portfolio.get("status") != "aktiv":
         raise Fehler(f"Portfolio {profil} ist {portfolio.get('status')}; keine Orders möglich.")
@@ -91,18 +94,35 @@ def position_finden(portfolio: dict, position_id: str) -> dict:
 # Ausführung (auch von bewertung.py genutzt)
 
 
+def kauf_rechnung(typ: str, mitte_eur: Decimal, einsatz: Decimal) -> dict:
+    """Reine Rechnung eines Kaufs (ohne Buchung): Kurs mit halbem Spread, Stückzahl, Kurswert, Spread und Gebühr.
+
+    Eine Quelle für Buchung und Strategie-Labor (tools/labor), damit beide dieselben Kosten rechnen.
+    """
+    satz = g.spread(typ)
+    kurs = mitte_eur * (EINS + satz / 2)
+    stueck = g.stueck_runden(einsatz / kurs)
+    if stueck <= 0:
+        raise Fehler("Einsatz reicht für keine Stückzahl.")
+    return {"kurs": kurs, "stueck": stueck, "kurswert": g.geld(stueck * kurs),
+            "spread_eur": g.geld(stueck * mitte_eur * satz / 2), "gebuehr": g.gebuehr()}
+
+
+def verkauf_rechnung(typ: str, mitte_eur: Decimal, stueck: Decimal) -> dict:
+    """Reine Rechnung eines Verkaufs (ohne Buchung): Kurs mit halbem Spread, Erlös vor Gebühr, Spread und Gebühr."""
+    satz = g.spread(typ)
+    kurs = mitte_eur * (EINS - satz / 2)
+    return {"kurs": kurs, "erloes": g.geld(stueck * kurs), "spread_eur": g.geld(stueck * mitte_eur * satz / 2),
+            "gebuehr": g.gebuehr()}
+
+
 def kauf_ausfuehren(lauf: g.Buchungslauf, order: dict, plan: limits.Kaufplan, markt: limits.Markt,
                     zeit: datetime, kursquelle: str, kurs_zeit: str, kennzahlen: dict, zusatz: str = "") -> dict:
     portfolio = lauf.portfolio
-    satz = g.spread(plan.typ)
     mitte_eur = markt.in_eur(plan.wert_je_stueck, plan.basiswert)
-    kaufkurs = mitte_eur * (EINS + satz / 2)
-    stueck = g.stueck_runden(plan.einsatz / kaufkurs)
-    if stueck <= 0:
-        raise Fehler("Einsatz reicht für keine Stückzahl.")
-    kurswert = g.geld(stueck * kaufkurs)
-    spread_eur = g.geld(stueck * mitte_eur * satz / 2)
-    gebuehr = g.gebuehr()
+    rechnung = kauf_rechnung(plan.typ, mitte_eur, plan.einsatz)
+    kaufkurs, stueck, kurswert = rechnung["kurs"], rechnung["stueck"], rechnung["kurswert"]
+    spread_eur, gebuehr = rechnung["spread_eur"], rechnung["gebuehr"]
     g.cash_buchen(portfolio, -(kurswert + gebuehr))
     position_id = g.naechste_id(portfolio, "position")
     parameter = dict(plan.parameter)
@@ -162,14 +182,12 @@ def verkauf_ausfuehren(lauf: g.Buchungslauf, position: dict, anteil: Decimal, ku
                                  _bemerkung(zusatz, "Wert null beim Verkauf"), eurusd)
     waehrung = kurse.waehrung(position["basiswert"])
     mitte_eur = kurse.in_eur(wert, waehrung, eurusd)
-    satz = g.spread(position["typ"])
     hebel_jetzt = produkte.hebel(position, kurs)
-    verkaufskurs = mitte_eur * (EINS - satz / 2)
     bestand = D(position["stueck"])
     stueck = bestand if anteil >= EINS else g.stueck_runden(bestand * anteil)
-    erloes = g.geld(stueck * verkaufskurs)
-    spread_eur = g.geld(stueck * mitte_eur * satz / 2)
-    gebuehr = g.gebuehr()
+    rechnung = verkauf_rechnung(position["typ"], mitte_eur, stueck)
+    verkaufskurs, erloes = rechnung["kurs"], rechnung["erloes"]
+    spread_eur, gebuehr = rechnung["spread_eur"], rechnung["gebuehr"]
     g.cash_buchen(portfolio, erloes - gebuehr)
     rest = bestand - stueck
     if rest <= 0:

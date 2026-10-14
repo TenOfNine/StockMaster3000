@@ -18,7 +18,7 @@ DATEN_VARIABLE = "STOCKMASTER_DATA_DIR"
 FRAMEWORK_VARIABLE = "STOCKMASTER_FRAMEWORK_DIR"
 
 # Alles, was im Spiel entsteht (Reihenfolge = Anzeige in Migration und Export).
-SPIELSTAND = ("portfolios", "trades", "data", "journal", "reviews", "strategie", "news",
+SPIELSTAND = ("portfolios", "trades", "data", "journal", "reviews", "strategie", "news", "labor",
               "lessons.md", "ranking.md", "session.lock", "spiel.json")
 # Nicht versioniert, nicht exportiert: Zwischenspeicher und Sperrdatei.
 NICHT_VERSIONIERT = (".cache", ".schreibsperre", ".buchungssperre")

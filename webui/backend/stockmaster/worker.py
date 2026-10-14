@@ -39,6 +39,7 @@ BEOBACHTUNG_WIEDERHOLUNG_MINUTEN = 60
 # Zeitplan (Umbau v2): verpasste Termine werden so lange nachgeholt, wartende so lange wiederholt.
 OVERNIGHT_AB = (23, 30)
 OVERNIGHT_TAGE = 7
+LABOR_AB = (23, 15)
 NACHHOLEN_MINUTEN = 120
 WARTEN_STUNDEN = 24
 
@@ -312,6 +313,60 @@ class Worker:
                                          "meldung": (_letzte_zeile(lauf) or "")[:300]},
                      **({"overnight_zeit": jetzt.isoformat()} if ok else {}))
         return f"Overnight-Analyse: {_letzte_zeile(lauf)}"
+
+    def kontrolle_ausfuehren(self, jetzt: datetime) -> str | None:
+        """Mechanische Kontrollportfolios (Strategie-Labor L5); ohne Eintrag "kontrolle" in config/profile.json passiert nichts.
+
+        Sonst alle 15 Minuten ein Durchlauf von tools/kontrolle.py (idempotent je Tag, nur bei offenem Markt, unter der
+        Buchungssperre). Kein Claude beteiligt.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum") or not g.kontrolle_profile():
+            return None
+        if not self._faellig(self.zustand.get("kontrolle_versuch"), 15, jetzt):
+            return None
+        self._merken(kontrolle_versuch=jetzt.isoformat())
+        lauf = werkzeug("kontrolle", "tick", "--json", timeout=300)
+        try:
+            bericht = json.loads((lauf.stdout.strip().splitlines() or [""])[-1])
+        except ValueError:
+            return f"Kontrollportfolios: {_letzte_zeile(lauf) or 'ohne Ergebnis'}"
+        self._merken(kontrolle_ergebnis={
+            "zeit": jetzt.isoformat(timespec="seconds"), "ok": lauf.returncode == 0 and not bericht["fehler"],
+            "ausgefuehrt": len(bericht["ausgefuehrt"]), "fehler": bericht["fehler"][:3]})
+        if bericht["ausgefuehrt"]:
+            return f"Kontrollportfolios: {len(bericht['ausgefuehrt'])} Buchung(en)"
+        return None
+
+    def labor_auswerten(self, jetzt: datetime) -> str | None:
+        """Täglich nach Handelsschluss: Labor-Daten holen, Prognosen und Schattenbuch auswerten (Strategie-Labor L1/L2/L4).
+
+        Holt fehlende Tageskerzen über tools/kurse.py (nur der Hintergrunddienst hat Netzwerk), füllt den
+        Zwischenspeicher labor/daten/ und schreibt data/prognosen.json und data/schattenbuch.json. Bucht nie; ein
+        Fehler wird später erneut versucht.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum"):
+            return None
+        lokal = jetzt.astimezone(TZ)
+        if (lokal.hour, lokal.minute) < LABOR_AB:
+            return None
+        if lokal.date().isoformat() == (self.zustand.get("labor_ergebnis") or {}).get("tag"):
+            return None
+        if not self._faellig(self.zustand.get("labor_versuch"), 60, jetzt):
+            return None
+        self._merken(labor_versuch=jetzt.isoformat())
+        meldungen, ok = [], True
+        daten = werkzeug("backtest", "daten", timeout=1800)  # Zwischenspeicher des Strategie-Labors (Tageskerzen)
+        meldungen.append(f"labor-daten: {_letzte_zeile(daten)}")  # ein unbekannter Ticker blockiert die Auswertung nicht
+        for name in ("prognosen", "schattenbuch"):
+            lauf = werkzeug(name, "auswerten", "--netz", timeout=900)
+            ok = ok and lauf.returncode == 0
+            meldungen.append(f"{name}: {_letzte_zeile(lauf)}")
+        if ok:
+            self._merken(labor_ergebnis={"tag": lokal.date().isoformat(), "zeit": jetzt.isoformat(timespec="seconds"),
+                                         "ok": True, "meldung": " | ".join(meldungen)[:300]})
+        return "Labor-Auswertung: " + " | ".join(meldungen)[:200]
 
     def ausfuehren(self, jetzt: datetime) -> str | None:
         """Automatische Ausführung ohne Claude-Lauf (regeln.md 6, Entscheidung 43).
@@ -725,7 +780,8 @@ class Worker:
             return ["Wartung"]
         self.auftraege_bearbeiten()
         for schritt in (self.zeitplan, self.richtlinien_standard, self.profile_ergaenzen, self.planen, self.ausfuehren,
-                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.nachbuchen, self.committen):
+                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.kontrolle_ausfuehren,
+                        self.labor_auswerten, self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht

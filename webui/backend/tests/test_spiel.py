@@ -33,6 +33,26 @@ def test_nav_stimmt_mit_data_nav(nutzer, demo_repo):
     assert len(daten["benchmark"]) == len(zeilen) - 1
 
 
+def test_labor_ergebnisse_gespeichert(nutzer, demo_repo):
+    import json
+
+    (demo_repo / "data" / "prognosen.json").write_text(json.dumps({"gesamt": {"brier": 0.5}}), encoding="utf-8")
+    (demo_repo / "data" / "schattenbuch.json").unlink(missing_ok=True)
+    (demo_repo / "data" / "statistik.json").unlink(missing_ok=True)
+    daten = nutzer.get("/api/spiel/labor").json()
+    assert daten["prognosen"]["gesamt"]["brier"] == 0.5 and daten["schattenbuch"] is None and daten["statistik"] is None
+
+
+def test_labor_berichte_lesen(nutzer, demo_repo):
+    liste = nutzer.get("/api/spiel/labor/berichte").json()
+    assert liste and liste[0]["strategie"] == "trend" and "kurve" not in liste[0]  # Demo-Bericht des Labors
+    bericht = nutzer.get(f"/api/spiel/labor/berichte/{liste[0]['datei']}").json()
+    assert bericht["urteil"]["text"] == "kein Vorschlag" and bericht["kurve"]["tage"] and bericht["grenzen"]
+    assert {"gesamt", "is", "oos"} <= set(bericht)
+    assert nutzer.get("/api/spiel/labor/berichte/gibt-es-nicht.json").status_code == 404
+    assert nutzer.get("/api/spiel/labor/berichte/..%2Fspiel.json").status_code in (404, 422)
+
+
 def test_portfolio_und_trades(nutzer):
     daten = nutzer.get("/api/spiel/portfolios/aggressiv").json()
     assert daten["profil"] == "aggressiv"

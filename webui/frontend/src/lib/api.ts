@@ -660,3 +660,96 @@ export async function rohAnfrage(pfad: string, optionen: { methode?: string; dat
   }
   return antwort;
 }
+
+// Strategie-Labor (L1/L2): gespeicherte Ergebnisse von tools/prognosen.py und tools/schattenbuch.py
+export type PrognoseKennzahlen = {
+  anzahl: number;
+  ausgewertet: number;
+  offen: number;
+  luecke: number;
+  brier: number | null;
+  brier_skill: number | null;
+  richtung_trefferquote: number | null;
+  fehler_erwartung_mittel: number | null;
+  belastbar: boolean;
+  kalibrierung: { klasse: string; n: number; mittel_p: number; trefferquote: number }[];
+};
+export type PrognosenErgebnis = { zeit: string; gesamt: PrognoseKennzahlen; profile: Record<string, PrognoseKennzahlen>; ungueltig: { id: string }[] };
+export type SchattenKennzahlen = Record<string, { n: number; mittel: number | null; trefferquote: number | null }>;
+export type SchattenbuchErgebnis = {
+  zeit: string;
+  horizonte: number[];
+  ohne_kurs: number;
+  vergleich: { verworfen: SchattenKennzahlen; gekauft: SchattenKennzahlen };
+};
+export type MitIntervall = { wert: number | null; ci: [number, number] | null };
+export type StatistikProfil = {
+  profil: string;
+  tage: number;
+  genug_daten: boolean;
+  belastbar?: boolean;
+  hinweis?: string | null;
+  unterscheidbar?: boolean | null;
+  abstand?: "besser" | "schlechter" | null;
+  rendite_pa?: MitIntervall;
+  ueberrendite_pa?: MitIntervall;
+  sharpe?: MitIntervall;
+  information_ratio?: MitIntervall;
+  alpha_pa?: MitIntervall;
+  ueberrendite_beta_pa?: MitIntervall;
+  ueberrendite_vola_pa?: MitIntervall;
+  beta?: MitIntervall;
+  sortino?: MitIntervall;
+  calmar?: MitIntervall;
+  trefferquote?: MitIntervall;
+};
+export type StatistikErgebnis = {
+  zeit: string;
+  profile: Record<string, StatistikProfil>;
+  rang_information_ratio: string[];
+  rang_beta_angepasst?: string[];
+};
+export type LaborErgebnisse = {
+  prognosen: PrognosenErgebnis | null;
+  schattenbuch: SchattenbuchErgebnis | null;
+  statistik: StatistikErgebnis | null;
+};
+
+// Strategie-Labor (L4): Berichte aus labor/*.json
+export type LaborKennzahlen = {
+  tage: number;
+  genug_daten: boolean;
+  max_drawdown?: number;
+  abstand?: "besser" | "schlechter" | null;
+  rendite_pa?: MitIntervall;
+  ueberrendite_pa?: MitIntervall;
+  sharpe?: MitIntervall;
+  information_ratio?: MitIntervall;
+  alpha_pa?: MitIntervall;
+  beta?: MitIntervall;
+  sortino?: MitIntervall;
+  calmar?: MitIntervall;
+};
+export type LaborBerichtKopf = {
+  datei: string;
+  strategie: string;
+  parameter: Record<string, unknown>;
+  erstellt: string;
+  zeitraum: { von: string; bis: string; tage: number };
+  urteil: { vorschlag: boolean; gruende: string[]; text: string };
+};
+export type LaborBericht = LaborBerichtKopf & {
+  beschreibung: string;
+  kapital: string;
+  benchmark_ticker: string;
+  in_sample: { bis: string | null; tage: number };
+  out_of_sample: { von: string | null; tage: number };
+  gesamt: LaborKennzahlen;
+  is: LaborKennzahlen;
+  oos: LaborKennzahlen;
+  kosten: { gebuehren: string; spreads: string; zinsen: string; dividenden: string; umsatz: string; orders: number; endwert: string | null };
+  kurve: { tage: string[]; strategie: number[]; benchmark: number[] };
+  versuche: { anzahl: number; deflated_sharpe: number | null };
+  varianten?: { parameter: Record<string, unknown>; sharpe_in_sample: number | null; sharpe_out_of_sample: number | null }[];
+  grenzen: string[];
+};
