@@ -1319,3 +1319,16 @@ def test_overnight_analyse_woechentlich_nach_23_30(app, werkzeug_attrappe):
     werkzeug_attrappe.clear()
     assert w.overnight_analysieren(_um(13, "23:40")) is None and werkzeug_attrappe == []  # erst nach sieben Tagen
     assert w.overnight_analysieren(_um(12, "23:35") + timedelta(days=7)) is not None
+
+
+def test_labor_auswertung_taeglich_nach_23_15(app, werkzeug_attrappe):
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.labor_auswerten(_um(12, "22:00")) is None and werkzeug_attrappe == []
+    assert w.labor_auswerten(_um(12, "23:20")).startswith("Labor-Auswertung:")
+    aufrufe = [tuple(a[:3]) for a in werkzeug_attrappe]
+    assert ("prognosen", "auswerten", "--netz") in aufrufe and ("schattenbuch", "auswerten", "--netz") in aufrufe
+    werkzeug_attrappe.clear()
+    assert w.labor_auswerten(_um(12, "23:50")) is None and werkzeug_attrappe == []  # einmal je Tag
+    assert w.labor_auswerten(_um(13, "23:20")) is not None

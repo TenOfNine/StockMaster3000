@@ -7,6 +7,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { Kerzendiagramm } from "@/components/diagramme/Kerzendiagramm";
 import { Legende, NavDiagramm } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
+import { LaborKarten } from "@/components/Labor";
 import { Markdown } from "@/components/Markdown";
 import { NewsListe } from "@/components/News";
 import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, Reiter, ReiterInhalt, ReiterKnopf, ReiterLeiste, Seitenkopf, Skelett } from "@/components/ui";
@@ -133,6 +134,7 @@ export function Ranking() {
             <KarteKopf titel="Rendite seit Start" untertitel="Alle Profile im Vergleich" />
             <div className="px-4 pb-4">{nav.data ? <NavDiagramm daten={nav.data} profile={profile} hoehe={320} /> : <Skelett className="h-[320px]" />}</div>
           </Karte>
+          <LaborKarten />
         </>
       )}
     </div>

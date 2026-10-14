@@ -214,6 +214,30 @@ Inventur je Punkt (alle betroffenen Stellen, Stand vor der Umsetzung):
 6. **Regeln.** regeln.md Abschnitte 2, 5, 6, 7, 9, 11, 12, 13, 14; `config/profile.json`; Prüfung
    `pruefe_config_regeln` gleicht Abschnitt 7 mit `config/profile.json` ab (liest die Profile aus der Tabelle).
 
+## Strategie-Labor (Auftrag vom 2026-10-14)
+
+Auftrag der Auftraggeber: Strategien statistisch ehrlich und risikoadjustiert vergleichbar machen, ohne die
+Integrität zu lockern (Prüfspur, Nur-Anhängen, "Rechnen macht Code, Entscheiden macht Claude"). Entwicklungsmodus, es
+wird nicht gehandelt. **regeln.md bleibt unverändert**; alles, was eine Regeländerung bräuchte (L7), steht nur als
+Auslegungsfrage mit Formulierungsvorschlag unten. Neue Pflichten gelten erst ab einem Stichtag in
+`config/projekt.json` (`prognosen.pflicht_ab`, `schattenbuch.beginn`, beide 2026-11-02), nichts wirkt zurück. Keine neuen
+Abhängigkeiten. Je größerem Paket ein Pull Request von `main`.
+
+- [x] **L1 Strukturierte Prognosen und Kalibrierung.** `tools/prognosen.py` (Zeile "Prognose" im Journal-Eintrag,
+  Brier-Score, Kalibrierung, Richtungstrefferquote, Fehler des erwarteten Kurses, je Profil und gesamt;
+  `data/prognosen.json`, Abschnitt "Prognosegüte" in ranking.md, Karte auf der Ranking-Seite), Warnungen in
+  `pruefe.py` (nie Fehler), Hintergrunddienst wertet täglich ab 23:15 Uhr mit Netz aus. Gemeinsame Lesehilfen in
+  `tools/zeitreihen.py`. Tests: `tests/test_prognosen.py`.
+- [x] **L2 Schattenbuch.** `tools/schattenbuch.py` (Zeile "Verworfen" im Session-Eintrag, protokollierter Kurs zum
+  Eintragszeitpunkt, Rendite nach 5/20/60 Handelstagen netto nach Kosten, Vergleich mit gekauften Werten;
+  `data/schattenbuch.json`, Abschnitt in ranking.md, Karte auf der Ranking-Seite). Bucht nie. Tests:
+  `tests/test_schattenbuch.py`.
+- [ ] **L3 Statistik ehrlich machen** (`tools/statistik.py`).
+- [ ] **L4 Backtest-Engine (Strategie-Labor).**
+- [ ] **L5 Kontrollportfolios** (vorbereitet, Aktivierung nur durch die Auftraggeber).
+- [ ] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio** (vorbereitet).
+- [ ] **L7 Auslegungsfragen** (nur Dokumentation).
+
 ## Entscheidungen
 
 Hier werden Klärungen zu Unklarheiten in regeln.md festgehalten
@@ -723,6 +747,21 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Dienst den Kauf zum Schluss (Ausfall), wird er nicht nachgeholt; der Verkauf wird nachgeholt. (4) Die Cash-Warnung in
     `pruefe.py` trifft Overnight ohne Anweisung dauerhaft, weil Cash dort der Zustand ohne Anweisung ist; sie ist nur eine
     Warnung, der Session-Eintrag belegt die Ausnahme.
+
+46. Strukturierte Prognosen und Schattenbuch (Strategie-Labor L1 und L2). **Umgesetzt.** Auslegungen: (1) Die
+    Prognose-Zeile ist Pflicht (als Warnung) nur für Kauf-Einträge der Portfolios ohne Daueranweisung ab
+    `prognosen.pflicht_ab`; ein vorhandener, aber ungültiger Block warnt immer. Ältere Journale ohne Block bleiben
+    unbeanstandet. (2) Das tatsächliche Szenario ist das mit dem (logarithmisch) nächsten Kursziel; bei Gleichstand
+    gewinnt Base. Brier-Score = Summe der quadrierten Abweichungen über die drei Szenarien (Raten mit 1/3 = 0,667; Skill
+    = 1 − Brier/0,667). Fehlt am Horizontende die Kerze, gilt der Nachbarkurs, der weiter vom erwarteten Kurs liegt
+    (ungünstigere Annahme); ohne Ersatz bleibt die Prognose als "Lücke" offen. (3) Startkurs: angegeben, sonst erster
+    protokollierter Kurs ab Eintragszeit (höchstens 120 Minuten später), sonst letzter Schlusskurs davor. (4) Unter 30
+    ausgewerteten Prognosen bzw. verworfenen Kandidaten je Horizont steht der Hinweis "kaum belastbar". (5) Das
+    Schattenbuch bewertet in der Kurswährung ohne Devisenanteil und ohne Dividenden, mit der Aktien-Spanne aus
+    `config/kosten.json`, 1 EUR Gebühr je Order und dem Einsatz `schattenbuch.einsatz` (100 EUR = Mindestorder);
+    ein Kandidat ohne protokollierten Kurs ab Eintragszeit wird nicht bewertet (kein Backdating). Überlappende Fenster
+    derselben Aktie zählen mehrfach. (6) Die Auswertung braucht Netz für fehlende Tageskerzen und läuft daher im
+    Hintergrunddienst; `bewertung.py bericht` rechnet offline mit den gespeicherten Kerzen.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

@@ -194,12 +194,32 @@ und `session.py ende`.
     - Aktion: Kauf/Verkauf, Typ, Richtung, Hebel/Faktor
     - These: ...
     - Szenarien: Bull x % / Base y % / Bear z % mit kurzer Begründung
+    - Prognose: ticker=<Kursticker>; horizont=<Handelstage>; bull=<p>@<Kurs>; base=<p>@<Kurs>; bear=<p>@<Kurs>
     - Katalysator und Zeithorizont: ...
     - Einstieg, Stop, Kursziel: ...
     - Positionsgröße und Risikorechnung: Einsatz, Verlust bis Stop,
       Kosten, Anteil am Portfolio
     - Quellen: URL, Datum; aus dem News-Speicher mit News-ID (N-…), Link und Herausgeber
     - Unsicherheiten: ...
+
+### Prognose-Zeile (maschinenlesbar, ab `prognosen.pflicht_ab` für jeden Kauf)
+
+Sie ergänzt die Szenarien in Freitext und macht deine Einschätzungen messbar (`python tools/prognosen.py auswerten`:
+Brier-Score, Kalibrierung, Trefferquote; Abschnitt "Prognosegüte" in ranking.md). Felder, getrennt durch Semikolon:
+`ticker` (bei Zertifikaten der Basiswert), `horizont` (Handelstage ab dem Eintrag, 1 bis 260), `bull`/`base`/`bear` je
+als `Wahrscheinlichkeit@Kurs` (Dezimalpunkt oder -komma; Summe der drei Wahrscheinlichkeiten = 1; Kurse in der Währung
+des Tickers, bear ≤ base ≤ bull), optional `start=<Kurs bei Erfassung>`. Beispiel:
+`- Prognose: ticker=SAP.DE; horizont=20; bull=0.30@112; base=0.50@104; bear=0.20@93`. Ausgewertet wird am Ende des
+Horizonts mit dem Schlusskurs; die Zeile ist ehrlich gemeint, nicht auf ein gutes Ergebnis hin geschrieben. Fehlt sie
+oder ist sie ungültig, warnt `python tools/pruefe.py` (nie ein Fehler). Verkäufe, Änderungen und das Portfolio
+Overnight brauchen keine.
+
+### Verworfen-Zeile (Session-Eintrag, ab `schattenbuch.beginn`)
+
+`- Verworfen: [<portfolio>:]<ticker>=<Grund>; …`: die geprüften, aber nicht gekauften Kandidaten (Screener, Ideen). Das
+Schattenbuch (`python tools/schattenbuch.py`) hält den protokollierten Kurs zum Zeitpunkt des Eintrags fest und misst
+später, was ein Kauf gebracht hätte (nach Kosten). Der Grund steht ohne Semikolon; Kandidaten, die du kaufst, gehören
+nicht hierher. Das Schattenbuch bucht nie.
 
 ## Session-Vorlage (je Session, nur anhängen)
 
@@ -225,6 +245,7 @@ und `session.py ende`.
     - Cashquote: je Portfolio ist/Mindestquote; bei deutlicher Abweichung der Grund
     - Vorgaben der Auftraggeber: je Portfolio Version und wie berücksichtigt
       (oder "keine"); Konflikte mit den Regeln benennen
+    - Verworfen: ticker=kurzer Grund; ticker=kurzer Grund (geprüft, aber nicht gekauft)
     - Offene Punkte und Termine für die nächste Session: ...
 
 Die Nummer NN zählt Session-Einträge eines Tages getrennt von den

@@ -643,6 +643,14 @@ def pruefe_handeln() -> list[Befund]:
     return [warnung("Handeln", h["text"]) for h in handeln_hinweise()]
 
 
+def pruefe_prognosen() -> list[Befund]:
+    """Prognose-Block der Kauf-Einträge (Strategie-Labor L1): nur Warnungen, nie Fehler, ab `prognosen.pflicht_ab`."""
+    import prognosen
+    import schattenbuch
+    return ([warnung("Prognosen", h) for h in prognosen.pruef_hinweise()]
+            + [warnung("Schattenbuch", h) for h in schattenbuch.pruef_hinweise()])
+
+
 def pruefe_kalender() -> list[Befund]:
     heute = g.heute()
     jahre = [heute.year] + ([heute.year + 1] if heute.month >= 11 else [])
@@ -658,7 +666,7 @@ def pruefe_kalender() -> list[Befund]:
 
 def alle_pruefungen(historie: bool = False) -> list[Befund]:
     befunde = pruefe_config_regeln() + pruefe_sperre() + pruefe_kalender() + pruefe_remote() + pruefe_richtlinien()
-    befunde += pruefe_handeln()
+    befunde += pruefe_handeln() + pruefe_prognosen()
     befunde += pruefe_anhaengen_historie() if historie else pruefe_anhaengen()
     bloecke = g.journal_bloecke()
     befunde += pruefe_journal_vollstaendigkeit(bloecke) + pruefe_session_eintraege(bloecke)

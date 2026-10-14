@@ -53,6 +53,7 @@ def test_zweimal_ausfuehren_ist_idempotent(lauf, quelle):
     assert dateien(lauf) == vorher
     assert bewertung.main(["bericht"]) == 0
     bericht1 = (lauf / "ranking.md").read_text()
+    assert "## Prognosegüte" in bericht1 and (lauf / "data" / "prognosen.json").exists()
     assert bewertung.main(["bericht"]) == 0
     assert (lauf / "ranking.md").read_text() == bericht1
 

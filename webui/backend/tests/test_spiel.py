@@ -33,6 +33,15 @@ def test_nav_stimmt_mit_data_nav(nutzer, demo_repo):
     assert len(daten["benchmark"]) == len(zeilen) - 1
 
 
+def test_labor_ergebnisse_gespeichert(nutzer, demo_repo):
+    import json
+
+    (demo_repo / "data" / "prognosen.json").write_text(json.dumps({"gesamt": {"brier": 0.5}}), encoding="utf-8")
+    (demo_repo / "data" / "schattenbuch.json").unlink(missing_ok=True)
+    daten = nutzer.get("/api/spiel/labor").json()
+    assert daten["prognosen"]["gesamt"]["brier"] == 0.5 and daten["schattenbuch"] is None
+
+
 def test_portfolio_und_trades(nutzer):
     daten = nutzer.get("/api/spiel/portfolios/aggressiv").json()
     assert daten["profil"] == "aggressiv"

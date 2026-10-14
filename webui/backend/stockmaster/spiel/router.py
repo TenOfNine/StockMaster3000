@@ -53,6 +53,11 @@ def nav() -> dict:
     return lesen.nav_reihen()
 
 
+@router.get("/labor")
+def labor() -> dict:
+    return lesen.labor_ergebnisse()
+
+
 @router.get("/portfolios/{profil}")
 def portfolio(profil: str) -> dict:
     return _404(lesen.portfolio, profil)

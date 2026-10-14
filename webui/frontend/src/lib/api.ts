@@ -660,3 +660,26 @@ export async function rohAnfrage(pfad: string, optionen: { methode?: string; dat
   }
   return antwort;
 }
+
+// Strategie-Labor (L1/L2): gespeicherte Ergebnisse von tools/prognosen.py und tools/schattenbuch.py
+export type PrognoseKennzahlen = {
+  anzahl: number;
+  ausgewertet: number;
+  offen: number;
+  luecke: number;
+  brier: number | null;
+  brier_skill: number | null;
+  richtung_trefferquote: number | null;
+  fehler_erwartung_mittel: number | null;
+  belastbar: boolean;
+  kalibrierung: { klasse: string; n: number; mittel_p: number; trefferquote: number }[];
+};
+export type PrognosenErgebnis = { zeit: string; gesamt: PrognoseKennzahlen; profile: Record<string, PrognoseKennzahlen>; ungueltig: { id: string }[] };
+export type SchattenKennzahlen = Record<string, { n: number; mittel: number | null; trefferquote: number | null }>;
+export type SchattenbuchErgebnis = {
+  zeit: string;
+  horizonte: number[];
+  ohne_kurs: number;
+  vergleich: { verworfen: SchattenKennzahlen; gekauft: SchattenKennzahlen };
+};
+export type LaborErgebnisse = { prognosen: PrognosenErgebnis | null; schattenbuch: SchattenbuchErgebnis | null };

@@ -24,6 +24,8 @@ import gemeinsam as g
 import kurse
 import limits
 import produkte
+import prognosen
+import schattenbuch
 from gemeinsam import D, Fehler
 
 EINS = Decimal("1")
@@ -677,8 +679,17 @@ def bericht() -> list[str]:
     if benchmark:
         g.csv_schreiben(g.pfad("data", "benchmark.csv"), ["datum", "etf_kurs", *g.profile()], benchmark)
     alle = {p: kennzahlen(p, benchmark) for p in g.vorhandene_profile()}
-    g.atomar_schreiben(g.pfad("ranking.md"), ranking_text(alle, g.jetzt()))
-    meldungen = ["ranking.md aktualisiert."]
+    text = ranking_text(alle, g.jetzt())
+    try:
+        # Ohne Netzwerk: nur gespeicherte Kerzen; Lücken bleiben offen und werden vom Hintergrunddienst nachgeholt
+        text = text.rstrip("\n") + "\n\n" + "\n".join(prognosen.ranking_abschnitt(prognosen.auswerten()))
+        text += "\n" + "\n".join(schattenbuch.ranking_abschnitt(schattenbuch.auswerten()))
+    except Fehler as exc:
+        meldungen_vorab = [f"Prognosegüte nicht berechnet: {exc}"]
+    else:
+        meldungen_vorab = []
+    g.atomar_schreiben(g.pfad("ranking.md"), text)
+    meldungen = ["ranking.md aktualisiert.", *meldungen_vorab]
     for profil, k in alle.items():
         meldungen.append(f"{profil}: {g.geld(k['wert'])} EUR ({_p(k['rendite'])}, gegen Benchmark "
                          f"{_p(k['gegen_bench'])}), Drawdown-Stufe {k['stufe']}, {k['status']}")

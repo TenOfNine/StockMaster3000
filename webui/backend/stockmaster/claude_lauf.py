@@ -160,6 +160,9 @@ def prompt(art: str, auftrag) -> str:
                 "`python tools/overnight.py kosten` und `ergebnis` (`analyse` nicht aufrufen, das übernimmt der "
                 "Hintergrunddienst) und nenne die Zahlen im Journal. "
                 "Nenne im Journal die geprüften Kandidaten und die belegte Ausnahme, wenn du keine Order erfasst. "
+                "Jeder Kauf-Eintrag trägt die maschinenlesbare Zeile 'Prognose' (ticker, horizont, bull/base/bear mit "
+                "Wahrscheinlichkeit@Kurs; Format in CLAUDE.md), der Session-Eintrag die Zeile 'Verworfen' mit den geprüften, "
+                "nicht gekauften Kandidaten. Beide werden später ausgewertet (Brier-Score, Schattenbuch). "
                 "Der Hintergrunddienst führt vorgemerkte Orders, Limits, Stops, Kursziele und Barrieren auch ohne "
                 "Lauf aus (Buchung mit 'automatisch (Auslöser: …)' und deiner Journal-ID) und bucht nachts nach; "
                 "ist schon alles gebucht, bleibt `bewertung.py nachbuchen` ohne Wirkung." +

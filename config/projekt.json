@@ -25,5 +25,13 @@
     "pflicht_ab": "2026-10-09",
     "cash_warnung_ueber_min": "0.25",
     "cash_warnung_tage": 5
+  },
+  "prognosen": {
+    "pflicht_ab": "2026-11-02"
+  },
+  "schattenbuch": {
+    "beginn": "2026-11-02",
+    "einsatz": "100.00",
+    "horizonte": [5, 20, 60]
   }
 }

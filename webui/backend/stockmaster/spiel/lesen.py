@@ -273,6 +273,15 @@ def nav_reihen() -> dict:
     return {"profile": reihen, "benchmark": bench}
 
 
+def labor_ergebnisse() -> dict:
+    """Gespeicherte Ergebnisse des Strategie-Labors (data/prognosen.json, data/schattenbuch.json); nichts wird berechnet."""
+    def lesen_datei(name: str):
+        datei = repo() / "data" / name
+        return json.loads(datei.read_text(encoding="utf-8")) if datei.exists() else None
+
+    return {"prognosen": lesen_datei("prognosen.json"), "schattenbuch": lesen_datei("schattenbuch.json")}
+
+
 def _markt_aus_speicher(portfolio: dict):
     """Letzte gespeicherte Schlusskurse bis zum Verarbeitungsstand (keine Abfrage)."""
     w = werkzeuge()
