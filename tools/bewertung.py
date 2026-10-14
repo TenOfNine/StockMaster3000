@@ -26,7 +26,6 @@ import limits
 import produkte
 import prognosen
 import schattenbuch
-import statistik
 from gemeinsam import D, Fehler
 
 EINS = Decimal("1")
@@ -682,12 +681,14 @@ def bericht() -> list[str]:
     alle = {p: kennzahlen(p, benchmark) for p in g.vorhandene_profile()}
     text = ranking_text(alle, g.jetzt())
     try:
+        import statistik  # braucht numpy (kommt mit pandas); ohne fehlt nur dieser Abschnitt
+
         # Ohne Netzwerk: nur gespeicherte Kerzen; Lücken bleiben offen und werden vom Hintergrunddienst nachgeholt
         text = text.rstrip("\n") + "\n\n" + "\n".join(statistik.ranking_abschnitt(statistik.berechnen(benchmark=benchmark)))
         text += "\n" + "\n".join(prognosen.ranking_abschnitt(prognosen.auswerten()))
         text += "\n" + "\n".join(schattenbuch.ranking_abschnitt(schattenbuch.auswerten()))
-    except Fehler as exc:
-        meldungen_vorab = [f"Prognosegüte nicht berechnet: {exc}"]
+    except (Fehler, ImportError) as exc:
+        meldungen_vorab = [f"Prognosegüte und Statistik nicht berechnet: {exc}"]
     else:
         meldungen_vorab = []
     g.atomar_schreiben(g.pfad("ranking.md"), text)
