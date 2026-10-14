@@ -7,6 +7,7 @@
                              [--von JJJJ-MM-TT] [--bis JJJJ-MM-TT] [--kapital 1000] [--is-anteil 0.7] [--json]
     python tools/backtest.py walkforward --strategie trend --parameter tage=100,150,200 [--training 504] [--test 126]
     python tools/backtest.py berichte                                      gespeicherte Berichte (labor/*.json)
+    python tools/backtest.py kosten [--synthetisch] [--tage 500] [--seeds 10]   Kapital und Gebührenmodell vergleichen
 
 `--parameter name=wert1,wert2` ist ein Gitter: jede Kombination ist eine Variante, jede wird in labor/versuche.jsonl
 vermerkt (Mehrfachtest, Deflated Sharpe). Aus dem Gitter gewinnt die Variante mit dem besten Sharpe im In-Sample-Teil;
@@ -20,12 +21,12 @@ import argparse
 import itertools
 import json
 import sys
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import gemeinsam as g
 from gemeinsam import Fehler
-from labor import bericht, daten, engine
+from labor import bericht, daten, engine, strategien
 from labor.strategien import REGISTER, STANDARD_BENCHMARK
 
 
@@ -108,6 +109,49 @@ def ausfuehren(args) -> dict:
     return gewinner
 
 
+def kostenbericht(args) -> str:
+    """Tabelle der Kostenvarianten; synthetisch gemittelt über mehrere Zufallsreihen ohne Vorteil."""
+    import numpy as np
+    from kurse import Kerze
+
+    fabriken = {
+        "overnight (ETF)": lambda: strategien.Overnight(args.ticker),
+        "trend 20 Tage (täglich geprüft)": lambda: strategien.Trendfolge(args.ticker, tage=20, pruefung="taeglich"),
+        "60/40 monatlich": lambda: strategien.Gemischt({args.ticker: 0.6, "EUNH.DE": 0.4}, rebalancing="monat"),
+    }
+    runs = []
+    if args.synthetisch:
+        tage = []
+        t = date(2024, 1, 1)
+        while len(tage) < args.tage:
+            if t.weekday() < 5:
+                tage.append(t)
+            t += timedelta(days=1)
+        for seed in range(args.seeds):
+            serien = {}
+            for i, ticker in enumerate((args.ticker, "EUNH.DE")):
+                rng = np.random.default_rng(seed * 10 + i)
+                c = 100 * np.cumprod(1 + rng.normal(0.0, 0.01, len(tage)))
+                o = np.concatenate([[100.0], c[:-1]]) * (1 + rng.normal(0, 0.002, len(tage)))
+                serien[ticker] = [Kerze(d, Decimal(f"{a:.4f}"), Decimal(f"{max(a, b) * 1.003:.4f}"),
+                                        Decimal(f"{min(a, b) * 0.997:.4f}"), Decimal(f"{b:.4f}")) for d, a, b in zip(tage, o, c)]
+            runs.append(daten.Panel(serien))
+    else:
+        runs.append(daten.Panel.aus_cache([args.ticker, "EUNH.DE"]))
+    zeilen: dict[tuple, list[dict]] = {}
+    for panel in runs:
+        for z in bericht.kostenvergleich(panel, fabriken, panel.tage[0]):
+            zeilen.setdefault((z["strategie"], z["variante"]), []).append(z)
+    kopf = ["| Strategie | Variante | Orders | Kosten p. a. (% des Kapitals) | Rendite im Zeitraum (%) |", "| --- | --- | ---: | ---: | ---: |"]
+    for (name, variante), liste in zeilen.items():
+        mittel = lambda f: sum(x[f] for x in liste) / len(liste)  # noqa: E731
+        kopf.append(f"| {name} | {variante} | {mittel('orders'):.0f} | {str(round(100 * mittel('kosten_pa'), 2)).replace('.', ',')} | "
+                    f"{str(round(100 * mittel('rendite'), 2)).replace('.', ',')} |")
+    hinweis = ("Zufallskurse ohne Vorteil: die Rendite zeigt nur die Kosten, nicht eine Strategie." if args.synthetisch
+               else "Echte Tagesdaten aus labor/daten/.")
+    return "\n".join(kopf) + f"\n\n{hinweis} Mittel über {len(runs)} Reihe(n), {runs[0].tage[0]} bis {runs[0].tage[-1]}."
+
+
 def zeigen(b: dict) -> str:
     return bericht.markdown(b)
 
@@ -116,6 +160,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Strategie-Labor: Rückblick auf Tagesdaten (bucht nie).")
     unter = parser.add_subparsers(dest="befehl", required=True)
     unter.add_parser("liste", help="verfügbare Strategien")
+    k = unter.add_parser("kosten", help="Kostenvarianten (Kapital und Gebührenmodell) auf denselben Kursen vergleichen")
+    k.add_argument("--synthetisch", action="store_true", help="Zufallskurse ohne Vorteil (zeigt nur die Kosten)")
+    k.add_argument("--tage", type=int, default=500)
+    k.add_argument("--seeds", type=int, default=10, help="Zahl der Zufallsreihen, über die gemittelt wird")
+    k.add_argument("--ticker", default=STANDARD_BENCHMARK)
     unter.add_parser("berichte", help="gespeicherte Berichte")
     d = unter.add_parser("daten", help="Tageskerzen holen und zwischenspeichern (Netzwerk)")
     d.add_argument("--ticker", action="append", help="Standard: Liste aus config/labor.json")
@@ -140,6 +189,8 @@ def main(argv=None) -> int:
         if args.befehl == "liste":
             for name, klasse in REGISTER.items():
                 print(f"{name}: {klasse.beschreibung}")
+        elif args.befehl == "kosten":
+            print(kostenbericht(args))
         elif args.befehl == "berichte":
             for b in bericht.berichte_liste():
                 print(f"{b['datei']}: {b['urteil']} ({b['zeitraum']['von']} bis {b['zeitraum']['bis']})")

@@ -78,6 +78,25 @@ def beta_alpha(r: np.ndarray, markt: np.ndarray, rf: float) -> tuple[np.ndarray,
     return beta, (ym - beta * xm) * TAGE_JE_JAHR
 
 
+def ueberrendite_beta_pa(r: np.ndarray, markt: np.ndarray, rf: float) -> np.ndarray:
+    """Überrendite p. a. gegen die beta-angepasste Benchmark: risikofreier Zins plus Beta mal Marktüberrendite.
+
+    Beta kommt aus derselben Reihe (Regression); die Benchmark trägt also dasselbe Marktrisiko wie das Portfolio. Die
+    Differenz ist die Rendite, die nicht durch Marktrisiko erklärt ist (Jensens Alpha in Renditeform).
+    """
+    beta, _ = beta_alpha(r, markt, rf)
+    angepasst = rf + beta[..., None] * (markt - rf)
+    return rendite_pa(r) - rendite_pa(angepasst)
+
+
+def ueberrendite_vola_pa(r: np.ndarray, markt: np.ndarray, rf: float) -> np.ndarray:
+    """Überrendite p. a. gegen die Benchmark mit gleicher Schwankung (Markt, auf die Streuung des Portfolios skaliert)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        faktor = np.where(markt.std(axis=-1, ddof=1) > 0, r.std(axis=-1, ddof=1) / markt.std(axis=-1, ddof=1), np.nan)
+    angepasst = rf + faktor[..., None] * (markt - rf)
+    return rendite_pa(r) - rendite_pa(angepasst)
+
+
 def information_ratio(r: np.ndarray, b: np.ndarray) -> np.ndarray:
     aktiv = r - b
     s = aktiv.std(axis=-1, ddof=1)
@@ -179,6 +198,10 @@ def kennzahlen_reihe(r: np.ndarray, b: np.ndarray | None, markt: np.ndarray | No
         ergebnis["beta"] = mit_intervall(beta, ci(lambda x, m: beta_alpha(x, m, rf)[0], r, markt), kz)
         ergebnis["alpha_pa"] = mit_intervall(alpha, ci(lambda x, m: beta_alpha(x, m, rf)[1], r, markt), kz)
         ergebnis["alpha_t"] = alpha_t(r, markt, rf)
+        ergebnis["ueberrendite_beta_pa"] = mit_intervall(ueberrendite_beta_pa(r, markt, rf),
+                                                         ci(lambda x, m: ueberrendite_beta_pa(x, m, rf), r, markt), kz)
+        ergebnis["ueberrendite_vola_pa"] = mit_intervall(ueberrendite_vola_pa(r, markt, rf),
+                                                         ci(lambda x, m: ueberrendite_vola_pa(x, m, rf), r, markt), kz)
     return ergebnis
 
 
@@ -274,7 +297,10 @@ def berechnen(schreiben: bool = True, benchmark: list[dict] | None = None) -> di
     rang = sorted((p for p, k in profile.items() if k.get("genug_daten") and "information_ratio" in k
                    and k["information_ratio"]["wert"] is not None),
                   key=lambda p: profile[p]["information_ratio"]["wert"], reverse=True)
+    rang_beta = sorted((p for p, k in profile.items() if k.get("genug_daten") and k.get("ueberrendite_beta_pa", {}).get("wert") is not None),
+                       key=lambda p: profile[p]["ueberrendite_beta_pa"]["wert"], reverse=True)
     ergebnis = {"zeit": g.iso(g.jetzt()), "einstellungen": einst, "profile": profile, "rang_information_ratio": rang,
+                "rang_beta_angepasst": rang_beta,
                 "hinweise": ["Intervalle: zirkulärer Block-Bootstrap, feste Zufallszahlen, 95 %.",
                              "Rendite allein ist kein Rangkriterium; maßgeblich sind Überrendite und Information Ratio "
                              "mit ihrem Intervall."]}
@@ -328,6 +354,8 @@ def ranking_abschnitt(ergebnis: dict | None) -> list[str]:
               ("Sharpe Ratio", lambda k: _z(k["sharpe"])),
               ("Information Ratio", lambda k: _z(k["information_ratio"])),
               ("Alpha p. a. gegen MSCI World (%)", lambda k: _z(k["alpha_pa"], 100, 1, vorzeichen=True)),
+              ("Überrendite gegen beta-angepasste Benchmark (%)", lambda k: _z(k["ueberrendite_beta_pa"], 100, 1, vorzeichen=True)),
+              ("Überrendite gegen Benchmark mit gleicher Schwankung (%)", lambda k: _z(k["ueberrendite_vola_pa"], 100, 1, vorzeichen=True)),
               ("Beta gegen MSCI World", lambda k: _z(k["beta"])),
               ("Sortino", lambda k: _z(k["sortino"])),
               ("Calmar", lambda k: _z(k["calmar"])),
@@ -338,6 +366,10 @@ def ranking_abschnitt(ergebnis: dict | None) -> list[str]:
     rang = [p for p in (ergebnis or {}).get("rang_information_ratio", []) if p in namen]
     if rang:
         zeilen += ["", "Rang nach Information Ratio: " + " > ".join(p.capitalize() for p in rang) + "."]
+    rang_beta = [p for p in (ergebnis or {}).get("rang_beta_angepasst", []) if p in namen]
+    if rang_beta:
+        zeilen += ["", "Rang nach Überrendite gegen die beta-angepasste Benchmark (gleiches Marktrisiko, Risiko wird nicht "
+                       "als Leistung gewertet): " + " > ".join(p.capitalize() for p in rang_beta) + "."]
     kurz = [p for p in namen if not profile[p].get("belastbar")]
     if kurz:
         zeilen += ["", "Weniger als " + str(g.projekt()["sharpe_min_handelstage"]) + " Handelstage (kaum belastbar): "

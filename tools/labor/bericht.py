@@ -285,3 +285,41 @@ def berichte_liste() -> list[dict]:
             liste.append({"datei": datei.name, "strategie": b["strategie"], "erstellt": b["erstellt"],
                           "urteil": b["urteil"]["text"], "zeitraum": b["zeitraum"], "parameter": b["parameter"]})
     return liste
+
+
+# --------------------------------------------------------------------------
+# Kostenvarianten (Auslegungsfrage Kapital und Gebühren)
+
+KOSTEN_VARIANTEN = [
+    # Name, Startkapital, Gebührenfunktion (None = feste Gebühr je Order aus config/kosten.json, also heute)
+    ("heute: 1.000 EUR, 1 EUR je Order", Decimal("1000"), None),
+    ("1.000 EUR, 0,1 % mit Mindestgebühr 1 EUR", Decimal("1000"), (Decimal("0.001"), Decimal("1"))),
+    ("50.000 EUR, 1 EUR je Order", Decimal("50000"), None),
+    ("50.000 EUR, 0,1 % mit Mindestgebühr 1 EUR", Decimal("50000"), (Decimal("0.001"), Decimal("1"))),
+    ("100.000 EUR, 1 EUR je Order", Decimal("100000"), None),
+    ("100.000 EUR, 0,1 % mit Mindestgebühr 1 EUR", Decimal("100000"), (Decimal("0.001"), Decimal("1"))),
+]
+
+
+def _gebuehr_prozent(satz: Decimal, minimum: Decimal):
+    return lambda betrag: max(minimum, abs(betrag) * satz)
+
+
+def kostenvergleich(panel: Panel, strategien: dict, start: date, ende: date | None = None) -> list[dict]:
+    """Kosten je Strategie und Variante auf denselben Kursen: wie viel Rendite p. a. frisst die Kostenstruktur?
+
+    `strategien`: Name -> Funktion ohne Argument, die eine frische Strategie baut. Gibt je Zeile Kosten in EUR und in
+    Prozent des Kapitals p. a., Orders und Endwert zurück; `ohne_kosten` ist derselbe Lauf ohne Gebühren und Spread.
+    """
+    zeilen = []
+    for name, fabrik in strategien.items():
+        for variante, kapital, gebuehr in KOSTEN_VARIANTEN:
+            funktion = _gebuehr_prozent(*gebuehr) if gebuehr else None
+            erg = engine.ausfuehren(panel, fabrik(), start, ende, kapital, gebuehr=funktion)
+            jahre = max(len(erg.tage) / statistik.TAGE_JE_JAHR, 1e-9)
+            orders = sum(1 for t in erg.trades if t["aktion"] in ("kauf", "verkauf"))
+            zeilen.append({"strategie": name, "variante": variante, "kapital": str(kapital), "orders": orders,
+                           "gebuehren": str(erg.gebuehren), "spreads": str(erg.spreads),
+                           "kosten_pa": float(erg.kosten() / kapital) / jahre, "endwert": str(erg.werte[-1]),
+                           "rendite": float(erg.werte[-1] / kapital - 1), "jahre": jahre})
+    return zeilen

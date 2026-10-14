@@ -187,6 +187,13 @@ heutigen Stand und trägst eine Änderung in die Historie ein. Keine Orders, kei
 Journal. Prüfen mit `python tools/richtlinien.py status`, dann lokal committen
 und `session.py ende`.
 
+## Kontrollportfolios (mechanisch)
+
+Profile, die `config/profile.json` unter dem Schlüssel `kontrolle` führt, handelt kein Claude (Passiv, Zufall, Labor-Strategie;
+`tools/kontrolle.py`, Journal-Einträge `journal/<datum>_mechanisch.md`). Für sie gibt es keine Order von dir, keine Anlagerichtlinie, keine Zeile
+im Session-Eintrag und keine Cash-Warnung; `buchen.py` lehnt Orders dort ab. Sie dienen als Kontrollgruppe: Dein Ergebnis wird
+an ihnen gemessen.
+
 ## Strategie-Labor (Laufart "Strategie-Labor (ohne Orders)")
 
 Ein Lauf dieser Art handelt nicht. Du formulierst höchstens drei Hypothesen mit Begründung vor dem Test (Aufgabenteilung:
@@ -237,6 +244,8 @@ nicht hierher. Das Schattenbuch bucht nie.
     ### S-JJJJMMTT-NN | Session | <Kennung des Auftraggebers>
     - Zeit: JJJJ-MM-TT HH:MM
     - Setup: Modell und Aufwand (aus dem Auftrag der Web-UI), Lauf-ID
+    - Portfolios: nur bei getrennten Läufen je Portfolio, z. B. "aggressiv"
+      (sonst weglassen: der Eintrag gilt für alle Portfolios)
     - Marktlage: kurz, Fakten mit Quelle (URL, Datum), Einschätzungen
       als solche markiert
     - Defensiv: Entscheidung (Order J-... oder keine Order);

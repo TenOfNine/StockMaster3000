@@ -101,6 +101,8 @@ const STATISTIK_ZEILEN: { name: string; wert: (k: StatistikProfil) => string }[]
   { name: "Sharpe Ratio", wert: (k) => mitIntervall(k.sharpe, "zahl") },
   { name: "Information Ratio", wert: (k) => mitIntervall(k.information_ratio, "zahl") },
   { name: "Alpha p. a. gegen MSCI World", wert: (k) => mitIntervall(k.alpha_pa, "prozent", true) },
+  { name: "Überrendite gegen beta-angepasste Benchmark", wert: (k) => mitIntervall(k.ueberrendite_beta_pa, "prozent", true) },
+  { name: "Überrendite gegen Benchmark mit gleicher Schwankung", wert: (k) => mitIntervall(k.ueberrendite_vola_pa, "prozent", true) },
   { name: "Beta gegen MSCI World", wert: (k) => mitIntervall(k.beta, "zahl") },
   { name: "Sortino", wert: (k) => mitIntervall(k.sortino, "zahl") },
   { name: "Calmar", wert: (k) => mitIntervall(k.calmar, "zahl") },
@@ -148,7 +150,13 @@ export function StatistikKarte() {
             </tbody>
           </table>
           {s.rang_information_ratio.length > 0 && (
-            <p className="px-5 py-3 text-[12px] text-text-3">Rang nach Information Ratio: {s.rang_information_ratio.map((p) => PROFIL_NAME[p as keyof typeof PROFIL_NAME] ?? p).join(" > ")}</p>
+            <p className="px-5 pt-3 text-[12px] text-text-3">Rang nach Information Ratio: {s.rang_information_ratio.map((p) => PROFIL_NAME[p as keyof typeof PROFIL_NAME] ?? p).join(" > ")}</p>
+          )}
+          {(s.rang_beta_angepasst?.length ?? 0) > 0 && (
+            <p className="px-5 py-3 text-[12px] text-text-3">
+              Rang nach Überrendite gegen die beta-angepasste Benchmark (Marktrisiko zählt nicht als Leistung):{" "}
+              {s.rang_beta_angepasst!.map((p) => PROFIL_NAME[p as keyof typeof PROFIL_NAME] ?? p).join(" > ")}
+            </p>
           )}
         </div>
       )}

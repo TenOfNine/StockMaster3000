@@ -33,5 +33,10 @@
     "richtlinien": {"name": "Anlagerichtlinien ausformulieren (AP12)", "zweck": "trading"},
     "labor": {"name": "Strategie-Labor (ohne Orders)", "zweck": "review"}
   },
+  "portfolio_laeufe": {
+    "aktiv": false,
+    "_hinweis": "Vorbereitet, nicht aktiv (STATUS.md, Entscheidung 50): getrennte Claude-Läufe je Portfolio mit eigenem Kontext und optional eigenem Modell. Aktiv nur durch Entscheidung der Auftraggeber.",
+    "modell_je_portfolio": {}
+  },
   "zeitlimit_minuten": 90
 }

@@ -138,7 +138,9 @@ class Lauf:
     """Eine Wiedergabe von `start` bis `ende` mit einem Kapital und einer Strategie."""
 
     def __init__(self, panel: Panel, strategie: Strategie, start: date, ende: date | None = None,
-                 kapital: Decimal = Decimal("1000.00"), toleranz: float = 0.0):
+                 kapital: Decimal = Decimal("1000.00"), toleranz: float = 0.0, gebuehr=None):
+        """`gebuehr`: optional Funktion Betrag -> Gebühr (Variantenrechnung wie 0,1 % mit Mindestgebühr). Ohne sie gilt die
+        feste Gebühr je Order aus config/kosten.json, also der Spielstand von heute."""
         fehlend = [t for t in strategie.tickers if t not in panel.tickers]
         if fehlend:
             raise Fehler(f"Im Panel fehlen Ticker der Strategie: {', '.join(fehlend)}")
@@ -148,6 +150,7 @@ class Lauf:
         self.start, self.ende = start, ende
         self.kapital = g.geld(kapital)
         self.toleranz = toleranz
+        self._gebuehr_fn = gebuehr
         self.mindestorder = D(g.kosten()["mindestorder"])
         self.zinssatz = D(g.kosten()["cash_zins_pa"]) / D(g.kosten()["tage_je_jahr"])
         self.cash = self.kapital
@@ -198,6 +201,8 @@ class Lauf:
             return
         stueck = min(stueck, D(pos["stueck"]))
         r = buchen.verkauf_rechnung(pos["typ"], mitte, stueck)
+        if self._gebuehr_fn:
+            r["gebuehr"] = g.geld(self._gebuehr_fn(r["erloes"]))
         self.cash += r["erloes"] - r["gebuehr"]
         rest = D(pos["stueck"]) - stueck
         if rest <= 0:
@@ -216,7 +221,7 @@ class Lauf:
             return
         tag = self.panel.tag_von(p)
         wert, parameter = produkte.ausgabe(z.typ, z.richtung, kurs, hebel=z.hebel, kauftag=tag)
-        gebuehr = g.gebuehr()
+        gebuehr = g.geld(self._gebuehr_fn(einsatz)) if self._gebuehr_fn else g.gebuehr()
         einsatz = min(einsatz, self.cash - gebuehr - Decimal("0.01"))
         if einsatz < self.mindestorder:
             return
@@ -227,6 +232,8 @@ class Lauf:
             r = buchen.kauf_rechnung(z.typ, mitte, einsatz)
         except Fehler:
             return
+        if self._gebuehr_fn:
+            r["gebuehr"] = g.geld(self._gebuehr_fn(r["kurswert"]))
         self.cash -= r["kurswert"] + r["gebuehr"]
         if bestehend is not None and z.typ in g.AKTIEN:
             bestehend["stueck"] = D(bestehend["stueck"]) + r["stueck"]
@@ -340,8 +347,8 @@ class Lauf:
 
 
 def ausfuehren(panel: Panel, strategie: Strategie, start: date, ende: date | None = None,
-               kapital: Decimal = Decimal("1000.00"), toleranz: float = 0.0) -> Ergebnis:
-    return Lauf(panel, strategie, start, ende, kapital, toleranz).ausfuehren()
+               kapital: Decimal = Decimal("1000.00"), toleranz: float = 0.0, gebuehr=None) -> Ergebnis:
+    return Lauf(panel, strategie, start, ende, kapital, toleranz, gebuehr).ausfuehren()
 
 
 # --------------------------------------------------------------------------

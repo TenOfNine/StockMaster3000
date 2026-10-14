@@ -124,6 +124,29 @@ HANDELN_PROMPT = (
     "nicht gehandelt, um zu handeln.")
 
 
+def portfolio_laeufe() -> dict:
+    return claude_optionen.optionen().get("portfolio_laeufe", {})
+
+
+def modell_fuer_portfolio(portfolio: str | None, standard: str) -> str:
+    """Modell eines Laufs: bei aktiven Portfolio-Läufen das konfigurierte Modell des Portfolios, sonst das Standardmodell."""
+    konfig = portfolio_laeufe()
+    if not portfolio or not konfig.get("aktiv"):
+        return standard
+    return konfig.get("modell_je_portfolio", {}).get(portfolio) or standard
+
+
+def portfolio_abschnitt(auftrag) -> str:
+    """Zusatz im Trading-Prompt für getrennte Läufe je Portfolio (vorbereitet, nur bei aktivierter Konfiguration)."""
+    portfolio = getattr(auftrag, "portfolio", None)
+    if not portfolio or not portfolio_laeufe().get("aktiv"):
+        return ""
+    return (f" Dieser Lauf betrifft nur das Portfolio {portfolio}: Entscheide und handle ausschließlich dort, mit eigenem "
+            f"Kontext (lies dessen Strategie, Journal und Review, nicht die der anderen). Schreibe den Session-Eintrag mit der "
+            f"Zeile '- Portfolios: {portfolio}' und der Pflichtzeile 'Handlung oder Ausnahme' nur für dieses Portfolio; die "
+            f"anderen Portfolios laufen in eigenen Läufen.")
+
+
 def prompt(art: str, auftrag) -> str:
     e = einstellungen()
     aufwand = auftrag.aufwand or "Standard der CLI"
@@ -147,7 +170,7 @@ def prompt(art: str, auftrag) -> str:
                 "dann in ihrem Rahmen (Änderungen nur mit Datum, Anlass und Prüfkriterium). Der Lauf hängt nicht von Datum, "
                 "Wochentag, Uhrzeit oder Startdatum ab: Das Spiel ist bereits gestartet (der Lauf hat es notfalls "
                 "selbst gestartet); außerhalb der Handelszeit legst du Orders trotzdem an, sie werden vorgemerkt und "
-                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT +
+                "bei nächster Gelegenheit ausgeführt. " + HANDELN_PROMPT + portfolio_abschnitt(auftrag) +
                 " Trage Modell und Aufwand im Session-Eintrag in der Zeile '- Setup:' ein. Nutze "
                 "zusätzlich zur Web-Suche den News-Speicher (`python tools/news.py liste --tage 3`) als datierte Quelle. "
                 "Für die Breite des Marktes (jede Aktie und jeder ETF an Xetra, NYSE und NASDAQ) nutze den Screener: "

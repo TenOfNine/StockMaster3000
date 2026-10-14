@@ -192,3 +192,33 @@ def test_ueberrendite_mit_vorsprung_ist_unterscheidbar(projekt, uhr):
 
 def test_bericht_ohne_daten(projekt, uhr):
     assert "Noch zu wenige Handelstage" in "\n".join(statistik.ranking_abschnitt(statistik.berechnen()))
+
+
+def test_hebel_ist_kein_koennen_beta_angepasste_benchmark(einst):
+    """Doppelter Markt: roh deutlich über der Benchmark, gegen die beta-angepasste Benchmark kein Vorsprung."""
+    m = np.random.default_rng(1).normal(0.0015, 0.008, 750)
+    r = 2 * m + np.random.default_rng(2).normal(0, 0.0005, 750)
+    k = statistik.kennzahlen_reihe(r, m, m, 0.0, einst)
+    assert k["ueberrendite_pa"]["ci"][0] > 0 and k["abstand"] == "besser"           # roh: scheinbar besser
+    assert k["ueberrendite_beta_pa"]["ci"][1] < 0.02  # beta-angepasst: kein Vorsprung (nur etwas Volatilitätsabzug)
+    assert abs(k["ueberrendite_beta_pa"]["wert"]) < 0.1 * abs(k["ueberrendite_pa"]["wert"])
+    assert abs(k["ueberrendite_vola_pa"]["wert"]) < 0.1 * abs(k["ueberrendite_pa"]["wert"])
+
+
+def test_echtes_alpha_bleibt_nach_beta_anpassung(einst):
+    m = np.random.default_rng(1).normal(0.0015, 0.008, 750)
+    r = 2 * m + 0.0008 + np.random.default_rng(2).normal(0, 0.0005, 750)  # zusätzlich +0,08 % je Tag
+    k = statistik.kennzahlen_reihe(r, m, m, 0.0, einst)
+    assert k["ueberrendite_beta_pa"]["ci"][0] > 0.1 and k["alpha_pa"]["ci"][0] > 0.1
+
+
+def test_ranking_nach_beta_angepasster_ueberrendite(projekt, uhr):
+    from helfer import portfolio
+
+    portfolio("defensiv")
+    portfolio("ausgewogen")
+    spiel_daten(projekt, tage=80, vorsprung=0.002)
+    e = statistik.berechnen()
+    assert e["rang_beta_angepasst"] and set(e["rang_beta_angepasst"]) <= {"defensiv", "ausgewogen"}
+    text = "\n".join(statistik.ranking_abschnitt(e))
+    assert "beta-angepasste Benchmark" in text and "gleicher Schwankung" in text

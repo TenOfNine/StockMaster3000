@@ -176,6 +176,20 @@ def profile_am(datum: str | None) -> list[str]:
     return [p for p in vorhanden if (g.portfolio_laden(p).get("startdatum") or "") <= datum]
 
 
+def sitzung_profile(block: dict) -> list[str]:
+    """Profile, für die ein Session-Eintrag zuständig ist: alle des Tages oder die in der Zeile "Portfolios" genannten.
+
+    Getrennte Läufe je Portfolio (config/claude.json, portfolio_laeufe) schreiben "- Portfolios: <profil>"; ohne die
+    Zeile gilt der Eintrag wie bisher für alle Portfolios.
+    """
+    alle = profile_am(block["datum"])
+    genannt = _hat_feld(block["felder"], "portfolios")
+    if not genannt or not genannt.strip():
+        return alle
+    namen = {n.strip().lower() for n in re.split(r"[,;]", genannt) if n.strip()}
+    return [p for p in alle if p in namen]
+
+
 def pruefe_journal_vollstaendigkeit(bloecke: list[dict] | None = None) -> list[Befund]:
     """Warnungen für unvollständige Journal- und Session-Einträge (Vorlagen in CLAUDE.md)."""
     name = "Journal-Vorlage"
@@ -184,7 +198,7 @@ def pruefe_journal_vollstaendigkeit(bloecke: list[dict] | None = None) -> list[B
     for block in bloecke:
         ort = f"{block['id']} ({block['datei']})"
         pflicht = J_PFLICHTFELDER if block["art"] == "J" else dict(
-            S_PFLICHTFELDER, **{p: p.capitalize() for p in profile_am(block["datum"])})
+            S_PFLICHTFELDER, **{p: p.capitalize() for p in sitzung_profile(block)})
         fehlend = [titel for praefix, titel in pflicht.items() if not (_hat_feld(block["felder"], praefix) or "").strip()]
         if fehlend:
             befunde.append(warnung(name, f"{ort}: es fehlt {', '.join(fehlend)}."))
@@ -637,7 +651,7 @@ def handeln_hinweise() -> list[dict]:
     for block in g.journal_bloecke():
         if block["art"] != "S" or (block["datum"] or "") < einst["pflicht_ab"]:
             continue
-        profile = profile_am(block["datum"])
+        profile = sitzung_profile(block)
         feld = _hat_feld(block["felder"], "handlung oder ausnahme")
         ort = f"{block['id']} ({block['datei']})"
         if feld is None or not feld.strip():

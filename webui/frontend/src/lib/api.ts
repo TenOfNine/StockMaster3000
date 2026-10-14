@@ -696,12 +696,19 @@ export type StatistikProfil = {
   sharpe?: MitIntervall;
   information_ratio?: MitIntervall;
   alpha_pa?: MitIntervall;
+  ueberrendite_beta_pa?: MitIntervall;
+  ueberrendite_vola_pa?: MitIntervall;
   beta?: MitIntervall;
   sortino?: MitIntervall;
   calmar?: MitIntervall;
   trefferquote?: MitIntervall;
 };
-export type StatistikErgebnis = { zeit: string; profile: Record<string, StatistikProfil>; rang_information_ratio: string[] };
+export type StatistikErgebnis = {
+  zeit: string;
+  profile: Record<string, StatistikProfil>;
+  rang_information_ratio: string[];
+  rang_beta_angepasst?: string[];
+};
 export type LaborErgebnisse = {
   prognosen: PrognosenErgebnis | null;
   schattenbuch: SchattenbuchErgebnis | null;

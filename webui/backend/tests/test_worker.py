@@ -1348,3 +1348,25 @@ def test_kontrolle_nur_mit_eintrag_in_der_konfiguration(app, werkzeug_attrappe, 
     assert ("kontrolle", "tick") == tuple(werkzeug_attrappe[0][:2])
     werkzeug_attrappe.clear()
     assert w.kontrolle_ausfuehren(_um(12, "10:35")) is None and werkzeug_attrappe == []  # erst nach 15 Minuten wieder
+
+
+def test_portfolio_laeufe_sind_vorbereitet_aber_aus(app, monkeypatch):
+    from types import SimpleNamespace
+
+    from stockmaster import claude_lauf, claude_optionen
+
+    auftrag = SimpleNamespace(aufwand=None, modell="sonnet", auftraggeber="a-adm1", id="x", ausloeser="manuell",
+                              portfolio="aggressiv")
+    # Standard: aus, der Prompt bleibt unverändert und das Modell das gewählte
+    assert claude_lauf.portfolio_abschnitt(auftrag) == ""
+    assert claude_lauf.modell_fuer_portfolio("aggressiv", "sonnet") == "sonnet"
+    konfig = claude_optionen.optionen()
+    assert konfig["portfolio_laeufe"]["aktiv"] is False
+    # aktiviert (nur in diesem Test): Zusatz im Prompt, Modell je Portfolio
+    aktiv = {**konfig, "portfolio_laeufe": {"aktiv": True, "modell_je_portfolio": {"aggressiv": "opus"}}}
+    monkeypatch.setattr(claude_optionen, "optionen", lambda: aktiv)
+    assert "nur das Portfolio aggressiv" in claude_lauf.prompt("trading", auftrag)
+    assert "- Portfolios: aggressiv" in claude_lauf.portfolio_abschnitt(auftrag)
+    assert claude_lauf.modell_fuer_portfolio("aggressiv", "sonnet") == "opus"
+    assert claude_lauf.modell_fuer_portfolio("defensiv", "sonnet") == "sonnet"
+    assert claude_lauf.portfolio_abschnitt(SimpleNamespace(portfolio=None)) == ""

@@ -381,3 +381,22 @@ def test_cli_ende_zu_ende(projekt, quelle, uhr, capsys):
     assert (projekt / "labor" / f"trend_{g.heute().isoformat()}.md").read_text(encoding="utf-8").startswith("# Strategie-Labor")
     assert backtest.main(["berichte"]) == 0
     assert backtest.main(["ausfuehren", "--strategie", "gibtesnicht"]) == 1
+
+
+def test_kostenvarianten_gebuehrenmodell(projekt):
+    """Bei kleinem Kapital zählt die Mindestgebühr (beide Modelle gleich), bei großem Kapital kostet 0,1 % deutlich mehr."""
+    panel = panel_aus({"EUNL.DE": zufall(120, 4), "EUNH.DE": zufall(120, 5)})
+    zeilen = bericht.kostenvergleich(panel, {"trend": lambda: strategien.Trendfolge("EUNL.DE", tage=10, pruefung="taeglich")},
+                                     panel.tage[0])
+    je = {z["variante"]: z for z in zeilen}
+    assert je["heute: 1.000 EUR, 1 EUR je Order"]["gebuehren"] == je["1.000 EUR, 0,1 % mit Mindestgebühr 1 EUR"]["gebuehren"]
+    fest, prozent = je["100.000 EUR, 1 EUR je Order"], je["100.000 EUR, 0,1 % mit Mindestgebühr 1 EUR"]
+    assert D(fest["gebuehren"]) == fest["orders"] * D("1.00")
+    assert D(prozent["gebuehren"]) > 20 * D(fest["gebuehren"])  # Orders über 90.000 EUR: rund 90 EUR statt 1 EUR
+    assert prozent["kosten_pa"] > fest["kosten_pa"]
+
+
+def test_cli_kostenvergleich_synthetisch(projekt, capsys):
+    assert backtest.main(["kosten", "--synthetisch", "--tage", "80", "--seeds", "1"]) == 0
+    ausgabe = capsys.readouterr().out
+    assert "| Strategie | Variante |" in ausgabe and "100.000 EUR, 0,1 %" in ausgabe and "Zufallskurse ohne Vorteil" in ausgabe

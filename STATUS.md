@@ -247,9 +247,21 @@ Abhängigkeiten. Je größerem Paket ein Pull Request von `main`.
   "Strategie-Labor (ohne Orders)" in `config/claude.json`, täglicher Datenabruf im Hintergrunddienst
   (`config/labor.json`). Tests: `tests/test_labor.py` (handgerechnete Kosten, Rebalancing, Knock-out, Overnight,
   Look-ahead-Prüfung mit Gegenprobe durch eine betrügende Strategie).
-- [ ] **L5 Kontrollportfolios** (vorbereitet, Aktivierung nur durch die Auftraggeber).
-- [ ] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio** (vorbereitet).
-- [ ] **L7 Auslegungsfragen** (nur Dokumentation).
+- [x] **L5 Kontrollportfolios** (vorbereitet, **nicht aktiviert**). `tools/kontrolle.py` mit den Typen passiv
+  (Benchmark kaufen und halten unter echten Kosten), Zufall (Kauffrequenz, Haltedauer und Positionsgröße eines
+  Claude-Portfolios, Zufallswerte aus Code mit protokolliertem Seed, gleiche Kandidatenliste wie der Screener) und
+  Labor (eine Strategie aus `tools/labor`); derselbe Buchungsweg wie bei Claude (`buchen.py`, `limits.py`,
+  Buchungssperre), mechanischer Journal-Eintrag `journal/<datum>_mechanisch.md`, Bemerkung "automatisch (Auslöser:
+  Kontrollportfolio)". Aktivierung nur durch den Schlüssel `kontrolle` in `config/profile.json` (Entscheidung 49).
+  Tests: `tests/test_kontrolle.py`.
+- [x] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio.** Der Vergleich ist umgesetzt: Überrendite gegen die
+  beta-angepasste Benchmark und gegen eine Benchmark mit gleicher Schwankung (mit Intervall), Rang danach in
+  `ranking.md`, `data/statistik.json` und auf der Ranking-Seite. Getrennte Läufe je Portfolio sind **vorbereitet, nicht
+  aktiviert** (Entscheidung 50): Konfiguration `portfolio_laeufe` in `config/claude.json`, Prompt-Zusatz, Modell je Portfolio,
+  Session-Zeile "Portfolios" in der Prüfung.
+- [x] **L7 Auslegungsfragen** (nur Dokumentation, `regeln.md` unverändert): vier Fragen mit Begründung, Zahlen, Formulierungsvorschlag
+  und Auswirkungen im Abschnitt "Auslegungsfragen Strategie-Labor (offen)" unten. `python tools/backtest.py kosten`
+  rechnet die Kostenvarianten auf denselben Kursen.
 
 ## Entscheidungen
 
@@ -814,6 +826,42 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Ergebnisse entstehen, sobald der Dienst den Zwischenspeicher gefüllt hat und ein Labor-Lauf oder
     `python tools/backtest.py ausfuehren ...` läuft.
 
+49. Mechanische Kontrollportfolios (Strategie-Labor L5). **Vorbereitet, nicht aktiviert.** Auslegungen: (1) Ein
+    Kontrollportfolio ist ein normales Profil in `config/profile.json` mit einem Eintrag unter dem neuen Schlüssel
+    `"kontrolle": {"<profil>": "passiv|zufall|labor"}`. Ohne diesen Schlüssel tut `tools/kontrolle.py` nichts
+    (`python tools/kontrolle.py status` sagt es). Ein ergänztes Profil startet nach `regeln.md` 7 am Ergänzungstag mit 1.000 EUR,
+    nie rückwirkend; die Migration (`profile_ergaenzen`) legt das Portfolio an. (2) Kontrollprofile handelt kein Claude: Sessions,
+    Anlagerichtlinien, Vorgaben und die Cash-Warnung gelten für sie nicht (`g.claude_profile()`), `buchen.py` lehnt Orders ab.
+    (3) Jede Order geht über `limits.pruefe_kauf` mit den Limits des Profils; ist der Einsatz zu groß, wird er stufenweise
+    verkleinert (100/75/50/35/25/15/10/5 %), bis alle Limits halten, sonst kein Kauf und ein Protokolleintrag. Es gibt keinen
+    Stop und kein Kursziel (Risiko ohne Stop nach `regeln.md` 7). (4) Journal: je Order ein Eintrag in
+    `journal/<datum>_mechanisch.md` mit der Zeile "Mechanisch" und der Kurszeit der Order als Zeit; `pruefe.py` verlangt das
+    und warnt nicht wegen fehlender Prognose. (5) Zufall: Kauf mit der Frequenz (Käufe je Tag) des Vorbild-Portfolios, Haltedauer
+    und Einsatzanteil gezogen aus dessen beobachteten Werten; mit weniger als drei Beobachtungen gelten die Vorgaben aus
+    `config/kontrolle.json`. Die Ziehung des Tages wird einmal berechnet und mit Seed (`<seed>|<profil>|<tag>`) in
+    `data/kontrolle/<profil>.jsonl` festgehalten. (6) Labor: wendet die Strategie auf `labor/daten/` bis zum Vortag an
+    (veraltete Daten: wartet), nur Aktien und ETFs long, Teilverkäufe gibt es nicht. (7) Der Hintergrunddienst ruft das Werkzeug
+    alle 15 Minuten auf, jeder Tag wird nur einmal erledigt, gekauft wird nur bei offenem Markt zu protokollierten Kursen.
+    **Was die Auftraggeber zur Aktivierung entscheiden** (Vorschlag unter "Auslegungsfragen Strategie-Labor", Frage 22):
+    Profile, Limits in `regeln.md` 7 und `config/profile.json`, Typen und Parameter.
+
+50. Risikoadjustierter Vergleich und getrennte Läufe je Portfolio (Strategie-Labor L6). **Vergleich umgesetzt, Läufe vorbereitet,
+    nicht aktiviert.** Auslegungen: (1) Die beta-angepasste Benchmark ist der risikofreie Zins plus Beta mal Marktüberrendite
+    (Beta aus der Regression gegen den Weltaktien-ETF, im Bootstrap je Ziehung neu geschätzt); die Benchmark mit gleicher
+    Schwankung skaliert den Markt auf die Streuung des Portfolios. Hebel auf den Markt ist so kein Können (Test: doppelter Markt
+    schlägt die rohe Benchmark deutlich, die beta-angepasste nicht). (2) Der Rang im Bericht richtet sich nach der
+    Information Ratio und nach der Überrendite gegen die beta-angepasste Benchmark, nicht nach der Rohrendite.
+    (3) *Getrennte Läufe je Portfolio:* `config/claude.json` → `portfolio_laeufe` (`aktiv: false`, `modell_je_portfolio`).
+    **Auswirkungen bei Aktivierung:** Die Session-Sperre (`session.py start`) ist ein Lauf nach dem anderen (je Portfolio ein Lauf,
+    nacheinander, nie gleichzeitig); die Buchungssperre schützt die Dateien wie bisher. Der Session-Eintrag eines solchen Laufs trägt
+    die Zeile "- Portfolios: <profil>"; die Prüfung "Handlung oder Ausnahme" (Beweislast beim Nichthandeln) verlangt dann nur
+    dieses Portfolio, ohne die Zeile wie bisher alle (`pruefe.sitzung_profile`, getestet). Ein Portfolio ohne eigenen Session-Eintrag an
+    einem Tag wird weiter gewarnt. Der Prompt erhält den Zusatz "nur dieses Portfolio, eigener Kontext", das Modell kommt aus
+    `modell_je_portfolio` (z. B. Opus gegen Sonnet, `claude_lauf.modell_fuer_portfolio`). **Noch nicht gebaut** (Teil der
+    Aktivierung): Spalte `portfolio` im Auftrag, Zeitplan, der je Portfolio einen Lauf anlegt, Auswahl in der Lauf-Seite;
+    Nachteil: die Breite des Marktüberblicks (Screener, News) wird je Lauf neu gelesen (mehr Kontingent), der Vorteil ist
+    ein sauberer Vergleich von Modellen je Portfolio.
+
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 
 Wo regeln.md nicht eindeutig ist, wurde nach CLAUDE.md die konservativere
@@ -938,3 +986,61 @@ Kosten (Abschnitte 4 und 5) bedeuten würde. Je Frage die Begründung:
 20. Entschieden am 2026-10-07 (Entscheidung 34): Es bleiben immer alle drei Profile; die Profilauswahl
     (Entscheidung 13) wird nicht umgesetzt. Der ursprüngliche Formulierungsvorschlag entfällt, regeln.md
     bleibt bei drei Portfolios.
+
+## Auslegungsfragen Strategie-Labor (offen)
+
+Vier Fragen aus dem Auftrag "Strategie-Labor", **nur zur Entscheidung durch die Auftraggeber**. `regeln.md` bleibt
+unverändert; was Code braucht, ist so vorbereitet, dass es in der Konfiguration aktiviert wird und im laufenden Spiel nichts
+ändert. Die Zahlen stammen aus `python tools/backtest.py kosten --synthetisch` (Zufallskurse ohne Vorteil, 500 Handelstage,
+Mittel über 10 Reihen: sie zeigen nur die Kosten, nicht eine Strategie) und aus `python tools/overnight.py kosten`.
+
+21. **Kapital und Kosten.** *Problem:* Bei 1.000 EUR und 100-EUR-Orders kostet der Rundlauf rund 2,1 % (zwei Gebühren je 1 EUR
+    plus 0,1 % Spread); das Ergebnis misst vor allem die Kostenstruktur. *Zahlen* (Rundlaufkosten in % des Einsatzes, 1 EUR je
+    Order und 0,1 % Spread): bei 100 EUR 2,10 %, 1.000 EUR 0,30 %, 5.000 EUR 0,14 %, 50.000 EUR 0,10 %. Mit 0,1 % Gebühr
+    (mindestens 1 EUR) liegt der Rundlauf ab 1.000 EUR bei 0,30 %, auch bei 50.000 EUR. Lab-Rechnung (Kosten p. a. in % des
+    Startkapitals, Zufallskurse): Trend 20 Tage täglich geprüft 4,3 % bei 1.000 EUR (fest), 1,5 % bei 50.000 EUR (fest) und 4,2 %
+    bei 50.000 EUR mit 0,1 %; Overnight 45 % bei 1.000 EUR (Kapital -90 % in 500 Nächten), 20 % bei 50.000 EUR (fest), 39 % mit
+    0,1 %; 60/40 monatlich 0,15 % / 0,08 % / 0,13 %. *Vorschlag Formulierung* (`regeln.md` 2 und 5): "Startkapital:
+    50.000 EUR je Portfolio. Gebühr: 1 EUR je Order, Mindestorder 500 EUR." (feste Gebühr bleibt, nur das Kapital steigt)
+    oder "Gebühr: 0,1 % des Kurswerts, mindestens 1 EUR." *Auswirkung:* mit 50.000 EUR und fester Gebühr sinken die
+    Kosten der Strategien um das Zwei- bis Dreifache und die Ergebnisse werden eher Strategie als Kosten; ein
+    Prozent-Gebührenmodell macht kleine Orders nicht billiger und große teurer (realistischer, aber es nimmt den Vorteil des
+    größeren Kapitals). Code: `buchen.kauf_rechnung`/`verkauf_rechnung` und `config/kosten.json` müssten ein Gebührenmodell
+    kennen (heute nur `gebuehr_je_order`); das Labor rechnet die Varianten schon (`Lauf(gebuehr=…)`). Eine Umstellung im laufenden
+    Spiel gilt nur ab einem Stichtag und nie rückwirkend. *Empfehlung:* Kapital auf 50.000 bis 100.000 EUR bei fester Gebühr,
+    weil es den Vergleich am billigsten verbessert; das Prozent-Modell nur, wenn die Auftraggeber näher an einem
+    Brokerpreis messen wollen.
+
+22. **Profile nach Strategie statt nach Risiko.** *Problem:* Die vier Profile unterscheiden sich im Risikolimit, nicht in der
+    Strategie; Rendite unterschiedlich riskanter Portfolios ist nicht vergleichbar, und ohne Kontrollgruppe ist "Claude schlägt den
+    Markt" nicht prüfbar (Stichprobe: für einen Sharpe-Unterschied von 0,5 braucht es rund 15 Jahre). *Vorschlag:* Profile
+    nach Strategie: *Passiv* (Benchmark halten), *Zufall* (Zufallshändler mit dem Handeln eines Claude-Portfolios), *Labor-Strategie*
+    (bester Out-of-Sample-Kandidat aus dem Labor), *Claude diskretionär*, optional *Claude anderes Modell*. Alle Portfolios
+    mit gleichem Risikobudget (gleiche Limits) oder risikoadjustiert verglichen (Information Ratio, beta-angepasste
+    Überrendite, bereits im Bericht). *Formulierung* (`regeln.md` 7, neue Zeile unter der Tabelle): "Kontrollportfolios (Passiv,
+    Zufall, Labor) handeln mechanisch; ihre Limits entsprechen denen des Claude-Profils, mit dem sie verglichen werden; sie
+    erhalten keine Anlagerichtlinie und keine Session." plus Tabellenspalten für die neuen Profile (Vorschlag: Passiv Max.
+    Einzelposition 100 %, Max. Exposure 1,0x, Mindest-Cashquote 1 %, Max. Risiko je Trade 100 % wegen "kein Stop"; Zufall und Labor
+    wie Ausgewogen). *Auswirkung:* Die Aktivierung braucht nur `config/profile.json` (neue Profile plus Schlüssel `kontrolle`) und die
+    Tabelle in `regeln.md` 7 (`pruefe_config_regeln` vergleicht beides); alles andere ist vorbereitet (Entscheidung 49). Kosten:
+    drei weitere Portfolios, einmalig Start mit 1.000 EUR am Ergänzungstag; Claude wird dadurch nicht mehr belastet.
+
+23. **"Handeln hat Vorrang" als Versuchsvariable.** *Problem:* Die Regel (`regeln.md` 12: Cash ist die Ausnahme, die Beweislast liegt
+    beim Nichthandeln) erzeugt Umsatz, und mehr Umsatz senkt nach Kosten in der Forschung meist die Rendite
+    (rund 0,3 % Kosten je Rundlauf bei 1.000 EUR und 100-EUR-Orders). Ob die Regel hilft, ist eine Messfrage. *Vorschlag:* Ein
+    Claude-Portfolio behält die Regel von heute, ein zweites erhält ein Umsatzbudget (z. B. höchstens eine Order je Woche, Cash
+    ohne Begründung erlaubt). Das Schattenbuch (L2) misst den Wert der Cash-Entscheidungen: Es bewertet die verworfenen
+    Kandidaten nach 5, 20 und 60 Handelstagen netto, im Vergleich zu den gekauften. *Formulierung* (`regeln.md` 12, Zusatz):
+    "Für Portfolios mit Umsatzbudget gilt Abschnitt 12 Absatz 1 nicht; stattdessen höchstens N Orders je Kalenderwoche." *Auswirkung:* Das
+    Umsatzbudget braucht eine Prüfung (Orders je Woche) in `pruefe.py` und `limits.py` sowie die zweite Claude-Variante (Entscheidung 50
+    bereitet getrennte Läufe vor). Bis dahin liefert das Schattenbuch die Daten für die Entscheidung.
+
+24. **Overnight: Fortsetzung auf den Prüfstand.** *Zahlen:* Eine Nacht kostet bei 1.000 EUR rund 2,97 EUR = 0,31 % des Einsatzes
+    (zwei Gebühren plus 0,1 % Spread); eine breite ETF-Position müsste im Schnitt 0,31 % zwischen Schluss und Eröffnung
+    liefern, um nach Kosten nicht zu verlieren, Knock-out mit Hebel 3 braucht 0,30 % Basiswert-Rendite. Lab-Rechnung auf
+    Zufallskurse ohne Vorteil: -90 % in 500 Nächten bei 1.000 EUR, -42 % bei 50.000 EUR (feste Gebühr). *Messung mit echten
+    Daten steht aus:* `python tools/overnight.py analyse` (wöchentlich im Dienst) und `python tools/backtest.py ausfuehren
+    --strategie overnight` liefern sie, sobald Kursdaten da sind (in der Entwicklungsumgebung kein Zugang). *Entscheidung für die
+    Auftraggeber:* (1) behalten und messen (Ausnahme (a) belegt jede Nacht, kostet nur Aufmerksamkeit), (2) das Profil auf den Rahmen
+    von Frage 21 stellen (Kapital oder Gebühr), (3) nach der ersten Messung schließen. *Empfehlung:* (1) bis die Messung mit echten
+    Daten vorliegt; sie ist bereits der Plan aus Entscheidung 45.
