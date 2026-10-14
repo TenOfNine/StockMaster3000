@@ -187,6 +187,17 @@ heutigen Stand und trägst eine Änderung in die Historie ein. Keine Orders, kei
 Journal. Prüfen mit `python tools/richtlinien.py status`, dann lokal committen
 und `session.py ende`.
 
+## Strategie-Labor (Laufart "Strategie-Labor (ohne Orders)")
+
+Ein Lauf dieser Art handelt nicht. Du formulierst höchstens drei Hypothesen mit Begründung vor dem Test (Aufgabenteilung:
+Claude formuliert, der Code prüft), testest sie mit `python tools/backtest.py ausfuehren ...` auf den Tagesdaten in
+`labor/daten/` und beachtest: Jede Variante wird protokolliert und senkt den Deflated Sharpe, die Parameter wählst du
+vor dem Test. Die Berichte (`labor/<strategie>_<datum>.md`) trennen In-Sample und Out-of-Sample; nur Strategien, die
+Out-of-Sample unterscheidbar besser sind als die Benchmark und den Deflated Sharpe bestehen, werden als Vorschlag an die
+Auftraggeber formuliert (Kennzahlen mit Intervall, Kosten, Grenzen), alle anderen als verworfen mit Zahlen genannt.
+Diskretionäres Trading wird nicht zurückgerechnet (Look-ahead durch das Training). Das Labor bucht nie, ändert weder
+regeln.md noch config/profile.json und aktiviert nichts.
+
 ## Journal-Vorlage (je Order)
 
     ### J-JJJJMMTT-NN | <Portfolio> | <Instrument>

@@ -173,6 +173,21 @@ def prompt(art: str, auftrag) -> str:
                 "Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art review`. " + gemeinsam +
                 " Vermerke Modell und Aufwand im Review unter 'Setup'.")
+    if art == "labor":
+        return ("Strategie-Labor ohne Orders (Entwicklungsmodus der Strategieforschung, es wird nicht gehandelt): "
+                "`python tools/buchen.py` und `python tools/daueranweisung.py` nicht aufrufen. Starte die Sperre mit "
+                "`python tools/session.py start --person <kennung> --art review`. Die Kurse kommen aus dem Zwischenspeicher "
+                "des Labors (labor/daten/, vom Hintergrunddienst gefüllt; kein Netzwerk nötig). Lies die letzten "
+                "Berichte (`python tools/backtest.py berichte`, labor/*.md), `python tools/statistik.py anzeigen`, "
+                "`python tools/prognosen.py liste` und das Schattenbuch. Formuliere höchstens drei Hypothesen mit "
+                "Begründung vorab (Aufgabenteilung: du formulierst, der Code prüft), teste jede mit "
+                "`python tools/backtest.py ausfuehren --strategie <name> --parameter ...` und beachte: Jede getestete "
+                "Variante wird in labor/versuche.jsonl gezählt und senkt den Deflated Sharpe; wähle die Parameter vor "
+                "dem Test, nicht danach. Diskretionäres Trading wird nicht zurückgerechnet (Look-ahead durch das "
+                "Training). Nur Strategien, die Out-of-Sample unterscheidbar besser sind als die Benchmark und den "
+                "Deflated Sharpe bestehen, werden als Vorschlag an die Auftraggeber formuliert (Kennzahlen mit "
+                "Intervall, Kosten, Grenzen); alle anderen nennst du als verworfen mit Zahlen. Schreibe Erkenntnisse "
+                "in lessons.md, ändere regeln.md nie und aktiviere nichts. " + gemeinsam)
     if art == "richtlinien":
         dateien = [f"strategie/{p}.md" for p in appdaten.profil_liste()]
         return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): "

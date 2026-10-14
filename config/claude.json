@@ -30,7 +30,8 @@
     "trading": {"name": "Trading-Session", "zweck": "trading"},
     "review": {"name": "Reviews und Bericht (ohne Orders)", "zweck": "review"},
     "testsession": {"name": "Testsession ohne Trades (AP12)", "zweck": "trading"},
-    "richtlinien": {"name": "Anlagerichtlinien ausformulieren (AP12)", "zweck": "trading"}
+    "richtlinien": {"name": "Anlagerichtlinien ausformulieren (AP12)", "zweck": "trading"},
+    "labor": {"name": "Strategie-Labor (ohne Orders)", "zweck": "review"}
   },
   "zeitlimit_minuten": 90
 }

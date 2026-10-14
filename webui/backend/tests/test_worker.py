@@ -615,7 +615,7 @@ def test_lauf_ist_nie_durch_startdatum_oder_richtlinien_gesperrt(admin, demo_rep
         assert admin.get("/api/laeufe/vorpruefung").status_code == 404  # keine Vorprüfung und keine Hinweise mehr
         schritte = [s["schritt"] for s in admin.get("/api/einrichtung").json()["pflichtschritte"]]
         assert "richtlinien" not in schritte and "spielstart" not in schritte
-        for art in ("trading", "review", "testsession", "richtlinien"):
+        for art in ("trading", "review", "testsession", "richtlinien", "labor"):
             ok = admin.post("/api/laeufe", json={"art": art, "auftraggeber": "auftraggeber-a", "bestaetigt": True})
             assert ok.status_code == 201, (art, ok.text)
             admin.post(f"/api/laeufe/{ok.json()['id']}/abbrechen")
@@ -1330,6 +1330,7 @@ def test_labor_auswertung_taeglich_nach_23_15(app, werkzeug_attrappe):
     assert w.labor_auswerten(_um(12, "23:20")).startswith("Labor-Auswertung:")
     aufrufe = [tuple(a[:3]) for a in werkzeug_attrappe]
     assert ("prognosen", "auswerten", "--netz") in aufrufe and ("schattenbuch", "auswerten", "--netz") in aufrufe
+    assert ("backtest", "daten") == aufrufe[0][:2]
     werkzeug_attrappe.clear()
     assert w.labor_auswerten(_um(12, "23:50")) is None and werkzeug_attrappe == []  # einmal je Tag
     assert w.labor_auswerten(_um(13, "23:20")) is not None

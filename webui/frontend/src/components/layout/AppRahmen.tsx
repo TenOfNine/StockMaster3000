@@ -16,6 +16,7 @@ import {
   Lock,
   LogOut,
   Menu,
+  Microscope,
   Moon,
   NotebookPen,
   Scale,
@@ -65,6 +66,7 @@ const GRUPPEN: { titel?: string; eintraege: NavEintrag[] }[] = [
     eintraege: [
       { zu: "/analyse/ranking", text: "Ranking & Benchmark", icon: <Trophy className="size-4" /> },
       { zu: "/analyse/reviews", text: "Reviews & Lessons", icon: <BookOpenText className="size-4" /> },
+      { zu: "/analyse/labor", text: "Strategie-Labor", icon: <Microscope className="size-4" /> },
       { zu: "/analyse/kurse", text: "Markt & Kurse", icon: <LineChart className="size-4" /> },
       { zu: "/analyse/rechner", text: "Zertifikatsrechner", icon: <Calculator className="size-4" /> },
     ],

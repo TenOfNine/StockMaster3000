@@ -707,3 +707,42 @@ export type LaborErgebnisse = {
   schattenbuch: SchattenbuchErgebnis | null;
   statistik: StatistikErgebnis | null;
 };
+
+// Strategie-Labor (L4): Berichte aus labor/*.json
+export type LaborKennzahlen = {
+  tage: number;
+  genug_daten: boolean;
+  max_drawdown?: number;
+  abstand?: "besser" | "schlechter" | null;
+  rendite_pa?: MitIntervall;
+  ueberrendite_pa?: MitIntervall;
+  sharpe?: MitIntervall;
+  information_ratio?: MitIntervall;
+  alpha_pa?: MitIntervall;
+  beta?: MitIntervall;
+  sortino?: MitIntervall;
+  calmar?: MitIntervall;
+};
+export type LaborBerichtKopf = {
+  datei: string;
+  strategie: string;
+  parameter: Record<string, unknown>;
+  erstellt: string;
+  zeitraum: { von: string; bis: string; tage: number };
+  urteil: { vorschlag: boolean; gruende: string[]; text: string };
+};
+export type LaborBericht = LaborBerichtKopf & {
+  beschreibung: string;
+  kapital: string;
+  benchmark_ticker: string;
+  in_sample: { bis: string | null; tage: number };
+  out_of_sample: { von: string | null; tage: number };
+  gesamt: LaborKennzahlen;
+  is: LaborKennzahlen;
+  oos: LaborKennzahlen;
+  kosten: { gebuehren: string; spreads: string; zinsen: string; dividenden: string; umsatz: string; orders: number; endwert: string | null };
+  kurve: { tage: string[]; strategie: number[]; benchmark: number[] };
+  versuche: { anzahl: number; deflated_sharpe: number | null };
+  varianten?: { parameter: Record<string, unknown>; sharpe_in_sample: number | null; sharpe_out_of_sample: number | null }[];
+  grenzen: string[];
+};

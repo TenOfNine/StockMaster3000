@@ -238,7 +238,15 @@ Abhängigkeiten. Je größerem Paket ein Pull Request von `main`.
   Abschnitt "Statistik mit Unsicherheit" in ranking.md (Rangfolge nach Information Ratio), Karte auf der Ranking-Seite,
   Zeile mit Intervall in den Cockpit-Karten. Tests: `tests/test_statistik.py` (Beta 2 wird erkannt, reines Rauschen ohne
   signifikantes Alpha, Determinismus, handgerechnete Kennzahlen).
-- [ ] **L4 Backtest-Engine (Strategie-Labor).**
+- [x] **L4 Backtest-Engine (Strategie-Labor).** Paket `tools/labor/` (`daten`, `engine`, `strategien`, `bericht`) und
+  Aufruf `python tools/backtest.py`. Wiedergabe auf Tagesdaten mit den Kosten des Spiels (aus `buchen.py` ausgelagerte
+  reine Rechnung `kauf_rechnung`/`verkauf_rechnung`, `produkte.py` für Knock-outs, `config/kosten.json`), feste
+  Ausführungsregeln gegen Look-ahead, Strategien Buy & Hold, 60/40 mit Rebalancing, Trendfolge (200 Tage), 12-1-Momentum,
+  Volatilitätsziel, Overnight; In-/Out-of-Sample-Trennung, Walk-forward, Deflated Sharpe mit Protokoll aller Varianten
+  (`labor/versuche.jsonl`), Berichte `labor/<strategie>_<datum>.json/.md`, Seite "Strategie-Labor" in der Web-UI, Laufart
+  "Strategie-Labor (ohne Orders)" in `config/claude.json`, täglicher Datenabruf im Hintergrunddienst
+  (`config/labor.json`). Tests: `tests/test_labor.py` (handgerechnete Kosten, Rebalancing, Knock-out, Overnight,
+  Look-ahead-Prüfung mit Gegenprobe durch eine betrügende Strategie).
 - [ ] **L5 Kontrollportfolios** (vorbereitet, Aktivierung nur durch die Auftraggeber).
 - [ ] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio** (vorbereitet).
 - [ ] **L7 Auslegungsfragen** (nur Dokumentation).
@@ -779,6 +787,32 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     Historie des ETF; ohne 200 Handelstage Historie gibt es keine Phasen. (6) Unter 20 Tagesrenditen gibt es keine
     Kennzahlen, unter `sharpe_min_handelstage` (60) den Hinweis "kaum belastbar". (7) Die Rangfolge im Bericht richtet
     sich nach der Information Ratio, nicht nach der Rohrendite; die bisherige Kennzahlentabelle bleibt unverändert.
+
+48. Strategie-Labor: Backtest-Engine (L4). **Umgesetzt**, Ergebnisse mit echten Marktdaten stehen **noch aus** (siehe
+    unten). Auslegungen: (1) *Zeitmodell:* Jeder Handelstag hat zwei Preispunkte (Eröffnung, Schluss). Eine Strategie
+    entscheidet an einem Punkt und sieht nur Daten bis dahin (`Sicht`); die Order wird frühestens am nächsten Punkt zu
+    dessen Kurs ausgeführt (Tagesstrategien: Entscheidung zum Schluss, Ausführung zur nächsten Eröffnung; Overnight:
+    Entscheidung zur Eröffnung, Ausführung zum Schluss und umgekehrt). `lookahead_pruefung` verändert alle späteren
+    Kurse zufällig und verlangt unveränderte Entscheidungen; eine absichtlich betrügende Strategie fällt durch.
+    (2) *Kosten:* Kauf zum Kurs plus halbem Spread, Verkauf minus halbem Spread, 1 EUR Gebühr je Order, Mindestorder 100
+    EUR (auch für Teilverkäufe beim Rebalancing: kleinere Abweichungen lösen keine Order aus), Cash-Zins je
+    Kalendertag, Knock-outs mit Aufzinsung je Kalendertag und Barrierenprüfung gegen Eröffnung und Tagesextreme, Dividenden
+    der Rohkurse. Faktor-Zertifikate sind im Labor nicht vorgesehen. Die Kostenrechnung liegt als reine Funktion in
+    `buchen.py` und wird von Buchung und Labor gemeinsam benutzt (Verhalten der Buchung unverändert, alle Tests grün).
+    (3) *Benchmark der Berichte:* Buy & Hold des Benchmark-ETF mit denselben Kosten im selben Zeitraum. (4) *Vorschlag
+    nur für Überlebende:* Out-of-Sample muss die Überrendite als besser unterscheidbar zeigen (Intervall ganz über 0),
+    der Deflated Sharpe mindestens 0,95 erreichen und der Zeitraum mindestens drei Jahre umfassen; sonst "kein
+    Vorschlag" mit Gründen. (5) *Mehrfachtest:* Jede getestete Variante (auch jede Gitterkombination) wird angehängt in
+    `labor/versuche.jsonl` und fließt in die Streuung der Sharpe-Werte des Deflated Sharpe ein. Aus einem Gitter gewinnt
+    die Variante mit dem besten In-Sample-Sharpe; ihr Out-of-Sample-Teil steht getrennt. (6) *Daten:* Eigener
+    Zwischenspeicher `labor/daten/` (Teil des Spielstands und der Sicherung, nicht `data/historie`), vom Hintergrunddienst
+    täglich über die Ticker in `config/labor.json` ergänzt (bestehende Tage werden nie überschrieben). **Grenzen:**
+    Survivorship Bias, Datenqualität der Yahoo-Rohkurse, nur Tagesdaten, kein Slippage über den Spread hinaus; Claude-
+    Trading wird nicht zurückgerechnet (Look-ahead durch das Training). **Offen:** Die Entwicklungsumgebung hatte keinen
+    Zugang zu den Kursquellen; die Engine ist mit synthetischen Reihen getestet, die Ticker in `config/labor.json`
+    (EUNL.DE, SXR8.DE, EUNH.DE, VWCE.DE, EXS1.DE) wurden **nicht** gegen die Quelle geprüft. Die ersten echten
+    Ergebnisse entstehen, sobald der Dienst den Zwischenspeicher gefüllt hat und ein Labor-Lauf oder
+    `python tools/backtest.py ausfuehren ...` läuft.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

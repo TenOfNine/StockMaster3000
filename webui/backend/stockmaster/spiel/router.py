@@ -58,6 +58,19 @@ def labor() -> dict:
     return lesen.labor_ergebnisse()
 
 
+@router.get("/labor/berichte")
+def labor_berichte() -> list[dict]:
+    return lesen.labor_berichte()
+
+
+@router.get("/labor/berichte/{name}")
+def labor_bericht(name: str) -> dict:
+    try:
+        return lesen.labor_bericht(name)
+    except KeyError:
+        raise HTTPException(404, "Bericht nicht gefunden.") from None
+
+
 @router.get("/portfolios/{profil}")
 def portfolio(profil: str) -> dict:
     return _404(lesen.portfolio, profil)

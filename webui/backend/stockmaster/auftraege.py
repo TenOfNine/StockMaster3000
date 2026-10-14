@@ -18,7 +18,7 @@ from .auth import DB, Angemeldet, Streng, audit, begrenzen
 from .db import jetzt_utc, neue_sitzung, utc
 from .modelle import Auftrag, Benutzer
 
-LAUFARTEN = ("trading", "review", "testsession", "richtlinien")
+LAUFARTEN = ("trading", "review", "testsession", "richtlinien", "labor")
 OFFEN = ("wartet", "laeuft")
 LOG_MAX = 256_000
 
@@ -138,7 +138,7 @@ router = APIRouter(prefix="/api/laeufe", tags=["laeufe"])
 
 
 class LaufStart(Streng):
-    art: Literal["trading", "review", "testsession", "richtlinien"]
+    art: Literal["trading", "review", "testsession", "richtlinien", "labor"]
     auftraggeber: str = Field(max_length=40)
     modell: str | None = Field(default=None, max_length=100)
     aufwand: str | None = Field(default=None, max_length=20)

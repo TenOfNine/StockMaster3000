@@ -214,6 +214,22 @@ def demo_beobachtung(ende: date, seed: int) -> None:
     beobachtung.aktualisieren(konfig)
 
 
+def demo_labor(g, kurse) -> None:
+    """Demo-Bericht des Strategie-Labors: Trendfolge auf den Demo-Kursen des Benchmark-ETF (Zufallskurse, kein Beleg)."""
+    import backtest
+    from labor import daten
+
+    ticker = g.projekt()["benchmark_ticker"]
+    kerzen = sorted(kurse.gespeicherte_historie(ticker).values(), key=lambda k: k.datum)
+    if len(kerzen) < 40:
+        return
+    g.csv_schreiben(daten.cache_datei(ticker), daten.FELDER, [
+        {"datum": k.datum.isoformat(), "open": k.open, "high": k.high, "low": k.low, "close": k.close,
+         "dividende": k.dividende, "split": k.split} for k in kerzen])
+    still(backtest.main, ["ausfuehren", "--strategie", "trend", "--parameter", "tage=5,10", "--fest", "pruefung=taeglich",
+                          "--benchmark", ticker])
+
+
 def strategie_text(profil: str) -> str:
     texte = {
         "defensiv": ("Kapitalerhalt mit leichter Mehrrendite gegen 30/70", "Breite ETFs und Qualitätsaktien, "
@@ -451,6 +467,7 @@ def erzeugen(ziel: Path, tage: int, seed: int, ende: date | None = None) -> Path
     still(kurse.markt)
     demo_beobachtung(ende, seed)
     demo_news(g, uhr(), start)
+    demo_labor(g, kurse)
     git(ziel, "add", "-A")
     git(ziel, "commit", "-q", "-m", "daten: Demo-Kurse und Demo-News")
     for name in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"):

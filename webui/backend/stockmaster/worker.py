@@ -315,10 +315,11 @@ class Worker:
         return f"Overnight-Analyse: {_letzte_zeile(lauf)}"
 
     def labor_auswerten(self, jetzt: datetime) -> str | None:
-        """Täglich nach Handelsschluss: Prognosen und Schattenbuch auswerten (Strategie-Labor L1/L2).
+        """Täglich nach Handelsschluss: Labor-Daten holen, Prognosen und Schattenbuch auswerten (Strategie-Labor L1/L2/L4).
 
-        Holt fehlende Tageskerzen über tools/kurse.py (nur der Hintergrunddienst hat Netzwerk) und schreibt
-        data/prognosen.json und data/schattenbuch.json. Bucht nie; ein Fehler wird später erneut versucht.
+        Holt fehlende Tageskerzen über tools/kurse.py (nur der Hintergrunddienst hat Netzwerk), füllt den
+        Zwischenspeicher labor/daten/ und schreibt data/prognosen.json und data/schattenbuch.json. Bucht nie; ein
+        Fehler wird später erneut versucht.
         """
         g = _werkzeuge()["gemeinsam"]
         if not g.spiel_lesen().get("startdatum"):
@@ -332,6 +333,8 @@ class Worker:
             return None
         self._merken(labor_versuch=jetzt.isoformat())
         meldungen, ok = [], True
+        daten = werkzeug("backtest", "daten", timeout=1800)  # Zwischenspeicher des Strategie-Labors (Tageskerzen)
+        meldungen.append(f"labor-daten: {_letzte_zeile(daten)}")  # ein unbekannter Ticker blockiert die Auswertung nicht
         for name in ("prognosen", "schattenbuch"):
             lauf = werkzeug(name, "auswerten", "--netz", timeout=900)
             ok = ok and lauf.returncode == 0

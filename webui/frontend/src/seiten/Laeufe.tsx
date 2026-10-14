@@ -17,6 +17,7 @@ const ARTNAMEN: Record<string, string> = {
   review: "Reviews und Bericht",
   testsession: "Testsession (AP12)",
   richtlinien: "Anlagerichtlinien (AP12)",
+  labor: "Strategie-Labor (ohne Orders)",
 };
 
 export function LaufStatusAbzeichen({ status }: { status: LaufStatus }) {
