@@ -51,7 +51,8 @@ def D(x):
 def git_init(projekt):
     import subprocess
     for befehl in (["git", "init", "-q", "-b", "main"], ["git", "config", "user.email", "test@example.org"],
-                   ["git", "config", "user.name", "Test"], ["git", "config", "commit.gpgsign", "false"]):
+                   ["git", "config", "user.name", "Test"], ["git", "config", "commit.gpgsign", "false"],
+                   ["git", "config", "gc.auto", "0"], ["git", "config", "maintenance.auto", "false"]):
         subprocess.run(befehl, cwd=projekt, check=True)
     git_commit(projekt, "start")
 
