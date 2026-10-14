@@ -29,6 +29,12 @@
   "prognosen": {
     "pflicht_ab": "2026-11-02"
   },
+  "statistik": {
+    "seed": 3000,
+    "resamples": 2000,
+    "konfidenz": 0.95,
+    "min_tage": 20
+  },
   "schattenbuch": {
     "beginn": "2026-11-02",
     "einsatz": "100.00",

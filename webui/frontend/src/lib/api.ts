@@ -682,4 +682,28 @@ export type SchattenbuchErgebnis = {
   ohne_kurs: number;
   vergleich: { verworfen: SchattenKennzahlen; gekauft: SchattenKennzahlen };
 };
-export type LaborErgebnisse = { prognosen: PrognosenErgebnis | null; schattenbuch: SchattenbuchErgebnis | null };
+export type MitIntervall = { wert: number | null; ci: [number, number] | null };
+export type StatistikProfil = {
+  profil: string;
+  tage: number;
+  genug_daten: boolean;
+  belastbar?: boolean;
+  hinweis?: string | null;
+  unterscheidbar?: boolean | null;
+  abstand?: "besser" | "schlechter" | null;
+  rendite_pa?: MitIntervall;
+  ueberrendite_pa?: MitIntervall;
+  sharpe?: MitIntervall;
+  information_ratio?: MitIntervall;
+  alpha_pa?: MitIntervall;
+  beta?: MitIntervall;
+  sortino?: MitIntervall;
+  calmar?: MitIntervall;
+  trefferquote?: MitIntervall;
+};
+export type StatistikErgebnis = { zeit: string; profile: Record<string, StatistikProfil>; rang_information_ratio: string[] };
+export type LaborErgebnisse = {
+  prognosen: PrognosenErgebnis | null;
+  schattenbuch: SchattenbuchErgebnis | null;
+  statistik: StatistikErgebnis | null;
+};

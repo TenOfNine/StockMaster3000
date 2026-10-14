@@ -4,11 +4,12 @@ import { AlertTriangle, ArrowRight, Bot, CalendarCheck2, Cog, Flag, History, New
 import { useState } from "react";
 
 import { EntscheidungsZeile, SessionKarte, TerminZeile } from "@/components/Bausteine";
+import { mitIntervall, NICHT_UNTERSCHEIDBAR } from "@/components/Labor";
 import { NewsListe } from "@/components/News";
 import { NavDiagramm, Sparkline } from "@/components/diagramme/NavDiagramm";
 import { useUeberblick } from "@/components/layout/AppRahmen";
 import { Abzeichen, Delta, Fehleranzeige, Karte, KarteKopf, Leer, PROFIL_FARBE, PROFIL_NAME, ProfilMarke, Seitenkopf, Skelett, StufenAbzeichen } from "@/components/ui";
-import { api, PROFILE, type Kennzahlen, type Lauf, type NavDaten, type NewsMeldung, type Pflichtschritt, type Profil } from "@/lib/api";
+import { api, PROFILE, type Kennzahlen, type Lauf, type LaborErgebnisse, type StatistikProfil, type NavDaten, type NewsMeldung, type Pflichtschritt, type Profil } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { datum, datumKompakt, euro, faktor, prozent, relativ, zeit } from "@/lib/format";
@@ -23,6 +24,7 @@ export function Cockpit() {
   const { sitzung } = useAuth();
   const ueberblick = useUeberblick();
   const nav = useQuery({ queryKey: ["nav"], queryFn: () => api<NavDaten>("/api/spiel/nav") });
+  const labor = useQuery({ queryKey: ["labor"], queryFn: () => api<LaborErgebnisse>("/api/spiel/labor") });
   const [auswahl, setAuswahl] = useState<"alle" | Profil>("alle");
 
   if (ueberblick.isError) return <Fehleranzeige fehler={ueberblick.error} erneut={() => void ueberblick.refetch()} />;
@@ -71,7 +73,7 @@ export function Cockpit() {
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Portfolios">
             {profile.map((p) => (
-              <PortfolioKarte key={p} profil={p} k={daten.profile[p]!} werte={(nav.data?.profile[p] ?? []).map((z) => z.portfoliowert)} />
+              <PortfolioKarte key={p} profil={p} k={daten.profile[p]!} werte={(nav.data?.profile[p] ?? []).map((z) => z.portfoliowert)} statistik={labor.data?.statistik?.profile[p]} />
             ))}
           </section>
 
@@ -201,7 +203,7 @@ function Segmente({ wert, setWert, profile }: { wert: "alle" | Profil; setWert: 
   );
 }
 
-function PortfolioKarte({ profil, k, werte }: { profil: Profil; k: Kennzahlen; werte: number[] }) {
+function PortfolioKarte({ profil, k, werte, statistik }: { profil: Profil; k: Kennzahlen; werte: number[]; statistik?: StatistikProfil }) {
   return (
     <Link to="/portfolios/$profil" params={{ profil }} className="group block focus-visible:outline-none">
       <Karte className="relative overflow-hidden transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-rand-stark group-focus-visible:ring-2 group-focus-visible:ring-akzent">
@@ -223,6 +225,12 @@ function PortfolioKarte({ profil, k, werte }: { profil: Profil; k: Kennzahlen; w
               <Delta wert={k.gegen_bench} /> ggü. Benchmark
             </span>
           </div>
+          {statistik?.genug_daten && statistik.ueberrendite_pa && (
+            <div className="mt-1.5 text-[11.5px] text-text-3" data-testid="ueberrendite-intervall">
+              Überrendite p. a. {mitIntervall(statistik.ueberrendite_pa, "prozent", true)}
+              {statistik.hinweis ? ` · ${NICHT_UNTERSCHEIDBAR}` : ""}
+            </div>
+          )}
         </div>
         <div className="mt-2">
           <Sparkline werte={werte} farbe={PROFIL_FARBE[profil]} />

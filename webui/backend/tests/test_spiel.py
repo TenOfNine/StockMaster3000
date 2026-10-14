@@ -38,8 +38,9 @@ def test_labor_ergebnisse_gespeichert(nutzer, demo_repo):
 
     (demo_repo / "data" / "prognosen.json").write_text(json.dumps({"gesamt": {"brier": 0.5}}), encoding="utf-8")
     (demo_repo / "data" / "schattenbuch.json").unlink(missing_ok=True)
+    (demo_repo / "data" / "statistik.json").unlink(missing_ok=True)
     daten = nutzer.get("/api/spiel/labor").json()
-    assert daten["prognosen"]["gesamt"]["brier"] == 0.5 and daten["schattenbuch"] is None
+    assert daten["prognosen"]["gesamt"]["brier"] == 0.5 and daten["schattenbuch"] is None and daten["statistik"] is None
 
 
 def test_portfolio_und_trades(nutzer):

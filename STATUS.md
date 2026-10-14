@@ -232,7 +232,12 @@ Abhängigkeiten. Je größerem Paket ein Pull Request von `main`.
   Eintragszeitpunkt, Rendite nach 5/20/60 Handelstagen netto nach Kosten, Vergleich mit gekauften Werten;
   `data/schattenbuch.json`, Abschnitt in ranking.md, Karte auf der Ranking-Seite). Bucht nie. Tests:
   `tests/test_schattenbuch.py`.
-- [ ] **L3 Statistik ehrlich machen** (`tools/statistik.py`).
+- [x] **L3 Statistik ehrlich machen.** `tools/statistik.py`: Block-Bootstrap-Intervalle (95 %, feste Zufallszahlen) für
+  Rendite p. a., Sharpe, Überrendite gegen die Benchmark des Profils, Trefferquote, Alpha/Beta gegen MSCI World, Information
+  Ratio, Sortino, Calmar; Marktphasen (Trend über/unter 200-Tage-Linie, Schwankung hoch/niedrig); `data/statistik.json`,
+  Abschnitt "Statistik mit Unsicherheit" in ranking.md (Rangfolge nach Information Ratio), Karte auf der Ranking-Seite,
+  Zeile mit Intervall in den Cockpit-Karten. Tests: `tests/test_statistik.py` (Beta 2 wird erkannt, reines Rauschen ohne
+  signifikantes Alpha, Determinismus, handgerechnete Kennzahlen).
 - [ ] **L4 Backtest-Engine (Strategie-Labor).**
 - [ ] **L5 Kontrollportfolios** (vorbereitet, Aktivierung nur durch die Auftraggeber).
 - [ ] **L6 Risikoadjustierter Vergleich, Läufe je Portfolio** (vorbereitet).
@@ -762,6 +767,18 @@ Auftraggeber, innerhalb von regeln.md; keine Limits, Kosten oder Risikogrenzen g
     ein Kandidat ohne protokollierten Kurs ab Eintragszeit wird nicht bewertet (kein Backdating). Überlappende Fenster
     derselben Aktie zählen mehrfach. (6) Die Auswertung braucht Netz für fehlende Tageskerzen und läuft daher im
     Hintergrunddienst; `bewertung.py bericht` rechnet offline mit den gespeicherten Kerzen.
+
+47. Ehrliche Statistik (Strategie-Labor L3). **Umgesetzt.** Auslegungen: (1) Intervalle: zirkulärer Block-Bootstrap mit
+    Blocklänge n^(1/3), 2.000 Ziehungen, Seed 3000, 95 % (`statistik` in `config/projekt.json`); gleiche Daten ergeben
+    gleiche Intervalle. (2) "Vom Benchmark unterscheidbar" heißt: das Intervall der Überrendite p. a. gegen die
+    Benchmark des Profils enthält die 0 nicht; sonst steht überall "noch nicht vom Benchmark unterscheidbar". Ist das
+    Intervall ganz negativ, steht "unterscheidbar (schlechter)". (3) Alpha und Beta stammen aus der Regression der
+    Überrenditen über dem risikofreien Zins (2 % p. a.) gegen den Weltaktien-ETF, nicht gegen die Mischbenchmark.
+    (4) Die Trefferquote ist der Anteil der Tage über der Benchmark. (5) Marktphasen sind beschreibend: Der Trend nutzt
+    den Schluss des Vortags (kein Blick in die Zukunft), die Schwankungsgrenze ist der Median der gespeicherten
+    Historie des ETF; ohne 200 Handelstage Historie gibt es keine Phasen. (6) Unter 20 Tagesrenditen gibt es keine
+    Kennzahlen, unter `sharpe_min_handelstage` (60) den Hinweis "kaum belastbar". (7) Die Rangfolge im Bericht richtet
+    sich nach der Information Ratio, nicht nach der Rohrendite; die bisherige Kennzahlentabelle bleibt unverändert.
 
 ## Auslegungsfragen Phase 1 (entschieden am 2026-10-07)
 

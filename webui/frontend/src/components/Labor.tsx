@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { Karte, KarteKopf, Leer, Skelett } from "@/components/ui";
-import { api, type LaborErgebnisse } from "@/lib/api";
+import { Abzeichen, Karte, KarteKopf, Leer, PROFIL_NAME, Skelett } from "@/components/ui";
+import { api, PROFILE, type LaborErgebnisse, type MitIntervall, type StatistikProfil } from "@/lib/api";
 import { prozent, zahl } from "@/lib/format";
 
 const MIN_AUSSAGE = 30;
@@ -83,5 +83,75 @@ export function LaborKarten() {
         )}
       </Karte>
     </div>
+  );
+}
+
+/** Wert mit 95-%-Intervall, z. B. „+2,1 % [−3,0 %; +7,2 %]“. */
+export function mitIntervall(k: MitIntervall | undefined, art: "prozent" | "zahl", vorzeichen = false): string {
+  if (!k || k.wert == null) return "–";
+  const f = (w: number) => (art === "prozent" ? prozent(w, vorzeichen, 1) : zahl(w));
+  return k.ci ? `${f(k.wert)} [${f(k.ci[0])}; ${f(k.ci[1])}]` : f(k.wert);
+}
+
+export const NICHT_UNTERSCHEIDBAR = "noch nicht vom Benchmark unterscheidbar";
+
+const STATISTIK_ZEILEN: { name: string; wert: (k: StatistikProfil) => string }[] = [
+  { name: "Rendite p. a.", wert: (k) => mitIntervall(k.rendite_pa, "prozent") },
+  { name: "Überrendite p. a. gegen Benchmark", wert: (k) => mitIntervall(k.ueberrendite_pa, "prozent", true) },
+  { name: "Sharpe Ratio", wert: (k) => mitIntervall(k.sharpe, "zahl") },
+  { name: "Information Ratio", wert: (k) => mitIntervall(k.information_ratio, "zahl") },
+  { name: "Alpha p. a. gegen MSCI World", wert: (k) => mitIntervall(k.alpha_pa, "prozent", true) },
+  { name: "Beta gegen MSCI World", wert: (k) => mitIntervall(k.beta, "zahl") },
+  { name: "Sortino", wert: (k) => mitIntervall(k.sortino, "zahl") },
+  { name: "Calmar", wert: (k) => mitIntervall(k.calmar, "zahl") },
+];
+
+/** Kennzahlen mit Konfidenzintervall (tools/statistik.py): Rendite allein ist kein Rangkriterium. */
+export function StatistikKarte() {
+  const labor = useQuery({ queryKey: ["labor"], queryFn: () => api<LaborErgebnisse>("/api/spiel/labor") });
+  if (!labor.data) return <Skelett className="mt-4 h-[260px] rounded-2xl" />;
+  const s = labor.data.statistik;
+  const profile = PROFILE.filter((p) => s?.profile[p]?.genug_daten);
+  return (
+    <Karte className="mt-4 overflow-hidden">
+      <KarteKopf titel="Kennzahlen mit Unsicherheit" untertitel="95-%-Intervall (Block-Bootstrap), Rangfolge nach Information Ratio statt nach Rohrendite" />
+      {!s || !profile.length ? (
+        <Leer titel="Noch zu wenige Handelstage" text="Kennzahlen mit Intervall erscheinen nach rund 20 Handelstagen; belastbar werden sie erst nach Monaten." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="zahl w-full text-[13px]">
+            <thead>
+              <tr className="border-y border-rand text-[12px] text-text-3">
+                <th className="px-5 py-2.5 text-left font-medium">Kennzahl</th>
+                {profile.map((p) => (
+                  <th key={p} className="px-4 py-2.5 text-right font-medium">{PROFIL_NAME[p]}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {STATISTIK_ZEILEN.map((z) => (
+                <tr key={z.name} className="border-b border-rand/70">
+                  <td className="px-5 py-2.5 text-text-2">{z.name}</td>
+                  {profile.map((p) => (
+                    <td key={p} className="px-4 py-2.5 text-right font-medium text-text">{z.wert(s.profile[p])}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <td className="px-5 py-2.5 text-text-2">Einordnung</td>
+                {profile.map((p) => (
+                  <td key={p} className="px-4 py-2.5 text-right">
+                    {s.profile[p].hinweis ? <Abzeichen>{NICHT_UNTERSCHEIDBAR}</Abzeichen> : <Abzeichen ton={s.profile[p].abstand === "besser" ? "gut" : "schlecht"}>vom Benchmark unterscheidbar ({s.profile[p].abstand})</Abzeichen>}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+          {s.rang_information_ratio.length > 0 && (
+            <p className="px-5 py-3 text-[12px] text-text-3">Rang nach Information Ratio: {s.rang_information_ratio.map((p) => PROFIL_NAME[p as keyof typeof PROFIL_NAME] ?? p).join(" > ")}</p>
+          )}
+        </div>
+      )}
+    </Karte>
   );
 }

@@ -26,6 +26,7 @@ import limits
 import produkte
 import prognosen
 import schattenbuch
+import statistik
 from gemeinsam import D, Fehler
 
 EINS = Decimal("1")
@@ -682,7 +683,8 @@ def bericht() -> list[str]:
     text = ranking_text(alle, g.jetzt())
     try:
         # Ohne Netzwerk: nur gespeicherte Kerzen; Lücken bleiben offen und werden vom Hintergrunddienst nachgeholt
-        text = text.rstrip("\n") + "\n\n" + "\n".join(prognosen.ranking_abschnitt(prognosen.auswerten()))
+        text = text.rstrip("\n") + "\n\n" + "\n".join(statistik.ranking_abschnitt(statistik.berechnen(benchmark=benchmark)))
+        text += "\n" + "\n".join(prognosen.ranking_abschnitt(prognosen.auswerten()))
         text += "\n" + "\n".join(schattenbuch.ranking_abschnitt(schattenbuch.auswerten()))
     except Fehler as exc:
         meldungen_vorab = [f"Prognosegüte nicht berechnet: {exc}"]
