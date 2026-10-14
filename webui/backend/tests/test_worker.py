@@ -335,7 +335,8 @@ def test_geplanter_lauf_wartet_sichtbar_auf_aktive_session_und_wird_nicht_uebers
     _admin_token(admin)
     _plan_einstellen(admin)
     sperre = demo_repo / "session.lock"
-    sperre.write_text(json.dumps({"person": "auftraggeber-b", "start": "2026-10-12T09:00:00+02:00"}))
+    # Die Sperre muss zur echten Uhr passen (sie läuft nach `sperre_stunden` ab), nicht zu den simulierten Zeiten.
+    sperre.write_text(json.dumps({"person": "auftraggeber-b", "start": datetime.now(UTC).isoformat()}))
     try:
         lesen.zuruecksetzen()
         w = Worker()
