@@ -216,8 +216,11 @@ def demo_beobachtung(ende: date, seed: int) -> None:
 
 def demo_labor(g, kurse) -> None:
     """Demo-Bericht des Strategie-Labors: Trendfolge auf den Demo-Kursen des Benchmark-ETF (Zufallskurse, kein Beleg)."""
-    import backtest
-    from labor import daten
+    try:
+        import backtest
+        from labor import daten
+    except ImportError:  # ohne numpy (kommt mit pandas) gibt es keinen Demo-Bericht des Labors
+        return
 
     ticker = g.projekt()["benchmark_ticker"]
     kerzen = sorted(kurse.gespeicherte_historie(ticker).values(), key=lambda k: k.datum)
