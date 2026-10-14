@@ -68,6 +68,9 @@ def verwendete_journal_ids() -> set[str]:
 
 
 def portfolio_pruefen(profil: str) -> dict:
+    if profil in g.kontrolle_profile():
+        raise Fehler(f"{profil} ist ein mechanisches Kontrollportfolio (Typ {g.kontrolle_profile()[profil]}); "
+                     "dort handelt kein Claude, die Orders erzeugt tools/kontrolle.py.")
     portfolio = g.portfolio_laden(profil)
     if portfolio.get("status") != "aktiv":
         raise Fehler(f"Portfolio {profil} ist {portfolio.get('status')}; keine Orders möglich.")

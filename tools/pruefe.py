@@ -167,9 +167,10 @@ def profile_am(datum: str | None) -> list[str]:
 
     Ein später ergänztes Profil (Migration, regeln.md 7) wird für frühere Sessions nicht verlangt.
     """
-    vorhanden = g.vorhandene_profile()
-    if not vorhanden:
-        return list(g.profile())
+    claude = set(g.claude_profile())  # Kontrollportfolios haben keine Session-Zeile
+    vorhanden = [p for p in g.vorhandene_profile() if p in claude]
+    if not g.vorhandene_profile():
+        return list(g.claude_profile())
     if not datum:
         return vorhanden
     return [p for p in vorhanden if (g.portfolio_laden(p).get("startdatum") or "") <= datum]
@@ -323,6 +324,28 @@ def pruefe_ausfuehrung(profil: str) -> list[Befund]:
     for order_id, anzahl in sorted(endbuchungen.items()):
         if anzahl > 1:
             befunde.append(fehler(name, f"{profil}: Order {order_id} hat {anzahl} Endbuchungen (doppelt gebucht?)."))
+    return befunde
+
+
+def pruefe_kontrolle(profil: str) -> list[Befund]:
+    """Kontrollportfolios handeln nur mechanisch: jede Order automatisch (Auslöser Kontrollportfolio) mit mechanischem
+    Journal-Eintrag; der Auslöser kommt nur in Kontrollportfolios vor."""
+    name = "Kontrollportfolio"
+    befunde = []
+    mechanisch = profil in g.kontrolle_profile()
+    eintraege = g.journal_eintraege()
+    for zeile in g.trades_lesen(profil):
+        if zeile["aktion"] not in ("kauf", "verkauf") or zeile["grund"] != "order":
+            continue
+        ort = f"{profil} {zeile['trade_id']}"
+        treffer = g.AUTOMATISCH_MUSTER.match(zeile["bemerkung"] or "")
+        kontrolle = bool(treffer) and treffer.group(1) == "Kontrollportfolio"
+        if mechanisch and not kontrolle:
+            befunde.append(fehler(name, f"{ort}: Order in einem Kontrollportfolio, die nicht mechanisch entstanden ist."))
+        elif kontrolle and not mechanisch:
+            befunde.append(fehler(name, f"{ort}: Auslöser Kontrollportfolio in einem Profil ohne Eintrag \"kontrolle\"."))
+        if kontrolle and "mechanisch" not in (eintraege.get(zeile["journal_id"]) or {}).get("felder", {}):
+            befunde.append(fehler(name, f"{ort}: Journal-Eintrag {zeile['journal_id']} ist nicht als mechanisch gekennzeichnet."))
     return befunde
 
 
@@ -575,7 +598,7 @@ def pruefe_richtlinien() -> list[Befund]:
         return []
     return [warnung("Anlagerichtlinie", f"strategie/{profil}.md ist noch die Vorlage aus tools/init.py; vor der ersten "
                                         "Trading-Session ausformulieren (AP12 Punkt 2).")
-            for profil in g.vorhandene_profile() if not g.richtlinie_ausformuliert(profil)]
+            for profil in g.vorhandene_profile() if profil in g.claude_profile() and not g.richtlinie_ausformuliert(profil)]
 
 
 HANDELN_PROFIL = re.compile(r"(?<![\wäöüß])({namen})\s*:", re.I)
@@ -597,8 +620,8 @@ def handeln_hinweise() -> list[dict]:
     tage = int(einst["cash_warnung_tage"])
     aufschlag = D(einst["cash_warnung_ueber_min"])
     for profil in g.vorhandene_profile():
-        if g.portfolio_laden(profil).get("status") != "aktiv":
-            continue
+        if profil in g.kontrolle_profile() or g.portfolio_laden(profil).get("status") != "aktiv":
+            continue  # Kontrollportfolios folgen ihrer Regel, nicht dem Cash-Ziel
         zeilen = g.csv_lesen(g.pfad("data", "nav", f"{profil}.csv"))[-tage:]
         if len(zeilen) < tage:
             continue
@@ -609,7 +632,7 @@ def handeln_hinweise() -> list[dict]:
                 f"{profil}: Cashquote im Schnitt {schnitt * 100:.0f} % der letzten {tage} Handelstage "
                 f"(Mindestquote {mindest * 100:.0f} %, Ziel nahe der Mindestquote); Cash bringt nur 2 % p. a. "
                 "und ist die Ausnahme: höher nur mit Grund im Session-Eintrag.")})
-    alle = g.vorhandene_profile() or list(g.profile())
+    alle = [p for p in g.vorhandene_profile() if p in g.claude_profile()] or list(g.claude_profile())
     muster = re.compile(HANDELN_PROFIL.pattern.format(namen="|".join(re.escape(p) for p in alle)), re.I)
     for block in g.journal_bloecke():
         if block["art"] != "S" or (block["datum"] or "") < einst["pflicht_ab"]:
@@ -677,6 +700,7 @@ def alle_pruefungen(historie: bool = False) -> list[Befund]:
         befunde += pruefe_kurse(profil)
         befunde += pruefe_ausfuehrung(profil)
         befunde += pruefe_daueranweisung(profil)
+        befunde += pruefe_kontrolle(profil)
         befunde += pruefe_limits(profil)
     return befunde
 

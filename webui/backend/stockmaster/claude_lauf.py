@@ -90,7 +90,7 @@ def vorgaben_prompt() -> str:
     """
     gespeichert = appdaten.laden()["vorgaben"]["profile"]
     leer = {"text": "", "version": 0, "zeit": None, "von": None}
-    profile = {p: gespeichert.get(p) or leer for p in appdaten.profil_liste()}
+    profile = {p: gespeichert.get(p) or leer for p in appdaten.claude_profil_liste()}
     if not any(e["text"].strip() for e in profile.values()):
         return " Es liegen keine Vorgaben der Auftraggeber vor."
     zeilen = [" Vorgaben der Auftraggeber je Portfolio (aus der Web-UI, gelten ab sofort): Sie ergänzen die "
@@ -189,7 +189,7 @@ def prompt(art: str, auftrag) -> str:
                 "Intervall, Kosten, Grenzen); alle anderen nennst du als verworfen mit Zahlen. Schreibe Erkenntnisse "
                 "in lessons.md, ändere regeln.md nie und aktiviere nichts. " + gemeinsam)
     if art == "richtlinien":
-        dateien = [f"strategie/{p}.md" for p in appdaten.profil_liste()]
+        dateien = [f"strategie/{p}.md" for p in appdaten.claude_profil_liste()]
         return ("Formuliere die Anlagerichtlinien aus (AP12 Punkt 2, regeln.md Abschnitt 11): "
                 + ", ".join(dateien[:-1]) + " und " + dateien[-1] + ". Starte die Sperre mit "
                 "`python tools/session.py start --person <kennung> --art richtlinien`. Hole je Profil die Vorlage mit "

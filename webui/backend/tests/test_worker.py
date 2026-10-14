@@ -1334,3 +1334,17 @@ def test_labor_auswertung_taeglich_nach_23_15(app, werkzeug_attrappe):
     werkzeug_attrappe.clear()
     assert w.labor_auswerten(_um(12, "23:50")) is None and werkzeug_attrappe == []  # einmal je Tag
     assert w.labor_auswerten(_um(13, "23:20")) is not None
+
+
+def test_kontrolle_nur_mit_eintrag_in_der_konfiguration(app, werkzeug_attrappe, monkeypatch):
+    from stockmaster import worker
+    from stockmaster.worker import Worker
+
+    w = Worker()
+    assert w.kontrolle_ausfuehren(_um(12, "10:30")) is None and werkzeug_attrappe == []  # Standard: keine Kontrollportfolios
+    gemeinsam = worker._werkzeuge()["gemeinsam"]
+    monkeypatch.setattr(gemeinsam, "kontrolle_profile", lambda: {"passiv": "passiv"})
+    w.kontrolle_ausfuehren(_um(12, "10:30"))
+    assert ("kontrolle", "tick") == tuple(werkzeug_attrappe[0][:2])
+    werkzeug_attrappe.clear()
+    assert w.kontrolle_ausfuehren(_um(12, "10:35")) is None and werkzeug_attrappe == []  # erst nach 15 Minuten wieder

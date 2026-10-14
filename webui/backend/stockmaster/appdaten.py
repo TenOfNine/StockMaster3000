@@ -50,6 +50,16 @@ UEBERFLUESSIG = ("SM_SCHLUESSEL", "SM_SCHLUESSEL_DATEI", "SPIEL_REPO", "SM_REPO_
 PROFILE_ERSATZ = ("defensiv", "ausgewogen", "aggressiv", "overnight")
 
 
+def claude_profil_liste() -> tuple[str, ...]:
+    """Die Profile, die Claude handelt: ohne die mechanischen Kontrollportfolios (config/profile.json, Schlüssel "kontrolle")."""
+    try:
+        datei = einstellungen().framework_pfad / "config" / "profile.json"
+        mechanisch = set(json.loads(datei.read_text(encoding="utf-8")).get("kontrolle", {}))
+    except (OSError, ValueError):
+        mechanisch = set()
+    return tuple(p for p in profil_liste() if p not in mechanisch)
+
+
 def profil_liste() -> tuple[str, ...]:
     """Die Profile des Spiels aus config/profile.json des Frameworks (regeln.md Abschnitt 7), in dieser Reihenfolge."""
     try:

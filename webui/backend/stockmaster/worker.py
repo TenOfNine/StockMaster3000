@@ -314,6 +314,30 @@ class Worker:
                      **({"overnight_zeit": jetzt.isoformat()} if ok else {}))
         return f"Overnight-Analyse: {_letzte_zeile(lauf)}"
 
+    def kontrolle_ausfuehren(self, jetzt: datetime) -> str | None:
+        """Mechanische Kontrollportfolios (Strategie-Labor L5); ohne Eintrag "kontrolle" in config/profile.json passiert nichts.
+
+        Sonst alle 15 Minuten ein Durchlauf von tools/kontrolle.py (idempotent je Tag, nur bei offenem Markt, unter der
+        Buchungssperre). Kein Claude beteiligt.
+        """
+        g = _werkzeuge()["gemeinsam"]
+        if not g.spiel_lesen().get("startdatum") or not g.kontrolle_profile():
+            return None
+        if not self._faellig(self.zustand.get("kontrolle_versuch"), 15, jetzt):
+            return None
+        self._merken(kontrolle_versuch=jetzt.isoformat())
+        lauf = werkzeug("kontrolle", "tick", "--json", timeout=300)
+        try:
+            bericht = json.loads((lauf.stdout.strip().splitlines() or [""])[-1])
+        except ValueError:
+            return f"Kontrollportfolios: {_letzte_zeile(lauf) or 'ohne Ergebnis'}"
+        self._merken(kontrolle_ergebnis={
+            "zeit": jetzt.isoformat(timespec="seconds"), "ok": lauf.returncode == 0 and not bericht["fehler"],
+            "ausgefuehrt": len(bericht["ausgefuehrt"]), "fehler": bericht["fehler"][:3]})
+        if bericht["ausgefuehrt"]:
+            return f"Kontrollportfolios: {len(bericht['ausgefuehrt'])} Buchung(en)"
+        return None
+
     def labor_auswerten(self, jetzt: datetime) -> str | None:
         """Täglich nach Handelsschluss: Labor-Daten holen, Prognosen und Schattenbuch auswerten (Strategie-Labor L1/L2/L4).
 
@@ -756,8 +780,8 @@ class Worker:
             return ["Wartung"]
         self.auftraege_bearbeiten()
         for schritt in (self.zeitplan, self.richtlinien_standard, self.profile_ergaenzen, self.planen, self.ausfuehren,
-                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.labor_auswerten,
-                        self.nachbuchen, self.committen):
+                        self.beobachtung_aktualisieren, self.overnight_analysieren, self.kontrolle_ausfuehren,
+                        self.labor_auswerten, self.nachbuchen, self.committen):
             try:
                 ergebnis = schritt(jetzt)
             except Exception as exc:  # noqa: BLE001 - ein Fehler stoppt den Dienst nicht

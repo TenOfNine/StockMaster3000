@@ -141,7 +141,8 @@ def ausgenommen(block: dict) -> bool:
     """Kein Prognose-Block nötig: Verkäufe, Änderungen und Portfolios mit Daueranweisung (kein Einzelurteil je Order)."""
     aktion = (block["felder"].get("aktion") or "").strip().lower()
     zyklus = g.config("profile").get("daueranweisung", {})
-    return not aktion.startswith("kauf") or block["portfolio"] in zyklus
+    return (not aktion.startswith("kauf") or block["portfolio"] in zyklus
+            or "mechanisch" in block["felder"])  # Kontrollportfolios handeln nach Regel, ohne Einschätzung
 
 
 def sammeln() -> tuple[list[dict], list[dict]]:

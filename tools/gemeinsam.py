@@ -41,6 +41,21 @@ def profile() -> tuple[str, ...]:
     return tuple(config("profile")["profile"])
 
 
+def kontrolle_profile() -> dict[str, str]:
+    """Mechanische Kontrollportfolios (Strategie-Labor L5): Profil -> Typ (passiv, zufall, labor).
+
+    Nur wenn config/profile.json den Schlüssel "kontrolle" trägt, also nach Entscheidung der Auftraggeber; sonst leer.
+    Diese Profile handelt kein Claude: Sessions, Anlagerichtlinien und Vorgaben gelten für sie nicht.
+    """
+    return dict(config("profile").get("kontrolle", {}))
+
+
+def claude_profile() -> tuple[str, ...]:
+    """Die Profile, die Claude handelt (alle außer den mechanischen Kontrollportfolios)."""
+    mechanisch = kontrolle_profile()
+    return tuple(p for p in profile() if p not in mechanisch)
+
+
 def __getattr__(name: str):  # g.PROFILE bleibt als Kürzel für profile() erhalten
     if name == "PROFILE":
         return profile()
@@ -61,7 +76,7 @@ TRADE_FELDER = [
 
 # Automatische Ausführung (ausfuehrung.py): Kennzeichnung in der Bemerkung der Trade-Zeile.
 AUTOMATISCH_MUSTER = re.compile(r"^automatisch \(Auslöser: ([^)]+)\)")
-AUSLOESER = ("Eröffnung", "Markt", "Limit", "Stop", "Kursziel", "Knock-out", "Daueranweisung")
+AUSLOESER = ("Eröffnung", "Markt", "Limit", "Stop", "Kursziel", "Knock-out", "Daueranweisung", "Kontrollportfolio")
 
 
 def automatisch_text(ausloeser: str, detail: str = "") -> str:
@@ -457,13 +472,13 @@ def richtlinie_unveraendert(profil: str) -> bool:
 
 def richtlinien_veraltet() -> list[str]:
     """Unveränderte Standard-Richtlinien einer älteren Version (werden automatisch aktualisiert)."""
-    return [p for p in profile() if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
+    return [p for p in claude_profile() if richtlinie_ausformuliert(p) and richtlinie_unveraendert(p)
             and (richtlinie_standard_version(p) or 0) < RICHTLINIE_STANDARD_VERSION]
 
 
 def richtlinien_offen() -> list[str]:
     """Profile ohne ausformulierte Anlagerichtlinie."""
-    return [p for p in profile() if not richtlinie_ausformuliert(p)]
+    return [p for p in claude_profile() if not richtlinie_ausformuliert(p)]
 
 
 def portfolio_pfad(profil: str) -> Path:
