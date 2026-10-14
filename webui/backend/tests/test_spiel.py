@@ -44,25 +44,13 @@ def test_labor_ergebnisse_gespeichert(nutzer, demo_repo):
 
 
 def test_labor_berichte_lesen(nutzer, demo_repo):
-    import json
-
-    assert nutzer.get("/api/spiel/labor/berichte").json() == []
-    ordner = demo_repo / "labor"
-    ordner.mkdir(exist_ok=True)
-    bericht = {"strategie": "trend", "parameter": {"tage": 200}, "erstellt": "2026-10-14T10:00:00+02:00",
-               "zeitraum": {"von": "2020-01-01", "bis": "2025-12-31", "tage": 1500},
-               "urteil": {"vorschlag": False, "gruende": ["x"], "text": "kein Vorschlag"}, "kurve": {"tage": [], "strategie": [],
-                                                                                                         "benchmark": []}}
-    (ordner / "trend_2026-10-14.json").write_text(json.dumps(bericht), encoding="utf-8")
-    try:
-        liste = nutzer.get("/api/spiel/labor/berichte").json()
-        assert liste[0]["datei"] == "trend_2026-10-14.json" and "kurve" not in liste[0]
-        assert nutzer.get("/api/spiel/labor/berichte/trend_2026-10-14.json").json()["strategie"] == "trend"
-        assert nutzer.get("/api/spiel/labor/berichte/gibt-es-nicht.json").status_code == 404
-        assert nutzer.get("/api/spiel/labor/berichte/..%2Fspiel.json").status_code in (404, 422)
-    finally:
-        (ordner / "trend_2026-10-14.json").unlink()
-        ordner.rmdir()
+    liste = nutzer.get("/api/spiel/labor/berichte").json()
+    assert liste and liste[0]["strategie"] == "trend" and "kurve" not in liste[0]  # Demo-Bericht des Labors
+    bericht = nutzer.get(f"/api/spiel/labor/berichte/{liste[0]['datei']}").json()
+    assert bericht["urteil"]["text"] == "kein Vorschlag" and bericht["kurve"]["tage"] and bericht["grenzen"]
+    assert {"gesamt", "is", "oos"} <= set(bericht)
+    assert nutzer.get("/api/spiel/labor/berichte/gibt-es-nicht.json").status_code == 404
+    assert nutzer.get("/api/spiel/labor/berichte/..%2Fspiel.json").status_code in (404, 422)
 
 
 def test_portfolio_und_trades(nutzer):
